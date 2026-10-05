@@ -1,0 +1,19 @@
+{
+    "name": "Fomoxa.Unity.Editor",
+    "rootNamespace": "Fomoxa.Unity.Editor",
+    "references": [
+        "Fomoxa.Unity",
+        "Fomoxa.Networking"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

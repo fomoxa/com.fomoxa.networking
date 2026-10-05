@@ -1,0 +1,22 @@
+{
+    "name": "Fomoxa.Unity.Tests.Support",
+    "rootNamespace": "Fomoxa.Unity.Tests.Support",
+    "references": [
+        "Fomoxa.Unity",
+        "Fomoxa.Networking"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Fomoxa.Net.dll",
+        "Fomoxa.Attributes.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

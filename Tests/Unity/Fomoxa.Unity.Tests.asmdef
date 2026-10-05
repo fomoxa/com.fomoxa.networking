@@ -1,0 +1,30 @@
+{
+    "name": "Fomoxa.Unity.Tests",
+    "rootNamespace": "Fomoxa.Unity.Tests",
+    "references": [
+        "Fomoxa.Unity",
+        "Fomoxa.Networking",
+        "Fomoxa.Networking.Tests.Fixtures",
+        "Fomoxa.Unity.Editor",
+        "Fomoxa.Unity.Tests.Support",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "Fomoxa.Attributes.dll",
+        "Fomoxa.Net.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

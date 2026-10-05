@@ -1,0 +1,21 @@
+{
+  "name": "com.fomoxa.networking",
+  "version": "0.1.0",
+  "displayName": "Fomoxa Networking",
+  "description": "Networking built on the Fomoxa protocol: a .NET core with Unity integration.",
+  "unity": "6000.5",
+  "license": "Apache-2.0",
+  "keywords": [
+    "fomoxa",
+    "networking",
+    "multiplayer"
+  ],
+  "author": {
+    "name": "Fomoxa"
+  },
+  "dependencies": {
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.modules.physics": "1.0.0",
+    "com.unity.modules.physics2d": "1.0.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+    "name": "Fomoxa.Networking.Tests.Fixtures",
+    "rootNamespace": "BundleFixture",
+    "references": [
+        "Fomoxa.Networking"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "Fomoxa.Net.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": true
+}
