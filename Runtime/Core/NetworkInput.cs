@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Fomoxa.Networking.Messaging;
 
-namespace Fomoxa.Unity
+namespace Fomoxa.Networking
 {
     public readonly struct InputContext
     {
@@ -25,10 +25,10 @@ namespace Fomoxa.Unity
 
     public sealed class NetworkInput
     {
-        private readonly NetworkBehaviour behaviour;
+        private readonly EntityBehaviour behaviour;
         private readonly InputRules rules;
 
-        internal NetworkInput(NetworkBehaviour behaviour, InputRules rules)
+        internal NetworkInput(EntityBehaviour behaviour, InputRules rules)
         {
             this.behaviour = behaviour;
             this.rules = rules;
@@ -54,7 +54,7 @@ namespace Fomoxa.Unity
 
             if (!rules.Allowed)
             {
-                throw new HandlerRegistrationException($"{behaviour.GetType().FullName} registers an input model, but its NetworkManager uses the Variable timing mode; prediction needs the Tick timing mode");
+                throw new HandlerRegistrationException($"{behaviour.DeclaringType.FullName} registers an input model, but its NetworkManager uses the Variable timing mode; prediction needs the Tick timing mode");
             }
 
             behaviour.SetInput(new InputSlot<T>(codec, gather, apply, rules.Redundancy, rules.History));
@@ -81,12 +81,12 @@ namespace Fomoxa.Unity
             InputSlot slot = behaviour.InputSlot;
             if (slot == null)
             {
-                throw new HandlerRegistrationException($"{behaviour.GetType().FullName} registers a reconcile model before its input model; call input.Use first");
+                throw new HandlerRegistrationException($"{behaviour.DeclaringType.FullName} registers a reconcile model before its input model; call input.Use first");
             }
 
             if (slot.Reconcile != null)
             {
-                throw new HandlerRegistrationException($"{behaviour.GetType().FullName} uses more than one reconcile model");
+                throw new HandlerRegistrationException($"{behaviour.DeclaringType.FullName} uses more than one reconcile model");
             }
 
             slot.Reconcile = new ReconcileSlot<TState>(codec, capture, restore, matches);

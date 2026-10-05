@@ -1,3 +1,5 @@
+using Fomoxa.Networking;
+
 namespace Fomoxa.Unity.Tests.Support
 {
     public sealed class UndeclaredRpcBehaviour : NetworkBehaviour

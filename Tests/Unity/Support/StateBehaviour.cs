@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Fomoxa.Networking;
 
 namespace Fomoxa.Unity.Tests.Support
 {

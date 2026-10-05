@@ -1,23 +1,37 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Objects;
 using Fomoxa.Networking.Sessions;
-using Fomoxa.Networking;
 using UnityEngine;
 
 namespace Fomoxa.Unity
 {
     public abstract class NetworkBehaviour : MonoBehaviour
     {
-        private readonly Dictionary<uint, ServerRpc> serverRpcs = new Dictionary<uint, ServerRpc>();
-        private readonly Dictionary<uint, ClientRpc> clientRpcs = new Dictionary<uint, ClientRpc>();
-        private bool registered;
+        private Forwarder core;
 
         public NetworkObject NetworkObject { get; private set; }
 
-        public byte BehaviourIndex { get; private set; }
+        public byte BehaviourIndex => Core.BehaviourIndex;
+
+        public bool IsPredicting => Core.IsPredicting;
+
+        public bool IsReplaying => Core.IsReplaying;
+
+        public int ReconcileCount => Core.ReconcileCount;
+
+        internal EntityBehaviour Core => core ??= new Forwarder(this);
+
+        internal IEnumerable<uint> ServerRpcIds => Core.ServerRpcIds;
+
+        internal IEnumerable<uint> ClientRpcIds => Core.ClientRpcIds;
+
+        internal StateSlot StateSlot => Core.StateSlot;
+
+        internal InputSlot InputSlot => Core.InputSlot;
 
         public virtual void OnStartServer()
         {
@@ -42,20 +56,6 @@ namespace Fomoxa.Unity
         public virtual void OnOwnerChangedClient(ulong previousOwnerId)
         {
         }
-
-        internal IEnumerable<uint> ServerRpcIds => serverRpcs.Keys;
-
-        internal IEnumerable<uint> ClientRpcIds => clientRpcs.Keys;
-
-        internal StateSlot StateSlot { get; private set; }
-
-        internal InputSlot InputSlot { get; private set; }
-
-        public bool IsPredicting => InputSlot != null && InputSlot.Predicting;
-
-        public bool IsReplaying => NetworkObject != null && NetworkObject.Client != null && NetworkObject.Client.IsReplaying;
-
-        public int ReconcileCount { get; private set; }
 
         protected virtual void OnHostVisibility(bool visible)
         {
@@ -86,156 +86,71 @@ namespace Fomoxa.Unity
         {
         }
 
-        protected SendResult SendServerRpc<T>(IMessageCodec<T> codec, T value)
-        {
-            NetworkObject networkObject = SpawnedOn(codec, value, isServer: false);
-            return networkObject.Client.SendToObject(codec.MessageId, networkObject.ObjectId, BehaviourIndex, codec.Encode(value).Span);
-        }
+        protected SendResult SendServerRpc<T>(IMessageCodec<T> codec, T value) => Core.ServerRpcFrom(codec, value);
 
-        protected int SendObserversRpc<T>(IMessageCodec<T> codec, T value)
-        {
-            NetworkObject networkObject = SpawnedOn(codec, value, isServer: true);
-            return networkObject.Server.BroadcastToObject(codec.MessageId, networkObject.ObjectId, BehaviourIndex, codec.Encode(value).Span);
-        }
+        protected int SendObserversRpc<T>(IMessageCodec<T> codec, T value) => Core.ObserversRpcFrom(codec, value);
 
-        protected SendResult SendTargetRpc<T>(ulong peerId, IMessageCodec<T> codec, T value)
-        {
-            NetworkObject networkObject = SpawnedOn(codec, value, isServer: true);
-            return networkObject.Server.SendToObserver(peerId, codec.MessageId, networkObject.ObjectId, BehaviourIndex, codec.Encode(value).Span);
-        }
+        protected SendResult SendTargetRpc<T>(ulong peerId, IMessageCodec<T> codec, T value) => Core.TargetRpcFrom(peerId, codec, value);
 
-        protected SendResult SendServerRpc(string rpc)
-        {
-            NetworkObject networkObject = SpawnedOn(rpc, isServer: false);
-            return networkObject.Client.SendToObject(RpcMessageId(networkObject.Client.RpcIds, rpc), networkObject.ObjectId, BehaviourIndex, ReadOnlySpan<byte>.Empty);
-        }
+        protected SendResult SendServerRpc(string rpc) => Core.ServerRpcFrom(rpc);
 
-        protected int SendObserversRpc(string rpc)
-        {
-            NetworkObject networkObject = SpawnedOn(rpc, isServer: true);
-            return networkObject.Server.BroadcastToObject(RpcMessageId(networkObject.Server.RpcIds, rpc), networkObject.ObjectId, BehaviourIndex, ReadOnlySpan<byte>.Empty);
-        }
+        protected int SendObserversRpc(string rpc) => Core.ObserversRpcFrom(rpc);
 
-        protected SendResult SendTargetRpc(ulong peerId, string rpc)
-        {
-            NetworkObject networkObject = SpawnedOn(rpc, isServer: true);
-            return networkObject.Server.SendToObserver(peerId, RpcMessageId(networkObject.Server.RpcIds, rpc), networkObject.ObjectId, BehaviourIndex, ReadOnlySpan<byte>.Empty);
-        }
+        protected SendResult SendTargetRpc(ulong peerId, string rpc) => Core.TargetRpcFrom(peerId, rpc);
 
         internal void HostVisibility(bool visible) => OnHostVisibility(visible);
 
         internal void Attach(NetworkObject networkObject, byte behaviourIndex)
         {
             NetworkObject = networkObject;
-            BehaviourIndex = behaviourIndex;
+            Core.Attach(networkObject, behaviourIndex);
         }
 
-        internal void Register(RpcMessageIds rpcIds, MessageChannels channels, StateProtocol stateProtocol, InputRules inputRules)
+        internal void Register(RpcMessageIds rpcIds, MessageChannels channels, StateProtocol stateProtocol, InputRules inputRules) =>
+            Core.Register(rpcIds, channels, stateProtocol, inputRules);
+
+        internal void Reconciled(uint tick) => Core.Reconciled(tick);
+
+        internal bool TryGetServerRpc(uint messageId, out ServerRpc rpc) => Core.TryGetServerRpc(messageId, out rpc);
+
+        internal bool TryGetClientRpc(uint messageId, out ClientRpc rpc) => Core.TryGetClientRpc(messageId, out rpc);
+
+        private sealed class Forwarder : EntityBehaviour
         {
-            if (registered)
+            private readonly NetworkBehaviour owner;
+
+            public Forwarder(NetworkBehaviour owner)
             {
-                return;
+                this.owner = owner;
             }
 
-            registered = true;
-            var rpcs = new NetworkRpcs(this, rpcIds);
-            OnRegisterGeneratedRpcs(rpcs);
-            OnRegisterRpcs(rpcs);
-            OnRegisterState(new NetworkState(this, channels, stateProtocol));
-            OnRegisterInput(new NetworkInput(this, inputRules));
-        }
+            internal override Type DeclaringType => owner.GetType();
 
-        internal void SetState(StateSlot slot)
-        {
-            if (StateSlot != null)
-            {
-                throw new HandlerRegistrationException($"{GetType().FullName} uses more than one state model");
-            }
+            internal override string DisplayName => owner.name;
 
-            StateSlot = slot;
-        }
+            public override void OnStartServer() => owner.OnStartServer();
 
-        internal void Reconciled(uint tick)
-        {
-            ReconcileCount++;
-            OnReconciled(tick);
-        }
+            public override void OnStopServer() => owner.OnStopServer();
 
-        internal void SetInput(InputSlot slot)
-        {
-            if (InputSlot != null)
-            {
-                throw new HandlerRegistrationException($"{GetType().FullName} uses more than one input model");
-            }
+            public override void OnStartClient() => owner.OnStartClient();
 
-            InputSlot = slot;
-        }
+            public override void OnStopClient() => owner.OnStopClient();
 
-        internal void AddServerRpc(uint messageId, ServerRpc rpc)
-        {
-            if (!serverRpcs.TryAdd(messageId, rpc))
-            {
-                throw new HandlerRegistrationException($"{GetType().FullName} registers message id 0x{messageId:X8} as a server RPC twice");
-            }
-        }
+            public override void OnOwnerChangedServer(ulong previousOwnerId) => owner.OnOwnerChangedServer(previousOwnerId);
 
-        internal void AddClientRpc(uint messageId, ClientRpc rpc)
-        {
-            if (!clientRpcs.TryAdd(messageId, rpc))
-            {
-                throw new HandlerRegistrationException($"{GetType().FullName} registers message id 0x{messageId:X8} as a client RPC twice");
-            }
-        }
+            public override void OnOwnerChangedClient(ulong previousOwnerId) => owner.OnOwnerChangedClient(previousOwnerId);
 
-        internal bool TryGetServerRpc(uint messageId, out ServerRpc rpc) => serverRpcs.TryGetValue(messageId, out rpc);
+            internal override void PrepareState() => owner.PrepareState();
 
-        internal bool TryGetClientRpc(uint messageId, out ClientRpc rpc) => clientRpcs.TryGetValue(messageId, out rpc);
+            protected override void OnRegisterGeneratedRpcs(NetworkRpcs rpc) => owner.OnRegisterGeneratedRpcs(rpc);
 
-        private NetworkObject SpawnedOn<T>(IMessageCodec<T> codec, T value, bool isServer)
-        {
-            if (codec == null)
-            {
-                throw new ArgumentNullException(nameof(codec));
-            }
+            protected override void OnRegisterRpcs(NetworkRpcs rpc) => owner.OnRegisterRpcs(rpc);
 
-            if (value == null)
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
+            protected override void OnRegisterState(NetworkState state) => owner.OnRegisterState(state);
 
-            return SpawnedOn(isServer);
-        }
+            protected override void OnRegisterInput(NetworkInput input) => owner.OnRegisterInput(input);
 
-        private NetworkObject SpawnedOn(string rpc, bool isServer)
-        {
-            if (rpc == null)
-            {
-                throw new ArgumentNullException(nameof(rpc));
-            }
-
-            return SpawnedOn(isServer);
-        }
-
-        private NetworkObject SpawnedOn(bool isServer)
-        {
-            NetworkObject networkObject = NetworkObject;
-            bool spawned = networkObject != null && (isServer ? networkObject.Server != null : networkObject.Client != null);
-            if (!spawned)
-            {
-                throw new InvalidOperationException($"{name} is not spawned on the {(isServer ? "server" : "client")}");
-            }
-
-            return networkObject;
-        }
-
-        private uint RpcMessageId(RpcMessageIds rpcIds, string rpc)
-        {
-            if (!rpcIds.TryGet(GetType(), rpc, out uint messageId))
-            {
-                throw new InvalidOperationException(NetworkRpcs.NotGenerated(GetType(), rpc));
-            }
-
-            return messageId;
+            protected override void OnReconciled(uint tick) => owner.OnReconciled(tick);
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using BundleFixture;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Sessions;
 using Fomoxa.Networking.Simulation;
 using Fomoxa.Unity.Tests.Support;

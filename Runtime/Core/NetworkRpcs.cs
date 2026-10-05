@@ -1,15 +1,14 @@
 using System;
 using Fomoxa.Networking.Messaging;
-using Fomoxa.Networking;
 
-namespace Fomoxa.Unity
+namespace Fomoxa.Networking
 {
     public sealed class NetworkRpcs
     {
-        private readonly NetworkBehaviour behaviour;
+        private readonly EntityBehaviour behaviour;
         private readonly RpcMessageIds rpcIds;
 
-        internal NetworkRpcs(NetworkBehaviour behaviour, RpcMessageIds rpcIds)
+        internal NetworkRpcs(EntityBehaviour behaviour, RpcMessageIds rpcIds)
         {
             this.behaviour = behaviour;
             this.rpcIds = rpcIds;
@@ -82,9 +81,9 @@ namespace Fomoxa.Unity
 
         private uint MessageIdOf(string rpc)
         {
-            if (!rpcIds.TryGet(behaviour.GetType(), rpc, out uint messageId))
+            if (!rpcIds.TryGet(behaviour.DeclaringType, rpc, out uint messageId))
             {
-                throw new HandlerRegistrationException(NotGenerated(behaviour.GetType(), rpc));
+                throw new HandlerRegistrationException(NotGenerated(behaviour.DeclaringType, rpc));
             }
 
             return messageId;

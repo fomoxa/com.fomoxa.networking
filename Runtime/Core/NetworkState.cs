@@ -1,16 +1,15 @@
 using System;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Objects;
-using Fomoxa.Networking;
 
-namespace Fomoxa.Unity
+namespace Fomoxa.Networking
 {
     public sealed class NetworkState
     {
-        private readonly NetworkBehaviour behaviour;
+        private readonly EntityBehaviour behaviour;
         private readonly MessageChannels channels;
 
-        internal NetworkState(NetworkBehaviour behaviour, MessageChannels channels, StateProtocol protocol)
+        internal NetworkState(EntityBehaviour behaviour, MessageChannels channels, StateProtocol protocol)
         {
             this.behaviour = behaviour;
             this.channels = channels;
@@ -32,7 +31,7 @@ namespace Fomoxa.Unity
                 throw new ArgumentNullException(nameof(instance));
             }
 
-            string owner = behaviour.GetType().FullName;
+            string owner = behaviour.DeclaringType.FullName;
             if (!channels.IsReliable(codec.MessageId))
             {
                 throw new HandlerRegistrationException($"{owner} uses message id 0x{codec.MessageId:X8} as its state, which is not on the reliable-ordered channel; declare the model's codec with [NetworkChannel(..., Channel.ReliableOrdered)]");

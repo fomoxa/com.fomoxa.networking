@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Sessions;
 
 namespace Fomoxa.Unity.Tests.Support

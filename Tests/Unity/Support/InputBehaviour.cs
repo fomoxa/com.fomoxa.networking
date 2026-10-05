@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Messaging;
 
 namespace Fomoxa.Unity.Tests.Support

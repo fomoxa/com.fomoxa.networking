@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Numerics;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Simulation;
 

@@ -2,13 +2,14 @@ using System.Collections.Generic;
 using System;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Objects;
+using Fomoxa.Networking.Sessions;
 using Fomoxa.Networking;
 using UnityEngine;
 
 namespace Fomoxa.Unity
 {
     [DisallowMultipleComponent]
-    public sealed class NetworkObject : MonoBehaviour
+    public sealed class NetworkObject : MonoBehaviour, IBehaviourLink
     {
         [SerializeField] private uint prefabId;
         [SerializeField] private bool explicitPrefabId;
@@ -354,5 +355,22 @@ namespace Fomoxa.Unity
         {
             HandleDestroy();
         }
+
+        bool IBehaviourLink.SpawnedOnServer => Server != null;
+
+        bool IBehaviourLink.SpawnedOnClient => Client != null;
+
+        bool IBehaviourLink.IsReplaying => Client != null && Client.IsReplaying;
+
+        RpcMessageIds IBehaviourLink.RpcIds(bool server) => server ? Server.RpcIds : Client.RpcIds;
+
+        SendResult IBehaviourLink.SendToServer(uint messageId, byte behaviourIndex, ReadOnlySpan<byte> body) =>
+            Client.SendToObject(messageId, ObjectId, behaviourIndex, body);
+
+        int IBehaviourLink.SendToObservers(uint messageId, byte behaviourIndex, ReadOnlySpan<byte> body) =>
+            Server.BroadcastToObject(messageId, ObjectId, behaviourIndex, body);
+
+        SendResult IBehaviourLink.SendToObserver(ulong peerId, uint messageId, byte behaviourIndex, ReadOnlySpan<byte> body) =>
+            Server.SendToObserver(peerId, messageId, ObjectId, behaviourIndex, body);
     }
 }
