@@ -9,7 +9,7 @@ using UnityEngine;
 namespace Fomoxa.Unity
 {
     [DisallowMultipleComponent]
-    public sealed class NetworkObject : MonoBehaviour, IBehaviourLink
+    public sealed class NetworkObject : MonoBehaviour, IBehaviourLink, INetworkEntity
     {
         [SerializeField] private uint prefabId;
         [SerializeField] private bool explicitPrefabId;
@@ -19,8 +19,11 @@ namespace Fomoxa.Unity
 
         private readonly List<Renderer> hiddenRenderers = new List<Renderer>();
         private NetworkBehaviour[] behaviours = Array.Empty<NetworkBehaviour>();
+        private EntityBehaviour[] entityBehaviours = Array.Empty<EntityBehaviour>();
+        private EntityRecord record;
+        private uint clientObjectId;
 
-        public uint ObjectId { get; private set; }
+        public uint ObjectId => record != null ? record.ObjectId : clientObjectId;
 
         public uint PrefabId => prefabId;
 
@@ -64,15 +67,13 @@ namespace Fomoxa.Unity
 
         internal bool ExplicitPrefabId => explicitPrefabId;
 
-        internal ServerManager Server { get; private set; }
+        internal ServerManager Server => record?.Server?.Owner as ServerManager;
 
         public Fomoxa.Networking.Simulation.PhysicsBody Body => (Server?.Physics ?? Client?.Physics)?.BodyOf(this) ?? default;
 
         public Fomoxa.Networking.Simulation.PhysicsBody2D Body2D => (Server?.Physics ?? Client?.Physics)?.Body2DOf(this) ?? default;
 
         internal ClientManager Client { get; private set; }
-
-        internal LinkedListNode<NetworkObject> SpawnOrderNode { get; set; }
 
         internal uint Fingerprint { get; set; }
 
@@ -92,12 +93,15 @@ namespace Fomoxa.Unity
                 throw new InvalidOperationException($"{name}: {found.Length} NetworkBehaviours exceed the limit of {PrefabHash.MaxBehaviours}");
             }
 
+            var cores = new EntityBehaviour[found.Length];
             for (int index = 0; index < found.Length; index++)
             {
                 found[index].Attach(this, (byte)index);
+                cores[index] = found[index].Core;
             }
 
             behaviours = found;
+            entityBehaviours = cores;
             Range = GetComponent<ObserverRange>();
         }
 
@@ -178,50 +182,16 @@ namespace Fomoxa.Unity
             return true;
         }
 
-        internal void AttachServer(ServerManager server, uint objectId)
-        {
-            Server = server;
-            ObjectId = objectId;
-        }
-
-        internal void DetachServer()
-        {
-            Server = null;
-            if (Client == null)
-            {
-                ObjectId = 0;
-            }
-        }
-
         internal void AttachClient(ClientManager client, uint objectId)
         {
             Client = client;
-            ObjectId = objectId;
+            clientObjectId = objectId;
         }
 
         internal void DetachClient()
         {
             Client = null;
-            if (Server == null)
-            {
-                ObjectId = 0;
-            }
-        }
-
-        internal void StartServer()
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                behaviour.OnStartServer();
-            }
-        }
-
-        internal void StopServer()
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                behaviour.OnStopServer();
-            }
+            clientObjectId = 0;
         }
 
         internal void StartClient()
@@ -298,14 +268,6 @@ namespace Fomoxa.Unity
             return true;
         }
 
-        internal void OwnerChangedServer(ulong previousOwnerId)
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                behaviour.OnOwnerChangedServer(previousOwnerId);
-            }
-        }
-
         internal void OwnerChangedClient(ulong previousOwnerId)
         {
             foreach (NetworkBehaviour behaviour in behaviours)
@@ -372,5 +334,19 @@ namespace Fomoxa.Unity
 
         SendResult IBehaviourLink.SendToObserver(ulong peerId, uint messageId, byte behaviourIndex, ReadOnlySpan<byte> body) =>
             Server.SendToObserver(peerId, messageId, ObjectId, behaviourIndex, body);
+
+        IReadOnlyList<EntityBehaviour> INetworkEntity.EntityBehaviours => entityBehaviours;
+
+        EntityRecord INetworkEntity.Record => record;
+
+        void INetworkEntity.Bind(EntityRecord bound) => record = bound;
+
+        void INetworkEntity.Unbind(EntityRecord bound)
+        {
+            if (record == bound)
+            {
+                record = null;
+            }
+        }
     }
 }

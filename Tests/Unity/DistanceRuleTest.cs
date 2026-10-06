@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using BundleFixture;
 using Fomoxa.Net;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Sessions;
 using Fomoxa.Unity.Tests.Support;
 using NUnit.Framework;

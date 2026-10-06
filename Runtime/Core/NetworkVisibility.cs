@@ -1,4 +1,4 @@
-namespace Fomoxa.Unity
+namespace Fomoxa.Networking
 {
     public enum NetworkVisibility
     {
