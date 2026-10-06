@@ -275,7 +275,7 @@ namespace Fomoxa.Unity
 
         internal IReadOnlyList<Vector3> AnchorsOf(ulong peerId)
         {
-            IReadOnlyList<EntityRecord> owned = Entities.OwnedBy(peerId);
+            List<EntityRecord> owned = Entities.OwnedBy(peerId);
             if (owned.Count == 0)
             {
                 return Array.Empty<Vector3>();

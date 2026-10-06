@@ -20,23 +20,17 @@ namespace Fomoxa.Unity
         private readonly PrefabRegistry prefabs;
         private readonly ClientSession session;
         private readonly ClientReconnector reconnector;
-        private readonly Dictionary<uint, NetworkObject> spawned = new Dictionary<uint, NetworkObject>();
         private readonly Dictionary<ulong, NetworkObject> sceneObjects = new Dictionary<ulong, NetworkObject>();
-        private readonly List<NetworkObject> hiddenStarted = new List<NetworkObject>();
         private readonly SceneRegistry sceneRegistry;
         private readonly Dictionary<uint, Scene> clientScenes = new Dictionary<uint, Scene>();
         private readonly Dictionary<uint, HostSceneWait> hostWaits = new Dictionary<uint, HostSceneWait>();
-        private readonly Dictionary<uint, Type> rpcTypes = new Dictionary<uint, Type>();
-        private readonly HashSet<uint> stateIds = new HashSet<uint>();
         private readonly MessageChannels channels;
         private readonly StateProtocol stateProtocol;
-        private StateDelta stateDelta = new StateDelta();
         private readonly TransformProtocol transformProtocol;
         private readonly TimeManager timeManager;
         private readonly ClientClock clock;
         private TransformUpdate transformUpdate = new TransformUpdate();
         private TransformSettle transformSettle = new TransformSettle();
-        private bool connectedLocally;
         private readonly InputProtocol inputProtocol;
         private readonly InputFrames inputFrames = new InputFrames();
         private readonly List<NetworkObject> gathering = new List<NetworkObject>();
@@ -81,16 +75,18 @@ namespace Fomoxa.Unity
             Dispatcher = new MessageDispatcher(schema);
             session = new ClientSession(schema, sessionConfig, limits, Dispatcher, protocol);
             session.OnHandlerException += RaiseHandlerException;
-            Dispatcher.RegisterObject(stateProtocol.DeltaCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverDelta(objectId, behaviourIndex, body));
+            Entities = new ClientEntities(this, session, Dispatcher, channels, stateProtocol, rpcIds, serverManager.Entities, new EntityBackend(this, prefabs), UnityNetworkLog.Instance);
+            Entities.OnDespawning += record => Physics?.EndProxy((NetworkObject)record.Representation);
+            Spawned = new RepresentationView(Entities.Spawned);
             Dispatcher.RegisterObject(transformProtocol.UpdateCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, false));
             Dispatcher.RegisterObject(transformProtocol.SettleCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, true));
             Dispatcher.RegisterObject(inputProtocol.ReconcileCodec.MessageId, (peerId, objectId, behaviourIndex, body) => HoldReconcileState(objectId, behaviourIndex, body));
             session.OnClientConnectionState += PrepareSceneObjectsWhenStarted;
             session.OnClientConnectionState += EndHostVisibilityWhenStopped;
             reconnector = new ClientReconnector(session, reconnectPolicy);
-            Objects = new ClientObjects(session, objectProtocol, new Spawner(this), sceneProtocol, new SceneHost(this));
+            Objects = new ClientObjects(session, objectProtocol, Entities, sceneProtocol, new SceneHost(this));
+            Entities.Attach(Objects);
             Objects.OnObjectMismatch += RaiseObjectMismatch;
-            Objects.OnOwnerChanged += RaiseOwnerChanged;
             Objects.OnLocalPeerAssigned += HideUnobservedOnHost;
             Objects.OnLocalPeerAssigned += FollowServerTickRate;
             clock = new ClientClock(session, clockProtocol, clockSettings);
@@ -131,7 +127,7 @@ namespace Fomoxa.Unity
 
         public TimeSpan Rtt => connectedLocally ? TimeSpan.Zero : clock.Estimator.Rtt;
 
-        public IReadOnlyDictionary<uint, NetworkObject> Spawned => spawned;
+        public IReadOnlyDictionary<uint, NetworkObject> Spawned { get; }
 
         internal ClientObjects Objects { get; }
 
@@ -139,7 +135,15 @@ namespace Fomoxa.Unity
 
         internal bool ConnectedLocally => connectedLocally;
 
-        internal InputRules InputRules { get; set; } = new InputRules();
+        internal ClientEntities Entities { get; }
+
+        private bool connectedLocally => Entities.ConnectedLocally;
+
+        internal InputRules InputRules
+        {
+            get => Entities.InputRules;
+            set => Entities.InputRules = value;
+        }
 
         internal PhysicsWorlds Physics { get; set; }
 
@@ -160,12 +164,12 @@ namespace Fomoxa.Unity
 
             if (serverManager.State == ServerState.Started)
             {
-                connectedLocally = true;
+                Entities.ConnectedLocally = true;
                 reconnector.StartWithoutRetry(serverManager.LocalListener.Connect(), MonotonicClock.Now);
                 return;
             }
 
-            connectedLocally = false;
+            Entities.ConnectedLocally = false;
             reconnector.Start(() => transportManager.CreateConnector(address, port), MonotonicClock.Now);
         }
 
@@ -186,8 +190,9 @@ namespace Fomoxa.Unity
             }
 
             Physics.ForgetDestroyedProxies();
-            foreach (NetworkObject networkObject in spawned.Values)
+            foreach (EntityRecord record in Entities.Spawned.Values)
             {
+                var networkObject = (NetworkObject)record.Representation;
                 if (networkObject.IsPredicting)
                 {
                     Physics.EndProxy(networkObject);
@@ -201,8 +206,9 @@ namespace Fomoxa.Unity
 
         internal void EndProxies()
         {
-            foreach (NetworkObject networkObject in spawned.Values)
+            foreach (EntityRecord record in Entities.Spawned.Values)
             {
+                var networkObject = (NetworkObject)record.Representation;
                 Physics.EndProxy(networkObject);
             }
         }
@@ -216,9 +222,10 @@ namespace Fomoxa.Unity
             }
 
             gathering.Clear();
-            foreach (NetworkObject networkObject in spawned.Values)
+            foreach (EntityRecord record in Entities.Spawned.Values)
             {
-                if (networkObject.HasInput)
+                var networkObject = (NetworkObject)record.Representation;
+                if (record.HasInput)
                 {
                     gathering.Add(networkObject);
                 }
@@ -308,273 +315,22 @@ namespace Fomoxa.Unity
 
         internal void Flush() => session.Flush();
 
-        internal void EndShared(NetworkObject shared)
-        {
-            if (!spawned.Remove(shared.ObjectId))
-            {
-                return;
-            }
-
-            try
-            {
-                shared.StopClient();
-            }
-            finally
-            {
-                shared.DetachClient();
-            }
-        }
+        internal void EndShared(NetworkObject shared) => Entities.EndShared(((INetworkEntity)shared).Record);
 
         internal void ForgetDestroyed(NetworkObject networkObject)
         {
-            if (!spawned.Remove(networkObject.ObjectId))
-            {
-                return;
-            }
-
-            Debug.LogWarning($"Fomoxa: object {networkObject.ObjectId} (prefab 0x{networkObject.PrefabId:X8}) was destroyed on the client without a despawn from the server");
-            networkObject.DetachClient();
-            if (sceneObjects.TryGetValue(networkObject.SceneObjectId, out NetworkObject sceneObject) && sceneObject == networkObject)
+            if (Entities.ForgetDestroyed(networkObject)
+                && sceneObjects.TryGetValue(networkObject.SceneObjectId, out NetworkObject sceneObject)
+                && sceneObject == networkObject)
             {
                 sceneObjects.Remove(networkObject.SceneObjectId);
-            }
-        }
-
-        private SpawnResult SpawnInstance(in SpawnedObject spawnedObject)
-        {
-            bool isSceneObject = spawnedObject.SceneObjectId != 0;
-            PrefabEntry entry = null;
-            if (!isSceneObject)
-            {
-                if (!prefabs.TryGet(spawnedObject.PrefabId, out entry))
-                {
-                    return SpawnResult.UnknownPrefab;
-                }
-
-                if (entry.Fingerprint != spawnedObject.PrefabFingerprint)
-                {
-                    return SpawnResult.IncompatiblePrefab;
-                }
-            }
-
-            uint objectId = spawnedObject.ObjectId;
-            NetworkObject instance;
-            if (connectedLocally)
-            {
-                if (!serverManager.Spawned.TryGetValue(objectId, out instance))
-                {
-                    return SpawnResult.Spawned;
-                }
-
-                if (spawned.TryGetValue(objectId, out NetworkObject hidden) && hidden == instance)
-                {
-                    if (!instance.TryApplyStates(spawnedObject.States, true))
-                    {
-                        return SpawnResult.InvalidSpawn;
-                    }
-
-                    instance.ShowOnHost();
-                    return SpawnResult.Spawned;
-                }
-            }
-            else if (isSceneObject)
-            {
-                SpawnResult placed = PlaceSceneObject(spawnedObject, out instance);
-                if (placed != SpawnResult.Spawned)
-                {
-                    return placed;
-                }
-            }
-            else
-            {
-                instance = Create(entry, spawnedObject);
-                if (spawnedObject.SceneId != 0 && clientScenes.TryGetValue(spawnedObject.SceneId, out Scene scene))
-                {
-                    SceneManager.MoveGameObjectToScene(instance.gameObject, scene);
-                }
-            }
-
-            instance.AttachClient(this, objectId);
-            spawned.Add(objectId, instance);
-            bool statesValid;
-            try
-            {
-                instance.Register(RpcIds, channels, stateProtocol, InputRules);
-                statesValid = instance.TryApplyStates(spawnedObject.States, instance.Server != null);
-                if (statesValid)
-                {
-                    instance.ResetClientReceive();
-                    RouteRpcs(instance);
-                    RouteStates(instance);
-                    instance.StartClient();
-                }
-            }
-            catch
-            {
-                Abandon(objectId, instance);
-                throw;
-            }
-
-            if (!statesValid)
-            {
-                Abandon(objectId, instance);
-                return SpawnResult.InvalidSpawn;
-            }
-
-            if (instance.Server != null)
-            {
-                instance.ShowOnHost();
-            }
-
-            return SpawnResult.Spawned;
-        }
-
-        private void Abandon(uint objectId, NetworkObject instance)
-        {
-            spawned.Remove(objectId);
-            instance.DetachClient();
-            if (instance.Server == null)
-            {
-                End(instance);
-            }
-        }
-
-        private void DespawnInstance(uint objectId)
-        {
-            if (session.State == ConnectionState.Started && spawned.TryGetValue(objectId, out NetworkObject shared) && shared.Server != null)
-            {
-                shared.HideOnHost();
-                return;
-            }
-
-            if (!spawned.Remove(objectId, out NetworkObject instance))
-            {
-                return;
-            }
-
-            Physics?.EndProxy(instance);
-
-            try
-            {
-                instance.StopClient();
-            }
-            catch (Exception exception) when (session.State == ConnectionState.Stopped)
-            {
-                Debug.LogException(exception);
-            }
-            finally
-            {
-                instance.DetachClient();
-                if (instance.Server == null)
-                {
-                    End(instance);
-                }
-            }
-        }
-
-        private void RouteRpcs(NetworkObject networkObject)
-        {
-            foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-            {
-                Type type = behaviour.GetType();
-                foreach (uint messageId in behaviour.ClientRpcIds)
-                {
-                    if (stateIds.Contains(messageId))
-                    {
-                        throw new HandlerRegistrationException($"message id 0x{messageId:X8} is already a state model; {type.FullName} cannot use it as a client RPC");
-                    }
-
-                    if (rpcTypes.TryGetValue(messageId, out Type existing))
-                    {
-                        if (existing != type)
-                        {
-                            throw new HandlerRegistrationException($"message id 0x{messageId:X8} is already a client RPC of {existing.FullName}; {type.FullName} cannot use it");
-                        }
-
-                        continue;
-                    }
-
-                    uint routed = messageId;
-                    Dispatcher.RegisterObject(routed, (peerId, objectId, behaviourIndex, body) => DeliverRpc(routed, objectId, behaviourIndex, body));
-                    rpcTypes.Add(routed, type);
-                }
-            }
-        }
-
-        private void RouteStates(NetworkObject networkObject)
-        {
-            foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-            {
-                StateSlot slot = behaviour.StateSlot;
-                if (slot == null || stateIds.Contains(slot.MessageId))
-                {
-                    continue;
-                }
-
-                if (rpcTypes.ContainsKey(slot.MessageId))
-                {
-                    throw new HandlerRegistrationException($"message id 0x{slot.MessageId:X8} is already a client RPC of {rpcTypes[slot.MessageId].FullName}; {behaviour.GetType().FullName} cannot use it as a state model");
-                }
-
-                uint routed = slot.MessageId;
-                Dispatcher.RegisterObject(routed, (peerId, objectId, behaviourIndex, body) => DeliverState(routed, objectId, behaviourIndex, body));
-                stateIds.Add(routed);
-            }
-        }
-
-        private void DeliverState(uint messageId, uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
-        {
-            if (!spawned.TryGetValue(objectId, out NetworkObject networkObject) || behaviourIndex >= networkObject.Behaviours.Count)
-            {
-                return;
-            }
-
-            StateSlot slot = networkObject.Behaviours[behaviourIndex].StateSlot;
-            if (slot == null || slot.MessageId != messageId)
-            {
-                return;
-            }
-
-            try
-            {
-                slot.Receive(body, networkObject.Server != null);
-            }
-            catch (MessageDecodeException)
-            {
-                LoseSync(slot, objectId, behaviourIndex);
-                throw;
-            }
-        }
-
-        private void DeliverDelta(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
-        {
-            if (!spawned.TryGetValue(objectId, out NetworkObject networkObject) || behaviourIndex >= networkObject.Behaviours.Count)
-            {
-                return;
-            }
-
-            StateSlot slot = networkObject.Behaviours[behaviourIndex].StateSlot;
-            if (slot == null || slot.OutOfSync)
-            {
-                return;
-            }
-
-            try
-            {
-                stateProtocol.DeltaCodec.Decode(body, ref stateDelta);
-                slot.ReceiveDelta(stateDelta.Data, networkObject.Server != null);
-            }
-            catch (MessageDecodeException)
-            {
-                LoseSync(slot, objectId, behaviourIndex);
-                throw;
             }
         }
 
         private void HoldReconcileState(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
         {
             if (connectedLocally
-                || !spawned.TryGetValue(objectId, out NetworkObject networkObject)
+                || !TryGetObject(objectId, out NetworkObject networkObject)
                 || !Objects.IsOwner(objectId)
                 || behaviourIndex >= networkObject.Behaviours.Count)
             {
@@ -1000,7 +756,7 @@ namespace Fomoxa.Unity
 
         private void DeliverTransform(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body, bool settle)
         {
-            if (!spawned.TryGetValue(objectId, out NetworkObject networkObject)
+            if (!TryGetObject(objectId, out NetworkObject networkObject)
                 || networkObject.Server != null
                 || networkObject.IsPredicting
                 || behaviourIndex >= networkObject.Behaviours.Count
@@ -1036,24 +792,6 @@ namespace Fomoxa.Unity
             }
 
             networkTransform.Receive(tick, mask, position.ToUnity(), rotation.ToUnity(), scale.ToUnity(), settle, generation, timeManager.TickRate);
-        }
-
-        private void LoseSync(StateSlot slot, uint objectId, byte behaviourIndex)
-        {
-            slot.MarkOutOfSync();
-            SendToObject(stateProtocol.ResyncCodec.MessageId, objectId, behaviourIndex, ReadOnlySpan<byte>.Empty);
-        }
-
-        private void DeliverRpc(uint messageId, uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
-        {
-            if (!spawned.TryGetValue(objectId, out NetworkObject networkObject)
-                || behaviourIndex >= networkObject.Behaviours.Count
-                || !networkObject.Behaviours[behaviourIndex].TryGetClientRpc(messageId, out ClientRpc rpc))
-            {
-                return;
-            }
-
-            rpc.Invoke(body);
         }
 
         private void PrepareSceneObjectsWhenStarted(ConnectionStateArgs args)
@@ -1244,25 +982,23 @@ namespace Fomoxa.Unity
 
             Objects.ForgetLoadedScenes();
 
-            hiddenStarted.Clear();
-            foreach (NetworkObject instance in spawned.Values)
-            {
-                if (!Objects.TryGet(instance.ObjectId, out _))
-                {
-                    hiddenStarted.Add(instance);
-                }
-            }
-
-            for (int index = hiddenStarted.Count - 1; index >= 0; index--)
-            {
-                DespawnInstance(hiddenStarted[index].ObjectId);
-            }
-
-            hiddenStarted.Clear();
+            Entities.DespawnHiddenOnHost();
             foreach (NetworkObject networkObject in serverManager.Spawned.Values)
             {
                 networkObject.ShowOnHost();
             }
+        }
+
+        private bool TryGetObject(uint objectId, out NetworkObject networkObject)
+        {
+            if (Entities.TryGet(objectId, out EntityRecord record))
+            {
+                networkObject = (NetworkObject)record.Representation;
+                return true;
+            }
+
+            networkObject = null;
+            return false;
         }
 
         private SpawnResult PlaceSceneObject(in SpawnedObject spawnedObject, out NetworkObject instance)
@@ -1352,14 +1088,6 @@ namespace Fomoxa.Unity
             instance.DestroyGameObject();
         }
 
-        private void RaiseOwnerChanged(ObjectOwnerChangedArgs args)
-        {
-            if (spawned.TryGetValue(args.ObjectId, out NetworkObject instance))
-            {
-                instance.OwnerChangedClient(args.PreviousOwnerId);
-            }
-        }
-
         private void RaiseHandlerException(HandlerExceptionArgs args)
         {
             Action<HandlerExceptionArgs> handlers = OnHandlerException;
@@ -1397,6 +1125,55 @@ namespace Fomoxa.Unity
             public Action Failed { get; }
         }
 
+        private sealed class EntityBackend : IClientEntityBackend
+        {
+            private readonly ClientManager owner;
+            private readonly PrefabRegistry prefabs;
+
+            public EntityBackend(ClientManager owner, PrefabRegistry prefabs)
+            {
+                this.owner = owner;
+                this.prefabs = prefabs;
+            }
+
+            public SpawnResult CheckPrefab(in SpawnedObject spawned)
+            {
+                if (!prefabs.TryGet(spawned.PrefabId, out PrefabEntry entry))
+                {
+                    return SpawnResult.UnknownPrefab;
+                }
+
+                return entry.Fingerprint == spawned.PrefabFingerprint ? SpawnResult.Spawned : SpawnResult.IncompatiblePrefab;
+            }
+
+            public INetworkEntity Create(in SpawnedObject spawned)
+            {
+                prefabs.TryGet(spawned.PrefabId, out PrefabEntry entry);
+                NetworkObject instance = ClientManager.Create(entry, spawned);
+                if (spawned.SceneId != 0 && owner.clientScenes.TryGetValue(spawned.SceneId, out Scene scene))
+                {
+                    SceneManager.MoveGameObjectToScene(instance.gameObject, scene);
+                }
+
+                return instance;
+            }
+
+            public SpawnResult PlaceSceneObject(in SpawnedObject spawned, out INetworkEntity entity)
+            {
+                SpawnResult placed = owner.PlaceSceneObject(spawned, out NetworkObject instance);
+                entity = instance;
+                return placed;
+            }
+
+            public void PrepareReceive(INetworkEntity entity) => ((NetworkObject)entity).ResetClientReceive();
+
+            public void End(INetworkEntity entity) => owner.End((NetworkObject)entity);
+
+            public void HideOnHost(INetworkEntity entity) => ((NetworkObject)entity).HideOnHost();
+
+            public void ShowOnHost(INetworkEntity entity) => ((NetworkObject)entity).ShowOnHost();
+        }
+
         private sealed class SceneHost : ISceneHost
         {
             private readonly ClientManager owner;
@@ -1409,20 +1186,6 @@ namespace Fomoxa.Unity
             public bool TryLoad(uint sceneId, Action loaded, Action failed) => owner.LoadScene(sceneId, loaded, failed);
 
             public void Unload(uint sceneId, Action unloaded) => owner.UnloadScene(sceneId, unloaded);
-        }
-
-        private sealed class Spawner : IObjectSpawner
-        {
-            private readonly ClientManager owner;
-
-            public Spawner(ClientManager owner)
-            {
-                this.owner = owner;
-            }
-
-            public SpawnResult Spawn(in SpawnedObject spawned) => owner.SpawnInstance(spawned);
-
-            public void Despawn(uint objectId) => owner.DespawnInstance(objectId);
         }
 
         private readonly struct HeldState

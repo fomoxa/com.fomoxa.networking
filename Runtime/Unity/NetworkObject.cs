@@ -21,9 +21,8 @@ namespace Fomoxa.Unity
         private NetworkBehaviour[] behaviours = Array.Empty<NetworkBehaviour>();
         private EntityBehaviour[] entityBehaviours = Array.Empty<EntityBehaviour>();
         private EntityRecord record;
-        private uint clientObjectId;
 
-        public uint ObjectId => record != null ? record.ObjectId : clientObjectId;
+        public uint ObjectId => record != null ? record.ObjectId : 0;
 
         public uint PrefabId => prefabId;
 
@@ -73,7 +72,7 @@ namespace Fomoxa.Unity
 
         public Fomoxa.Networking.Simulation.PhysicsBody2D Body2D => (Server?.Physics ?? Client?.Physics)?.Body2DOf(this) ?? default;
 
-        internal ClientManager Client { get; private set; }
+        internal ClientManager Client => record?.Client?.Owner as ClientManager;
 
         internal uint Fingerprint { get; set; }
 
@@ -105,8 +104,6 @@ namespace Fomoxa.Unity
             Range = GetComponent<ObserverRange>();
         }
 
-        internal bool HasInput { get; private set; }
-
         internal bool IsPredicting
         {
             get
@@ -120,93 +117,6 @@ namespace Fomoxa.Unity
                 }
 
                 return false;
-            }
-        }
-
-        internal void Register(RpcMessageIds rpcIds, MessageChannels channels, StateProtocol stateProtocol, InputRules inputRules)
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                behaviour.Register(rpcIds, channels, stateProtocol, inputRules);
-                HasInput |= behaviour.InputSlot != null;
-            }
-        }
-
-        internal void CaptureStates()
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                if (behaviour.StateSlot != null)
-                {
-                    behaviour.PrepareState();
-                    behaviour.StateSlot.Capture();
-                }
-            }
-        }
-
-        internal bool TryApplyStates(IReadOnlyList<ReadOnlyMemory<byte>> states, bool shared)
-        {
-            if (states.Count != behaviours.Length)
-            {
-                return false;
-            }
-
-            for (int index = 0; index < behaviours.Length; index++)
-            {
-                StateSlot slot = behaviours[index].StateSlot;
-                if (slot == null || states[index].IsEmpty)
-                {
-                    if (slot != null || !states[index].IsEmpty)
-                    {
-                        return false;
-                    }
-
-                    continue;
-                }
-
-                try
-                {
-                    slot.Validate(states[index]);
-                }
-                catch (MessageDecodeException)
-                {
-                    return false;
-                }
-            }
-
-            for (int index = 0; index < behaviours.Length; index++)
-            {
-                behaviours[index].StateSlot?.ApplyInitial(states[index], shared);
-            }
-
-            return true;
-        }
-
-        internal void AttachClient(ClientManager client, uint objectId)
-        {
-            Client = client;
-            clientObjectId = objectId;
-        }
-
-        internal void DetachClient()
-        {
-            Client = null;
-            clientObjectId = 0;
-        }
-
-        internal void StartClient()
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                behaviour.OnStartClient();
-            }
-        }
-
-        internal void StopClient()
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                behaviour.OnStopClient();
             }
         }
 
@@ -266,14 +176,6 @@ namespace Fomoxa.Unity
 
             hiddenRenderers.Clear();
             return true;
-        }
-
-        internal void OwnerChangedClient(ulong previousOwnerId)
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                behaviour.OnOwnerChangedClient(previousOwnerId);
-            }
         }
 
         internal void DestroyGameObject()

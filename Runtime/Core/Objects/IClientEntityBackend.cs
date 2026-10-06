@@ -1,0 +1,19 @@
+namespace Fomoxa.Networking.Objects
+{
+    internal interface IClientEntityBackend
+    {
+        SpawnResult CheckPrefab(in SpawnedObject spawned);
+
+        INetworkEntity Create(in SpawnedObject spawned);
+
+        SpawnResult PlaceSceneObject(in SpawnedObject spawned, out INetworkEntity entity);
+
+        void PrepareReceive(INetworkEntity entity);
+
+        void End(INetworkEntity entity);
+
+        void HideOnHost(INetworkEntity entity);
+
+        void ShowOnHost(INetworkEntity entity);
+    }
+}

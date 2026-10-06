@@ -5,6 +5,7 @@ using Fomoxa.Net;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Sessions;
 using Fomoxa.Networking;
+using Fomoxa.Networking.Objects;
 using Fomoxa.Unity.Tests.Support;
 using NUnit.Framework;
 using UnityEditor;
@@ -192,15 +193,15 @@ namespace Fomoxa.Unity.Tests
             byte[] valid = StateCodecs.Counter.Encode(new CounterState { Value = 5 }).ToArray();
             ReadOnlyMemory<byte> none = ReadOnlyMemory<byte>.Empty;
 
-            Assert.IsFalse(Registered().TryApplyStates(new ReadOnlyMemory<byte>[] { none }, false));
-            Assert.IsFalse(Registered().TryApplyStates(new ReadOnlyMemory<byte>[] { none, none }, false));
-            Assert.IsFalse(Registered().TryApplyStates(new ReadOnlyMemory<byte>[] { valid, valid }, false));
-            Assert.IsFalse(Registered().TryApplyStates(new ReadOnlyMemory<byte>[] { none, new byte[] { 1, 2 } }, false));
+            Assert.IsFalse(ClientEntities.TryApplyStates(Behaviours(Registered()), new ReadOnlyMemory<byte>[] { none }, false));
+            Assert.IsFalse(ClientEntities.TryApplyStates(Behaviours(Registered()), new ReadOnlyMemory<byte>[] { none, none }, false));
+            Assert.IsFalse(ClientEntities.TryApplyStates(Behaviours(Registered()), new ReadOnlyMemory<byte>[] { valid, valid }, false));
+            Assert.IsFalse(ClientEntities.TryApplyStates(Behaviours(Registered()), new ReadOnlyMemory<byte>[] { none, new byte[] { 1, 2 } }, false));
             NetworkObject accepted = Registered();
-            Assert.IsTrue(accepted.TryApplyStates(new ReadOnlyMemory<byte>[] { none, valid }, false));
+            Assert.IsTrue(ClientEntities.TryApplyStates(Behaviours(accepted), new ReadOnlyMemory<byte>[] { none, valid }, false));
             Assert.AreEqual(5u, accepted.GetComponent<StateBehaviour>().State.Value);
             NetworkObject shared = Registered();
-            Assert.IsTrue(shared.TryApplyStates(new ReadOnlyMemory<byte>[] { none, valid }, true));
+            Assert.IsTrue(ClientEntities.TryApplyStates(Behaviours(shared), new ReadOnlyMemory<byte>[] { none, valid }, true));
             Assert.AreEqual(0u, shared.GetComponent<StateBehaviour>().State.Value);
         }
 
@@ -208,9 +209,15 @@ namespace Fomoxa.Unity.Tests
         {
             NetworkObject instance = UnityEngine.Object.Instantiate(prefab);
             instance.CollectBehaviours();
-            instance.Register(new RpcMessageIds(), server.Registry.Channels, TestObjects.StateProtocol(server.Registry.Channels), new InputRules());
+            foreach (EntityBehaviour behaviour in Behaviours(instance))
+            {
+                behaviour.Register(new RpcMessageIds(), server.Registry.Channels, TestObjects.StateProtocol(server.Registry.Channels), new InputRules());
+            }
+
             return instance;
         }
+
+        private static IReadOnlyList<EntityBehaviour> Behaviours(NetworkObject instance) => ((INetworkEntity)instance).EntityBehaviours;
 
         private (NetworkManager Manager, ulong PeerId) Connect()
         {

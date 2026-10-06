@@ -26,6 +26,7 @@ namespace Fomoxa.Networking.Objects
         private readonly ReconcileState reconcileState = new ReconcileState();
         private readonly List<EntityRecord> applying = new List<EntityRecord>();
         private readonly List<ReconcileSend> reconciling = new List<ReconcileSend>();
+        private static readonly List<EntityRecord> NoRecords = new List<EntityRecord>();
 
         public ServerEntities(
             object owner,
@@ -79,14 +80,14 @@ namespace Fomoxa.Networking.Objects
 
         public IReadOnlyDictionary<uint, EntityRecord> Spawned => spawned;
 
-        public IEnumerable<EntityRecord> InSpawnOrder => spawnOrder;
+        public LinkedList<EntityRecord> InSpawnOrder => spawnOrder;
 
         public EntityRecord Spawning { get; private set; }
 
         public bool TryGet(uint objectId, out EntityRecord record) => spawned.TryGetValue(objectId, out record);
 
-        public IReadOnlyList<EntityRecord> OwnedBy(ulong peerId) =>
-            owned.TryGetValue(peerId, out List<EntityRecord> records) ? records : (IReadOnlyList<EntityRecord>)Array.Empty<EntityRecord>();
+        public List<EntityRecord> OwnedBy(ulong peerId) =>
+            owned.TryGetValue(peerId, out List<EntityRecord> records) ? records : NoRecords;
 
         public bool IsSceneObject(INetworkEntity entity) => sceneObjects.Contains(entity);
 

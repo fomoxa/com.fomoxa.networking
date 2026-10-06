@@ -15,11 +15,33 @@ namespace Fomoxa.Networking
 
         public INetworkEntity Representation { get; }
 
-        public ulong OwnerId => Server != null && Server.Objects.TryGet(ObjectId, out ObjectRow row) ? row.OwnerId : 0;
+        public ulong OwnerId
+        {
+            get
+            {
+                if (Server != null && Server.Objects.TryGet(ObjectId, out ObjectRow row))
+                {
+                    return row.OwnerId;
+                }
+
+                if (Client != null && Client.Objects.TryGet(ObjectId, out row))
+                {
+                    return row.OwnerId;
+                }
+
+                return 0;
+            }
+        }
+
+        public bool IsOwner => Client != null && Client.Objects.IsOwner(ObjectId);
 
         public bool OnServer => Server != null;
 
+        public bool OnClient => Client != null;
+
         internal ServerEntities Server { get; set; }
+
+        internal ClientEntities Client { get; set; }
 
         internal uint Fingerprint { get; }
 
