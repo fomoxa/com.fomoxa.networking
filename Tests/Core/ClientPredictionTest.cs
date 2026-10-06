@@ -1,0 +1,262 @@
+using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
+using BundleFixture;
+using Fomoxa.Networking.Messaging;
+using Fomoxa.Networking.Prediction;
+using Fomoxa.Networking.Simulation;
+using NUnit.Framework;
+
+namespace Fomoxa.Networking.Tests
+{
+    public sealed class ClientPredictionTest
+    {
+        [Test]
+        public void TwoEntitiesInOneWorldCaptureLoadAndStepItOncePerTick()
+        {
+            var rig = new Rig();
+            var world = new FakeWorld();
+            Mover first = rig.Spawn(world);
+            Mover second = rig.Spawn(world);
+            rig.StartPredicting(first, second);
+            rig.Tick(3);
+            rig.Tick(4);
+
+            Assert.AreEqual(3, world.Saves);
+
+            int requests = rig.Backend.WorldRequests;
+            rig.Mismatch(first, 3);
+            rig.Tick(5);
+
+            Assert.AreEqual(1, world.Loads);
+            Assert.AreEqual(1, world.Steps);
+            Assert.AreEqual(5, world.Saves);
+            Assert.AreEqual(requests + 4, rig.Backend.WorldRequests);
+        }
+
+        [Test]
+        public void EntitiesInSeparateWorldsReplayOnlyTheirOwnWorld()
+        {
+            var rig = new Rig();
+            var left = new FakeWorld();
+            var right = new FakeWorld();
+            Mover first = rig.Spawn(left);
+            Mover second = rig.Spawn(right);
+            rig.StartPredicting(first, second);
+            rig.Tick(3);
+            rig.Tick(4);
+
+            rig.Mismatch(first, 3);
+            rig.Tick(5);
+
+            Assert.AreEqual(1, left.Loads);
+            Assert.AreEqual(1, left.Steps);
+            Assert.AreEqual(0, right.Loads);
+            Assert.AreEqual(0, right.Steps);
+        }
+
+        [Test]
+        public void ASharedWorldJoinsTheWorldsOfTwoEntitiesIntoOneGroup()
+        {
+            var rig = new Rig();
+            var a = new FakeWorld();
+            var shared = new FakeWorld();
+            var c = new FakeWorld();
+            Mover first = rig.Spawn(a, shared);
+            Mover second = rig.Spawn(shared, c);
+            rig.StartPredicting(first, second);
+            rig.Tick(3);
+            rig.Tick(4);
+
+            rig.Mismatch(first, 3);
+            rig.Tick(5);
+
+            foreach (FakeWorld world in new[] { a, shared, c })
+            {
+                Assert.AreEqual(1, world.Loads);
+                Assert.AreEqual(1, world.Steps);
+                Assert.AreEqual(5, world.Saves);
+            }
+        }
+
+        [Test]
+        public void AnEntityWithoutAWorldReconcilesOnItsOwn()
+        {
+            var rig = new Rig();
+            Mover mover = rig.Spawn();
+
+            rig.StartPredicting(mover);
+
+            Assert.IsTrue(mover.InputSlot.Predicting);
+            Assert.AreEqual(0, rig.Backend.HistoryRequests);
+        }
+
+        private sealed class Rig
+        {
+            public readonly ClientEntitiesTest.World World = new ClientEntitiesTest.World();
+            public readonly FakeBackend Backend = new FakeBackend();
+            public readonly ClientPrediction Prediction;
+
+            public Rig()
+            {
+                World.Client.InputRules.Allowed = true;
+                Prediction = new ClientPrediction(World.Client, World.ClientSession, World.ClientDispatcher, TestObjects.InputProtocol(), Backend, new NetworkLog(exception => throw exception, message => { }))
+                {
+                    SimulatesPhysics = true,
+                };
+            }
+
+            public Mover Spawn(params FakeWorld[] worlds)
+            {
+                var mover = new Mover(World.ClientCalls);
+                World.Backend.CreateBehaviour = () => mover;
+                World.Server.Spawn(World.Served(), World.ClientObjects.LocalPeerId);
+                World.Run(10);
+                Backend.Worlds[World.Backend.Created[World.Backend.Created.Count - 1]] = worlds;
+                return mover;
+            }
+
+            public void StartPredicting(params Mover[] movers)
+            {
+                Tick(1);
+                foreach (Mover mover in movers)
+                {
+                    mover.InputSlot.HoldPending(1, Value.Encode(0));
+                }
+
+                Tick(2);
+            }
+
+            public void Mismatch(Mover mover, uint tick) => mover.InputSlot.HoldPending(tick, Value.Encode(999));
+
+            public void Tick(uint tick)
+            {
+                Prediction.Predict(tick, true, 1f / 30);
+                Prediction.CapturePredicted(tick);
+            }
+        }
+
+        private sealed class Mover : ClientEntitiesTest.RecordingBehaviour
+        {
+            public Mover(List<string> calls)
+                : base("mover", calls)
+            {
+            }
+
+            public int Position { get; private set; }
+
+            protected override void OnRegisterInput(NetworkInput input)
+            {
+                input.Use(new ValueCodec(0xC0DE0001), value => value.Number = 1, (value, context) => Position += value.Number);
+                input.Reconcile(new ValueCodec(0xC0DE0002), state => state.Number = Position, state => Position = state.Number);
+            }
+        }
+
+        private sealed class Value
+        {
+            public int Number;
+
+            public static byte[] Encode(int number)
+            {
+                var bytes = new byte[4];
+                BinaryPrimitives.WriteInt32LittleEndian(bytes, number);
+                return bytes;
+            }
+        }
+
+        private sealed class ValueCodec : IMessageCodec<Value>
+        {
+            public ValueCodec(uint messageId)
+            {
+                MessageId = messageId;
+            }
+
+            public uint MessageId { get; }
+
+            public ReadOnlyMemory<byte> Encode(Value value) => Value.Encode(value.Number);
+
+            public void Decode(ReadOnlyMemory<byte> payload, ref Value value) =>
+                value.Number = BinaryPrimitives.ReadInt32LittleEndian(payload.Span);
+        }
+
+        private sealed class FakeWorld : IPhysicsSimulation
+        {
+            public int Steps { get; private set; }
+
+            public int Saves { get; private set; }
+
+            public int Loads { get; private set; }
+
+            public PhysicsBackend Backend => PhysicsBackend.Rapier;
+
+            public void Step(float seconds) => Steps++;
+
+            public PhysicsSnapshot CreateSnapshot() => new Snapshot();
+
+            public void Save(PhysicsSnapshot into) => Saves++;
+
+            public void Load(PhysicsSnapshot from) => Loads++;
+
+            private sealed class Snapshot : PhysicsSnapshot
+            {
+            }
+        }
+
+        private sealed class FakeBackend : IClientPredictionBackend
+        {
+            public readonly Dictionary<INetworkEntity, FakeWorld[]> Worlds = new Dictionary<INetworkEntity, FakeWorld[]>();
+            private readonly PhysicsHistories histories = new PhysicsHistories();
+
+            public int HistoryRequests { get; private set; }
+
+            public int WorldRequests { get; private set; }
+
+            public void WorldsOf(INetworkEntity entity, List<IPhysicsSimulation> worlds)
+            {
+                WorldRequests++;
+                if (Worlds.TryGetValue(entity, out FakeWorld[] found))
+                {
+                    worlds.AddRange(found);
+                }
+            }
+
+            public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity)
+            {
+                HistoryRequests++;
+                return histories.Of(world, capacity);
+            }
+
+            public void PlaceProxy(INetworkEntity entity)
+            {
+            }
+
+            public void EndProxy(INetworkEntity entity)
+            {
+            }
+
+            public void ForgetDestroyedProxies()
+            {
+            }
+
+            public void BeginCorrection(INetworkEntity entity)
+            {
+            }
+
+            public void EndCorrection(INetworkEntity entity)
+            {
+            }
+
+            public void RestoreContacts(IPhysicsSimulation world, uint tick)
+            {
+            }
+
+            public void QueryContacts(IPhysicsSimulation world, uint tick, bool record, int capacity)
+            {
+            }
+
+            public void PublishContacts(IPhysicsSimulation world)
+            {
+            }
+        }
+    }
+}

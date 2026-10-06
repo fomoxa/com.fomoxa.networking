@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using BundleFixture;
 using Fomoxa.Networking;
+using Fomoxa.Networking.Prediction;
 using Fomoxa.Networking.Sessions;
 using Fomoxa.Networking.Simulation;
 using Fomoxa.Unity.Tests.Support;
@@ -329,33 +330,34 @@ namespace Fomoxa.Unity.Tests
             {
                 var worlds = new PhysicsWorlds(PhysicsBackend.Rigidbody);
                 var groups = new ReplayGroups();
-                groups.Add(worlds.Of(serverScene), worlds.Of2D(serverScene));
-                groups.Add(worlds.Of(clientScene), worlds.Of2D(clientScene));
-                groups.Add(worlds.Of(third), worlds.Of2D(third));
+                groups.Add(Worlds(worlds.Of(serverScene), worlds.Of2D(serverScene)));
+                groups.Add(Worlds(worlds.Of(clientScene), worlds.Of2D(clientScene)));
+                groups.Add(Worlds(worlds.Of(third), worlds.Of2D(third)));
 
                 Assert.AreEqual(3, groups.Groups.Count);
 
-                groups.Add(worlds.Of(serverScene), worlds.Of2D(clientScene));
+                groups.Add(Worlds(worlds.Of(serverScene), worlds.Of2D(clientScene)));
 
                 Assert.AreEqual(2, groups.Groups.Count);
                 ReplayGroup joined = groups.Groups.Single(group => group.Worlds.Contains(worlds.Of(serverScene)));
-                Assert.AreEqual(2, joined.Worlds.Count);
-                Assert.AreEqual(2, joined.Worlds2D.Count);
+                Assert.AreEqual(4, joined.Worlds.Count);
                 Assert.IsTrue(joined.Worlds.Contains(worlds.Of(clientScene)));
-                Assert.IsFalse(joined.Worlds2D.Contains(worlds.Of2D(third)));
+                Assert.IsTrue(joined.Worlds.Contains(worlds.Of2D(serverScene)));
+                Assert.IsFalse(joined.Worlds.Contains(worlds.Of2D(third)));
 
                 groups.Clear();
-                groups.Add(worlds.Of(third), worlds.Of2D(third));
+                groups.Add(Worlds(worlds.Of(third), worlds.Of2D(third)));
 
                 Assert.AreEqual(1, groups.Groups.Count);
-                Assert.AreEqual(1, groups.Groups[0].Worlds.Count);
-                Assert.AreEqual(1, groups.Groups[0].Worlds2D.Count);
+                Assert.AreEqual(2, groups.Groups[0].Worlds.Count);
             }
             finally
             {
                 EditorSceneManager.ClosePreviewScene(third);
             }
         }
+
+        private static List<IPhysicsSimulation> Worlds(params IPhysicsSimulation[] worlds) => new List<IPhysicsSimulation>(worlds);
 
         private static void AssertAgrees(PhysicsReconcileBehaviour2D onServer, PhysicsReconcileBehaviour2D onClient, uint after)
         {

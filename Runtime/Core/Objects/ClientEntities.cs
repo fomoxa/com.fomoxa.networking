@@ -388,7 +388,7 @@ namespace Fomoxa.Networking.Objects
             }
         }
 
-        private static void ResetReceive(IReadOnlyList<EntityBehaviour> behaviours)
+        internal static void ResetReceive(IReadOnlyList<EntityBehaviour> behaviours)
         {
             foreach (EntityBehaviour behaviour in behaviours)
             {
@@ -396,7 +396,7 @@ namespace Fomoxa.Networking.Objects
             }
         }
 
-        private static bool IsPredicting(IReadOnlyList<EntityBehaviour> behaviours)
+        internal static bool IsPredicting(IReadOnlyList<EntityBehaviour> behaviours)
         {
             for (int index = 0; index < behaviours.Count; index++)
             {

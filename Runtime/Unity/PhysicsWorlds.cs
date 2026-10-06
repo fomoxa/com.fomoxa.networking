@@ -115,7 +115,7 @@ namespace Fomoxa.Unity
     {
         private readonly Dictionary<PhysicsScene, UnityPhysicsWorld> worlds = new Dictionary<PhysicsScene, UnityPhysicsWorld>();
         private readonly Dictionary<PhysicsScene2D, UnityPhysicsWorld2D> worlds2D = new Dictionary<PhysicsScene2D, UnityPhysicsWorld2D>();
-        private readonly Dictionary<IPhysicsSimulation, PhysicsHistory> histories = new Dictionary<IPhysicsSimulation, PhysicsHistory>();
+        private readonly PhysicsHistories histories = new PhysicsHistories();
         private readonly Dictionary<Rigidbody, bool> proxies = new Dictionary<Rigidbody, bool>();
         private readonly Dictionary<Rigidbody2D, RigidbodyType2D> proxies2D = new Dictionary<Rigidbody2D, RigidbodyType2D>();
         private readonly List<UnityPhysicsWorld> stepping = new List<UnityPhysicsWorld>();
@@ -188,16 +188,7 @@ namespace Fomoxa.Unity
             return new PhysicsBody2D(world, world.Register(rigidbody));
         }
 
-        public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity)
-        {
-            if (!histories.TryGetValue(world, out PhysicsHistory history) || history.Capacity != capacity)
-            {
-                history = new PhysicsHistory(world, capacity);
-                histories[world] = history;
-            }
-
-            return history;
-        }
+        public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) => histories.Of(world, capacity);
 
         public void StepWorlds(float seconds)
         {
@@ -375,7 +366,7 @@ namespace Fomoxa.Unity
 
             foreach (PhysicsScene physicsScene in emptied)
             {
-                histories.Remove(worlds[physicsScene]);
+                histories.Forget(worlds[physicsScene]);
                 worlds.Remove(physicsScene);
                 PhysicsStepOwners.Worlds.Release(physicsScene, this);
             }
@@ -412,7 +403,7 @@ namespace Fomoxa.Unity
 
             foreach (PhysicsScene2D physicsScene in emptied2D)
             {
-                histories.Remove(worlds2D[physicsScene]);
+                histories.Forget(worlds2D[physicsScene]);
                 worlds2D.Remove(physicsScene);
                 PhysicsStepOwners.Worlds2D.Release(physicsScene, this);
             }

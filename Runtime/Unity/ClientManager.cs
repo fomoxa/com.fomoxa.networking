@@ -28,16 +28,6 @@ namespace Fomoxa.Unity
         private readonly StateProtocol stateProtocol;
         private readonly TimeManager timeManager;
         private readonly ClientClock clock;
-        private readonly InputProtocol inputProtocol;
-        private readonly InputFrames inputFrames = new InputFrames();
-        private readonly List<NetworkObject> gathering = new List<NetworkObject>();
-        private readonly List<NetworkObject> predicted = new List<NetworkObject>();
-        private readonly List<NetworkObject> worldObjects = new List<NetworkObject>();
-        private readonly List<IPhysicsSimulation> predictedWorlds = new List<IPhysicsSimulation>();
-        private readonly ReplayGroups replayGroups = new ReplayGroups();
-        private readonly List<PhysicsHistory> replayHistories = new List<PhysicsHistory>();
-        private readonly List<HeldState> heldStates = new List<HeldState>();
-        private ReconcileState reconcileState = new ReconcileState();
 
         internal ClientManager(
             Schema schema,
@@ -66,14 +56,12 @@ namespace Fomoxa.Unity
             channels = protocol.Channels;
             this.stateProtocol = stateProtocol;
             this.timeManager = timeManager;
-            this.inputProtocol = inputProtocol;
             RpcIds = rpcIds;
             Dispatcher = new MessageDispatcher(schema);
             session = new ClientSession(schema, sessionConfig, limits, Dispatcher, protocol);
             session.OnHandlerException += RaiseHandlerException;
             Entities = new ClientEntities(this, session, Dispatcher, channels, stateProtocol, transformProtocol, rpcIds, serverManager.Entities, new EntityBackend(this, prefabs), UnityNetworkLog.Instance);
-            Entities.OnDespawning += record => Physics?.EndProxy((NetworkObject)record.Representation);
-            Dispatcher.RegisterObject(inputProtocol.ReconcileCodec.MessageId, (peerId, objectId, behaviourIndex, body) => HoldReconcileState(objectId, behaviourIndex, body));
+            Prediction = new ClientPrediction(Entities, session, Dispatcher, inputProtocol, new PredictionBackend(this), UnityNetworkLog.Instance);
             session.OnClientConnectionState += PrepareSceneObjectsWhenStarted;
             session.OnClientConnectionState += EndHostVisibilityWhenStopped;
             reconnector = new ClientReconnector(session, reconnectPolicy);
@@ -116,7 +104,7 @@ namespace Fomoxa.Unity
 
         public ConnectionState State => session.State;
 
-        public bool IsReplaying { get; private set; }
+        public bool IsReplaying => Prediction.IsReplaying;
 
         public TimeSpan Rtt => connectedLocally ? TimeSpan.Zero : clock.Estimator.Rtt;
 
@@ -142,7 +130,13 @@ namespace Fomoxa.Unity
 
         internal PhysicsWorlds Physics { get; set; }
 
-        internal bool SimulatesPhysics { get; set; }
+        internal bool SimulatesPhysics
+        {
+            get => Prediction.SimulatesPhysics;
+            set => Prediction.SimulatesPhysics = value;
+        }
+
+        internal ClientPrediction Prediction { get; }
 
         internal bool RecordsContacts => !connectedLocally && session.State == ConnectionState.Started;
 
@@ -177,128 +171,13 @@ namespace Fomoxa.Unity
 
         internal void Tick(TimeSpan now) => reconnector.Tick(now);
 
-        internal void PlaceProxies()
-        {
-            if (connectedLocally || session.State != ConnectionState.Started)
-            {
-                return;
-            }
+        internal void PlaceProxies() => Prediction.PlaceProxies();
 
-            Physics.ForgetDestroyedProxies();
-            foreach (EntityRecord record in Entities.Spawned.Values)
-            {
-                var networkObject = (NetworkObject)record.Representation;
-                if (networkObject.IsPredicting)
-                {
-                    Physics.EndProxy(networkObject);
-                }
-                else
-                {
-                    Physics.PlaceProxy(networkObject);
-                }
-            }
-        }
+        internal void EndProxies() => Prediction.EndProxies();
 
-        internal void EndProxies()
-        {
-            foreach (EntityRecord record in Entities.Spawned.Values)
-            {
-                var networkObject = (NetworkObject)record.Representation;
-                Physics.EndProxy(networkObject);
-            }
-        }
+        internal void Predict(uint predictionTick) => Prediction.Predict(predictionTick, timeManager.ClockSynced, (float)timeManager.TickDelta);
 
-        internal void Predict(uint predictionTick)
-        {
-            predicted.Clear();
-            if (connectedLocally || session.State != ConnectionState.Started || !timeManager.ClockSynced)
-            {
-                return;
-            }
-
-            gathering.Clear();
-            foreach (EntityRecord record in Entities.Spawned.Values)
-            {
-                var networkObject = (NetworkObject)record.Representation;
-                if (record.HasInput)
-                {
-                    gathering.Add(networkObject);
-                }
-            }
-
-            foreach (NetworkObject networkObject in gathering)
-            {
-                if (Objects.IsOwner(networkObject.ObjectId))
-                {
-                    predicted.Add(networkObject);
-                }
-                else
-                {
-                    StopPredicting(networkObject);
-                }
-            }
-
-            gathering.Clear();
-            if (SimulatesPhysics)
-            {
-                ReconcileWorlds();
-            }
-            else
-            {
-                foreach (NetworkObject networkObject in predicted)
-                {
-                    Reconcile(networkObject);
-                }
-            }
-
-            foreach (NetworkObject networkObject in predicted)
-            {
-                PredictOwned(networkObject, predictionTick);
-            }
-        }
-
-        internal void CapturePredicted(uint predictionTick)
-        {
-            if (!SimulatesPhysics)
-            {
-                predicted.Clear();
-                return;
-            }
-
-            predictedWorlds.Clear();
-            foreach (NetworkObject networkObject in predicted)
-            {
-                if (networkObject == null || networkObject.Client != this)
-                {
-                    continue;
-                }
-
-                bool capturedAny = false;
-                foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-                {
-                    InputSlot slot = behaviour.InputSlot;
-                    if (slot?.Reconcile != null && slot.Predicting)
-                    {
-                        capturedAny = true;
-                        CaptureAt(slot, predictionTick);
-                    }
-                }
-
-                if (capturedAny)
-                {
-                    AddWorld(Physics.Of(networkObject.gameObject.scene));
-                    AddWorld(Physics.Of2D(networkObject.gameObject.scene));
-                }
-            }
-
-            foreach (IPhysicsSimulation world in predictedWorlds)
-            {
-                Physics.HistoryOf(world, InputRules.History).Save(predictionTick);
-            }
-
-            predictedWorlds.Clear();
-            predicted.Clear();
-        }
+        internal void CapturePredicted(uint predictionTick) => Prediction.CapturePredicted(predictionTick);
 
         internal void UpdateClock(TimeSpan now)
         {
@@ -319,433 +198,6 @@ namespace Fomoxa.Unity
                 && sceneObject == networkObject)
             {
                 sceneObjects.Remove(networkObject.SceneObjectId);
-            }
-        }
-
-        private void HoldReconcileState(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
-        {
-            if (connectedLocally
-                || !TryGetObject(objectId, out NetworkObject networkObject)
-                || !Objects.IsOwner(objectId)
-                || behaviourIndex >= networkObject.Behaviours.Count)
-            {
-                return;
-            }
-
-            InputSlot slot = networkObject.Behaviours[behaviourIndex].InputSlot;
-            if (slot?.Reconcile == null)
-            {
-                return;
-            }
-
-            inputProtocol.ReconcileCodec.Decode(body, ref reconcileState);
-            slot.HoldPending(reconcileState.Tick, reconcileState.Data.Span);
-        }
-
-        private void Reconcile(NetworkObject networkObject)
-        {
-            IReadOnlyList<NetworkBehaviour> behaviours = networkObject.Behaviours;
-            bool correcting = false;
-            bool replayedAny = false;
-            for (int index = 0; index < behaviours.Count; index++)
-            {
-                InputSlot slot = behaviours[index].InputSlot;
-                if (slot?.Reconcile == null || !slot.HasPending)
-                {
-                    continue;
-                }
-
-                if (!correcting)
-                {
-                    correcting = true;
-                    BeginCorrection(networkObject);
-                }
-
-                if (!slot.Predicting)
-                {
-                    ResetTransforms(networkObject);
-                }
-
-                uint tick = slot.PendingTick;
-                try
-                {
-                    bool replayed = slot.ReconcilePending();
-                    slot.Predicting = true;
-                    if (replayed)
-                    {
-                        replayedAny = true;
-                        behaviours[index].Reconciled(tick);
-                    }
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogException(exception);
-                }
-            }
-
-            if (replayedAny)
-            {
-                EndCorrection(networkObject);
-            }
-        }
-
-        private void ReconcileWorlds()
-        {
-            replayGroups.Clear();
-            foreach (NetworkObject networkObject in predicted)
-            {
-                Scene scene = networkObject.gameObject.scene;
-                replayGroups.Add(Physics.Of(scene), Physics.Of2D(scene));
-            }
-
-            foreach (ReplayGroup group in replayGroups.Groups)
-            {
-                worldObjects.Clear();
-                foreach (NetworkObject networkObject in predicted)
-                {
-                    if (group.Worlds.Contains(Physics.Of(networkObject.gameObject.scene)))
-                    {
-                        worldObjects.Add(networkObject);
-                    }
-                }
-
-                ReconcileGroup(group, worldObjects);
-            }
-
-            worldObjects.Clear();
-            replayGroups.Clear();
-        }
-
-        private void ReconcileGroup(ReplayGroup group, List<NetworkObject> objects)
-        {
-            if (!TryFindNewestPending(objects, out uint target))
-            {
-                return;
-            }
-
-            heldStates.Clear();
-            bool mismatched = false;
-            foreach (NetworkObject networkObject in objects)
-            {
-                IReadOnlyList<NetworkBehaviour> behaviours = networkObject.Behaviours;
-                for (int index = 0; index < behaviours.Count; index++)
-                {
-                    InputSlot slot = behaviours[index].InputSlot;
-                    if (slot?.Reconcile == null || !slot.HasPending)
-                    {
-                        continue;
-                    }
-
-                    ReadOnlyMemory<byte> server = slot.TakePending(out uint tick);
-                    if (tick != target)
-                    {
-                        slot.Forget(tick);
-                        continue;
-                    }
-
-                    bool matched = false;
-                    try
-                    {
-                        matched = slot.MatchesAt(target, server);
-                    }
-                    catch (Exception exception)
-                    {
-                        Debug.LogException(exception);
-                    }
-
-                    heldStates.Add(new HeldState(networkObject, behaviours[index], server, matched));
-                    mismatched |= !matched;
-                }
-            }
-
-            if (mismatched)
-            {
-                Replay(group, objects, target);
-            }
-
-            foreach (HeldState held in heldStates)
-            {
-                held.Behaviour.InputSlot.Forget(target);
-                if (!held.Matched)
-                {
-                    held.Behaviour.Reconciled(target);
-                }
-            }
-
-            heldStates.Clear();
-        }
-
-        private void Replay(ReplayGroup group, List<NetworkObject> objects, uint target)
-        {
-            foreach (NetworkObject networkObject in objects)
-            {
-                BeginCorrection(networkObject);
-            }
-
-            foreach (HeldState held in heldStates)
-            {
-                if (!held.Behaviour.InputSlot.Predicting)
-                {
-                    ResetTransforms(held.NetworkObject);
-                    Physics.EndProxy(held.NetworkObject);
-                }
-            }
-
-            IsReplaying = true;
-            bool loaded = LoadGroup(group, target);
-            if (loaded)
-            {
-                group.RestoreContacts(target);
-            }
-
-            foreach (HeldState held in heldStates)
-            {
-                InputSlot slot = held.Behaviour.InputSlot;
-                try
-                {
-                    slot.Reconcile.Restore(held.Server);
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogException(exception);
-                }
-
-                slot.Predicting = true;
-            }
-
-            uint newest = NewestPredictedTick(objects, target);
-            float seconds = (float)timeManager.TickDelta;
-            for (uint tick = target + 1; tick <= newest && tick > target; tick++)
-            {
-                foreach (NetworkObject networkObject in objects)
-                {
-                    foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-                    {
-                        InputSlot slot = behaviour.InputSlot;
-                        if (slot?.Reconcile != null && slot.Predicting)
-                        {
-                            ReplayInput(slot, tick);
-                        }
-                    }
-                }
-
-                foreach (UnityPhysicsWorld world in group.Worlds)
-                {
-                    world.Step(seconds);
-                }
-
-                foreach (UnityPhysicsWorld2D world in group.Worlds2D)
-                {
-                    world.Step(seconds);
-                }
-
-                group.QueryContacts(tick, loaded, InputRules.History);
-                foreach (NetworkObject networkObject in objects)
-                {
-                    foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-                    {
-                        InputSlot slot = behaviour.InputSlot;
-                        if (slot?.Reconcile != null && slot.Predicting)
-                        {
-                            CaptureAt(slot, tick);
-                        }
-                    }
-                }
-
-                if (!loaded)
-                {
-                    continue;
-                }
-
-                foreach (PhysicsHistory history in replayHistories)
-                {
-                    history.Save(tick);
-                }
-            }
-
-            replayHistories.Clear();
-            IsReplaying = false;
-            group.PublishContacts();
-            foreach (NetworkObject networkObject in objects)
-            {
-                EndCorrection(networkObject);
-            }
-        }
-
-        private bool LoadGroup(ReplayGroup group, uint target)
-        {
-            replayHistories.Clear();
-            foreach (UnityPhysicsWorld world in group.Worlds)
-            {
-                replayHistories.Add(Physics.HistoryOf(world, InputRules.History));
-            }
-
-            foreach (UnityPhysicsWorld2D world in group.Worlds2D)
-            {
-                replayHistories.Add(Physics.HistoryOf(world, InputRules.History));
-            }
-
-            foreach (PhysicsHistory history in replayHistories)
-            {
-                if (!history.Has(target))
-                {
-                    return false;
-                }
-            }
-
-            foreach (PhysicsHistory history in replayHistories)
-            {
-                history.Load(target);
-            }
-
-            return true;
-        }
-
-        private static bool TryFindNewestPending(List<NetworkObject> objects, out uint target)
-        {
-            target = 0;
-            bool found = false;
-            foreach (NetworkObject networkObject in objects)
-            {
-                foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-                {
-                    InputSlot slot = behaviour.InputSlot;
-                    if (slot?.Reconcile != null && slot.HasPending && (!found || slot.PendingTick > target))
-                    {
-                        target = slot.PendingTick;
-                        found = true;
-                    }
-                }
-            }
-
-            return found;
-        }
-
-        private static uint NewestPredictedTick(List<NetworkObject> objects, uint target)
-        {
-            uint newest = target;
-            foreach (NetworkObject networkObject in objects)
-            {
-                foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-                {
-                    InputSlot slot = behaviour.InputSlot;
-                    if (slot?.Reconcile != null && slot.Predicting && slot.HistoryCount > 0 && slot.NewestTick > newest)
-                    {
-                        newest = slot.NewestTick;
-                    }
-                }
-            }
-
-            return newest;
-        }
-
-        private static void ReplayInput(InputSlot slot, uint tick)
-        {
-            try
-            {
-                slot.ReplayInput(tick);
-            }
-            catch (Exception exception)
-            {
-                Debug.LogException(exception);
-            }
-        }
-
-        private static void CaptureAt(InputSlot slot, uint tick)
-        {
-            try
-            {
-                slot.CaptureAt(tick);
-            }
-            catch (Exception exception)
-            {
-                Debug.LogException(exception);
-            }
-        }
-
-        private void AddWorld(IPhysicsSimulation world)
-        {
-            if (!predictedWorlds.Contains(world))
-            {
-                predictedWorlds.Add(world);
-            }
-        }
-
-        private void PredictOwned(NetworkObject networkObject, uint predictionTick)
-        {
-            IReadOnlyList<NetworkBehaviour> behaviours = networkObject.Behaviours;
-            for (int index = 0; index < behaviours.Count; index++)
-            {
-                InputSlot slot = behaviours[index].InputSlot;
-                if (slot == null)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    slot.Record(predictionTick, slot.Gather().Span);
-                    if (slot.Reconcile != null && slot.Predicting)
-                    {
-                        slot.ApplyGathered(new InputContext(predictionTick, false));
-                        if (!SimulatesPhysics)
-                        {
-                            slot.StoreState(predictionTick, slot.Reconcile.Capture().Span);
-                        }
-                    }
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogException(exception);
-                    continue;
-                }
-
-                inputFrames.Tick = predictionTick;
-                slot.CopyFramesTo(inputFrames.Frames);
-                session.SendToObject(inputProtocol.FramesCodec.MessageId, networkObject.ObjectId, (byte)index, inputProtocol.FramesCodec.Encode(inputFrames).Span);
-            }
-        }
-
-        private static void StopPredicting(NetworkObject networkObject)
-        {
-            bool wasPredicting = networkObject.IsPredicting;
-            foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-            {
-                InputSlot slot = behaviour.InputSlot;
-                if (slot != null)
-                {
-                    slot.ClearHistory();
-                    slot.Predicting = false;
-                }
-            }
-
-            if (wasPredicting)
-            {
-                ResetTransforms(networkObject);
-            }
-        }
-
-        private static void ResetTransforms(NetworkObject networkObject)
-        {
-            foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-            {
-                (behaviour as NetworkTransform)?.ResetReceive();
-            }
-        }
-
-        private static void BeginCorrection(NetworkObject networkObject)
-        {
-            foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-            {
-                (behaviour as NetworkTransform)?.BeginCorrection();
-            }
-        }
-
-        private static void EndCorrection(NetworkObject networkObject)
-        {
-            foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-            {
-                (behaviour as NetworkTransform)?.EndCorrection();
             }
         }
 
@@ -1127,6 +579,104 @@ namespace Fomoxa.Unity
             public void ShowOnHost(INetworkEntity entity) => ((NetworkObject)entity).ShowOnHost();
         }
 
+        private sealed class PredictionBackend : IClientPredictionBackend
+        {
+            private readonly ClientManager owner;
+
+            public PredictionBackend(ClientManager owner)
+            {
+                this.owner = owner;
+            }
+
+            public void WorldsOf(INetworkEntity entity, List<IPhysicsSimulation> worlds)
+            {
+                PhysicsWorlds physics = owner.Physics;
+                if (physics == null)
+                {
+                    return;
+                }
+
+                Scene scene = ((NetworkObject)entity).gameObject.scene;
+                worlds.Add(physics.Of(scene));
+                worlds.Add(physics.Of2D(scene));
+            }
+
+            public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) => owner.Physics.HistoryOf(world, capacity);
+
+            public void PlaceProxy(INetworkEntity entity) => owner.Physics?.PlaceProxy((NetworkObject)entity);
+
+            public void EndProxy(INetworkEntity entity) => owner.Physics?.EndProxy((NetworkObject)entity);
+
+            public void ForgetDestroyedProxies() => owner.Physics?.ForgetDestroyedProxies();
+
+            public void BeginCorrection(INetworkEntity entity)
+            {
+                foreach (NetworkBehaviour behaviour in ((NetworkObject)entity).Behaviours)
+                {
+                    (behaviour as NetworkTransform)?.BeginCorrection();
+                }
+            }
+
+            public void EndCorrection(INetworkEntity entity)
+            {
+                foreach (NetworkBehaviour behaviour in ((NetworkObject)entity).Behaviours)
+                {
+                    (behaviour as NetworkTransform)?.EndCorrection();
+                }
+            }
+
+            public void RestoreContacts(IPhysicsSimulation world, uint tick)
+            {
+                switch (world)
+                {
+                    case UnityPhysicsWorld world3D:
+                        ContactTrackers.Of(world3D.PhysicsScene)?.Restore(tick);
+                        break;
+                    case UnityPhysicsWorld2D world2D:
+                        ContactTrackers.Of(world2D.PhysicsScene)?.Restore(tick);
+                        break;
+                }
+            }
+
+            public void QueryContacts(IPhysicsSimulation world, uint tick, bool record, int capacity)
+            {
+                switch (world)
+                {
+                    case UnityPhysicsWorld world3D:
+                        ContactTracker<Collider> tracker = ContactTrackers.Of(world3D.PhysicsScene);
+                        tracker?.Query();
+                        if (record)
+                        {
+                            tracker?.Record(tick, capacity);
+                        }
+
+                        break;
+                    case UnityPhysicsWorld2D world2D:
+                        ContactTracker<Collider2D> tracker2D = ContactTrackers.Of(world2D.PhysicsScene);
+                        tracker2D?.Query();
+                        if (record)
+                        {
+                            tracker2D?.Record(tick, capacity);
+                        }
+
+                        break;
+                }
+            }
+
+            public void PublishContacts(IPhysicsSimulation world)
+            {
+                switch (world)
+                {
+                    case UnityPhysicsWorld world3D:
+                        ContactTrackers.Of(world3D.PhysicsScene)?.Publish();
+                        break;
+                    case UnityPhysicsWorld2D world2D:
+                        ContactTrackers.Of(world2D.PhysicsScene)?.Publish();
+                        break;
+                }
+            }
+        }
+
         private sealed class SceneHost : ISceneHost
         {
             private readonly ClientManager owner;
@@ -1141,23 +691,5 @@ namespace Fomoxa.Unity
             public void Unload(uint sceneId, Action unloaded) => owner.UnloadScene(sceneId, unloaded);
         }
 
-        private readonly struct HeldState
-        {
-            public HeldState(NetworkObject networkObject, NetworkBehaviour behaviour, ReadOnlyMemory<byte> server, bool matched)
-            {
-                NetworkObject = networkObject;
-                Behaviour = behaviour;
-                Server = server;
-                Matched = matched;
-            }
-
-            public NetworkObject NetworkObject { get; }
-
-            public NetworkBehaviour Behaviour { get; }
-
-            public ReadOnlyMemory<byte> Server { get; }
-
-            public bool Matched { get; }
-        }
     }
 }

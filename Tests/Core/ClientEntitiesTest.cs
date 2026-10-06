@@ -141,6 +141,7 @@ namespace Fomoxa.Networking.Tests
             public readonly ClientSession ClientSession;
             public readonly ClientObjects ClientObjects;
             public readonly ClientEntities Client;
+            public readonly MessageDispatcher ClientDispatcher;
             private TimeSpan now;
 
             public World()
@@ -156,9 +157,9 @@ namespace Fomoxa.Networking.Tests
                 ServerSession.Start(listener);
 
                 Backend = new FakeClientBackend(ClientCalls);
-                var clientDispatcher = new MessageDispatcher(TestObjects.Schema());
-                ClientSession = new ClientSession(TestObjects.Schema(), new SessionConfig(), new SessionLimits(), clientDispatcher, TestBundles.Protocol(TestObjects.Channels()));
-                Client = new ClientEntities(this, ClientSession, clientDispatcher, TestObjects.Channels(), TestObjects.StateProtocol(TestObjects.Channels()), TestObjects.TransformProtocol(TestObjects.Channels()), new RpcMessageIds(), null, Backend, log);
+                ClientDispatcher = new MessageDispatcher(TestObjects.Schema());
+                ClientSession = new ClientSession(TestObjects.Schema(), new SessionConfig(), new SessionLimits(), ClientDispatcher, TestBundles.Protocol(TestObjects.Channels()));
+                Client = new ClientEntities(this, ClientSession, ClientDispatcher, TestObjects.Channels(), TestObjects.StateProtocol(TestObjects.Channels()), TestObjects.TransformProtocol(TestObjects.Channels()), new RpcMessageIds(), null, Backend, log);
                 ClientObjects = new ClientObjects(ClientSession, TestObjects.Protocol(TestObjects.Channels()), Client);
                 Client.Attach(ClientObjects);
                 ClientSession.Start(listener.Connect(), now);
