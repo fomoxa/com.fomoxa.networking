@@ -70,6 +70,7 @@ namespace BundleFixture
                 new MessageSchema(Handshake.InputFramesNetMessageId, Handshake.InputFramesNetFingerprint, Handshake.InputFramesNetPrefixes),
                 new MessageSchema(Handshake.ReconcileStateNetMessageId, Handshake.ReconcileStateNetFingerprint, Handshake.ReconcileStateNetPrefixes),
                 new MessageSchema(Handshake.PeerLeaveNetMessageId, Handshake.PeerLeaveNetFingerprint, Handshake.PeerLeaveNetPrefixes),
+                new MessageSchema(Handshake.SceneFileNetMessageId, Handshake.SceneFileNetFingerprint, Handshake.SceneFileNetPrefixes),
             };
             return new Schema(0xCAFE, all.ToArray());
         }
@@ -98,6 +99,7 @@ namespace BundleFixture
             registry.SetCodec(InputFramesNetAdapter.Instance);
             registry.SetCodec(ReconcileStateNetAdapter.Instance);
             registry.SetCodec(PeerLeaveNetAdapter.Instance);
+            registry.SetCodec(SceneFileNetAdapter.Instance);
             registry.Channels.Set(LocalPeerId, Channel.ReliableOrdered);
             registry.Channels.Set(SpawnId, Channel.ReliableOrdered);
             registry.Channels.Set(SceneSpawnId, Channel.ReliableOrdered);

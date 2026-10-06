@@ -115,7 +115,7 @@ namespace Fomoxa.Unity.Tests
             StringAssert.Contains("IMessageCodec<global::Fomoxa.Networking.Messaging.ReliableAck>", Read("Generated", "ReliableAckNetAdapter.cs"));
             StringAssert.Contains("registry.SetCodec(MessageBundleNetAdapter.Instance);", Read("Generated", FomoxaGenerator.AdaptersFileName));
             StringAssert.Contains("registry.SetCodec(ReliableAckNetAdapter.Instance);", Read("Generated", FomoxaGenerator.AdaptersFileName));
-            foreach (string model in new[] { "LocalPeer", "ObjectSpawn", "ObjectSceneSpawn", "ObjectDespawn", "ObjectOwnerChange", "StateDelta", "StateResync", "TransformUpdate", "TransformSettle", "AnimatorState", "SceneLoad", "SceneUnload", "SceneLoaded", "TickPing", "TickPong", "InputFrames", "ReconcileState", "PeerLeave" })
+            foreach (string model in new[] { "LocalPeer", "ObjectSpawn", "ObjectSceneSpawn", "ObjectDespawn", "ObjectOwnerChange", "StateDelta", "StateResync", "TransformUpdate", "TransformSettle", "AnimatorState", "SceneLoad", "SceneUnload", "SceneLoaded", "TickPing", "TickPong", "InputFrames", "ReconcileState", "PeerLeave", "SceneFile" })
             {
                 StringAssert.Contains($"IMessageCodec<global::Fomoxa.Networking.Messaging.{model}>", Read("Generated", model + "NetAdapter.cs"));
                 StringAssert.Contains($"registry.SetCodec({model}NetAdapter.Instance);", Read("Generated", FomoxaGenerator.AdaptersFileName));

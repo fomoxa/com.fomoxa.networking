@@ -1,6 +1,6 @@
 namespace Fomoxa.Networking.Objects
 {
-    internal interface IClientEntityBackend
+    public interface IClientEntityBackend
     {
         SpawnResult CheckPrefab(in SpawnedObject spawned);
 

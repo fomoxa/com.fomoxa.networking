@@ -1,6 +1,6 @@
 namespace Fomoxa.Networking.Objects
 {
-    internal interface IServerEntityBackend
+    public interface IServerEntityBackend
     {
         string NameOf(INetworkEntity entity);
 

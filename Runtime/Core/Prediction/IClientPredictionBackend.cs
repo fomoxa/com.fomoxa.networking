@@ -3,7 +3,7 @@ using Fomoxa.Networking.Simulation;
 
 namespace Fomoxa.Networking.Prediction
 {
-    internal interface IClientPredictionBackend
+    public interface IClientPredictionBackend
     {
         void WorldsOf(INetworkEntity entity, List<IPhysicsSimulation> worlds);
 

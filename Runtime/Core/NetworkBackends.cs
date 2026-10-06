@@ -3,7 +3,7 @@ using Fomoxa.Networking.Prediction;
 
 namespace Fomoxa.Networking
 {
-    internal sealed class NetworkBackends
+    public sealed class NetworkBackends
     {
         public NetworkBackends(IServerEntityBackend serverEntities, IServerSceneHost serverScenes, IClientEntityBackend clientEntities, ISceneHost clientScenes, IClientPredictionBackend prediction)
         {

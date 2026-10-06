@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Fomoxa.Networking.Objects
 {
-    internal interface IServerSceneHost
+    public interface IServerSceneHost
     {
         bool TryLoad(uint sceneId, Func<bool> accept, Action loaded, Action<Exception> failed);
 

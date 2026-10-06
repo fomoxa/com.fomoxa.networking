@@ -21,7 +21,7 @@ namespace Fomoxa.Networking
         private bool open;
         private bool executing;
 
-        internal NetworkRuntime(FomoxaRegistry registry, NetworkSettings settings, ITransportFactory transport, NetworkBackends backends, Func<TimeSpan> clock, NetworkLog log)
+        public NetworkRuntime(FomoxaRegistry registry, NetworkSettings settings, ITransportFactory transport, NetworkBackends backends, Func<TimeSpan> clock, NetworkLog log)
         {
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
             this.log = log;

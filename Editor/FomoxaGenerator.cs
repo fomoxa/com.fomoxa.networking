@@ -74,6 +74,7 @@ namespace Fomoxa.Unity.Editor
             "InputFrames",
             "ReconcileState",
             "PeerLeave",
+            "SceneFile",
         };
 
         private static readonly Regex ModelLine = new Regex(@"^// model: (\S+)\r?$", RegexOptions.Multiline);
