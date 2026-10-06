@@ -22,15 +22,8 @@ namespace Fomoxa.Unity
         private readonly MessageChannels channels;
         private readonly StateProtocol stateProtocol;
         private readonly SceneRegistry sceneRegistry;
+        private readonly SceneHost sceneHost;
         private ObserverRule observerRule;
-        private readonly Dictionary<uint, LoadedScene> networkScenes = new Dictionary<uint, LoadedScene>();
-        private readonly Dictionary<Scene, uint> sceneIdsByScene = new Dictionary<Scene, uint>();
-        private readonly HashSet<uint> loadingScenes = new HashSet<uint>();
-        private readonly HashSet<uint> removedWhileLoading = new HashSet<uint>();
-        private readonly HashSet<Scene> unloadingScenes = new HashSet<Scene>();
-        private readonly HashSet<uint> unloadingIds = new HashSet<uint>();
-        private readonly HashSet<uint> loadAfterUnload = new HashSet<uint>();
-        private int sceneEpoch;
 
         internal ServerManager(
             Schema schema,
@@ -64,9 +57,12 @@ namespace Fomoxa.Unity
             Entities.OnSpawned += record => OnSpawnedForHost?.Invoke((NetworkObject)record.Representation);
             Entities.OnUnspawning += EndHostShare;
             Scenes = new NetworkScenes(this, sceneRegistry);
-            Objects.Scenes.OnSceneAdded += LoadNetworkScene;
-            Objects.Scenes.OnSceneRemoved += UnloadNetworkScene;
-            session.OnServerConnectionState += DespawnAllWhenStopped;
+            sceneHost = new SceneHost(sceneRegistry);
+            SceneContent = new ServerSceneContent(session, Objects.Scenes, Entities, sceneHost, UnityNetworkLog.Instance);
+            SceneContent.OnLoaded += sceneId => OnNetworkSceneReady?.Invoke(sceneId);
+            SceneContent.OnLoaded += Scenes.RaiseLoaded;
+            SceneContent.OnLoadFailed += (sceneId, exception) => OnNetworkSceneFailed?.Invoke(sceneId);
+            SceneContent.OnLoadFailed += Scenes.RaiseLoadFailed;
         }
 
         public event Action<ServerConnectionStateArgs> OnServerConnectionState
@@ -148,6 +144,8 @@ namespace Fomoxa.Unity
         }
 
         internal ServerEntities Entities { get; }
+
+        internal ServerSceneContent SceneContent { get; }
 
         internal PhysicsWorlds Physics { get; set; }
 
@@ -254,19 +252,9 @@ namespace Fomoxa.Unity
 
         internal void RebuildObserversRound() => Entities.RebuildObserversRound();
 
-        internal bool IsLoadingNetworkScene(uint sceneId) => loadingScenes.Contains(sceneId);
+        internal bool IsLoadingNetworkScene(uint sceneId) => SceneContent.IsLoading(sceneId);
 
-        internal bool TryGetNetworkScene(uint sceneId, out Scene scene)
-        {
-            if (networkScenes.TryGetValue(sceneId, out LoadedScene loaded))
-            {
-                scene = loaded.Scene;
-                return true;
-            }
-
-            scene = default;
-            return false;
-        }
+        internal bool TryGetNetworkScene(uint sceneId, out Scene scene) => sceneHost.TryGetScene(sceneId, out scene);
 
         internal void Tick(TimeSpan now)
         {
@@ -288,7 +276,7 @@ namespace Fomoxa.Unity
             var found = new List<NetworkObject>();
             foreach (NetworkObject sceneObject in FindSceneObjects())
             {
-                if (!unloadingScenes.Contains(sceneObject.gameObject.scene))
+                if (!sceneHost.IsUnloading(sceneObject.gameObject.scene))
                 {
                     found.Add(sceneObject);
                 }
@@ -297,130 +285,7 @@ namespace Fomoxa.Unity
             Entities.SpawnSceneObjects(found);
         }
 
-        private uint SceneIdOf(Scene scene) =>
-            scene.IsValid() && sceneIdsByScene.TryGetValue(scene, out uint sceneId) ? sceneId : 0;
-
-        private void LoadNetworkScene(uint sceneId)
-        {
-            if (loadingScenes.Contains(sceneId))
-            {
-                removedWhileLoading.Remove(sceneId);
-                return;
-            }
-
-            if (unloadingIds.Contains(sceneId))
-            {
-                loadAfterUnload.Add(sceneId);
-                return;
-            }
-
-            if (networkScenes.ContainsKey(sceneId) || !sceneRegistry.TryGet(sceneId, out ISceneLoader loader))
-            {
-                return;
-            }
-
-            loadingScenes.Add(sceneId);
-            int epoch = sceneEpoch;
-            loader.Load(
-                scene => FinishNetworkScene(sceneId, scene, loader, epoch),
-                exception => FailNetworkScene(sceneId, exception, epoch));
-        }
-
-        private void FinishNetworkScene(uint sceneId, Scene scene, ISceneLoader loader, int epoch)
-        {
-            if (epoch != sceneEpoch)
-            {
-                loader.Unload(scene, () => { });
-                return;
-            }
-
-            loadingScenes.Remove(sceneId);
-            if (removedWhileLoading.Remove(sceneId) || session.State != ServerState.Started)
-            {
-                loader.Unload(scene, () => { });
-                return;
-            }
-
-            networkScenes.Add(sceneId, new LoadedScene(scene, loader));
-            sceneIdsByScene[scene] = sceneId;
-            var found = new List<NetworkObject>();
-            SceneObjects.AddFrom(scene, found);
-            Entities.SpawnSceneObjects(found);
-            OnNetworkSceneReady?.Invoke(sceneId);
-            Scenes.RaiseLoaded(sceneId);
-        }
-
-        private void FailNetworkScene(uint sceneId, Exception exception, int epoch)
-        {
-            if (epoch != sceneEpoch)
-            {
-                return;
-            }
-
-            loadingScenes.Remove(sceneId);
-            removedWhileLoading.Remove(sceneId);
-            Debug.LogException(exception);
-            OnNetworkSceneFailed?.Invoke(sceneId);
-            Scenes.RaiseLoadFailed(sceneId, exception);
-        }
-
-        private void UnloadNetworkScene(uint sceneId)
-        {
-            if (loadAfterUnload.Remove(sceneId))
-            {
-                return;
-            }
-
-            if (loadingScenes.Contains(sceneId))
-            {
-                removedWhileLoading.Add(sceneId);
-                return;
-            }
-
-            if (networkScenes.Remove(sceneId, out LoadedScene loaded))
-            {
-                ReleaseNetworkScene(sceneId, loaded);
-            }
-        }
-
-        private void ReleaseNetworkScene(uint sceneId, LoadedScene loaded)
-        {
-            Scene scene = loaded.Scene;
-            sceneIdsByScene.Remove(scene);
-            Entities.ForgetSceneObjects(entity => (NetworkObject)entity == null || ((NetworkObject)entity).gameObject.scene == scene);
-            unloadingScenes.Add(scene);
-            unloadingIds.Add(sceneId);
-            loaded.Loader.Unload(scene, () => FinishUnload(sceneId, scene));
-        }
-
-        private void FinishUnload(uint sceneId, Scene scene)
-        {
-            unloadingScenes.Remove(scene);
-            unloadingIds.Remove(sceneId);
-            if (loadAfterUnload.Remove(sceneId))
-            {
-                LoadNetworkScene(sceneId);
-            }
-        }
-
-        private void DespawnAllWhenStopped(ServerConnectionStateArgs args)
-        {
-            if (args.State != ServerState.Stopped)
-            {
-                return;
-            }
-
-            sceneEpoch++;
-            loadingScenes.Clear();
-            removedWhileLoading.Clear();
-            loadAfterUnload.Clear();
-            var loaded = new List<KeyValuePair<uint, LoadedScene>>(networkScenes);
-            networkScenes.Clear();
-            foreach (KeyValuePair<uint, LoadedScene> scene in loaded)
-            {
-                ReleaseNetworkScene(scene.Key, scene.Value);
-            }
-        }
+        private uint SceneIdOf(Scene scene) => sceneHost.SceneIdOf(scene);
 
         internal void SyncStates() => Entities.SyncStates();
 
@@ -443,6 +308,109 @@ namespace Fomoxa.Unity
             }
 
             handlers(args);
+        }
+
+        private sealed class SceneHost : IServerSceneHost
+        {
+            private readonly SceneRegistry registry;
+            private readonly Dictionary<uint, LoadedScene> scenes = new Dictionary<uint, LoadedScene>();
+            private readonly Dictionary<Scene, uint> idsByScene = new Dictionary<Scene, uint>();
+            private readonly HashSet<Scene> unloadingScenes = new HashSet<Scene>();
+
+            public SceneHost(SceneRegistry registry)
+            {
+                this.registry = registry;
+            }
+
+            public bool TryLoad(uint sceneId, Func<bool> accept, Action loaded, Action<Exception> failed)
+            {
+                if (!registry.TryGet(sceneId, out ISceneLoader loader))
+                {
+                    return false;
+                }
+
+                loader.Load(scene => Arrive(sceneId, scene, loader, accept, loaded), failed);
+                return true;
+            }
+
+            public void Unload(uint sceneId, Action unloaded)
+            {
+                if (!scenes.Remove(sceneId, out LoadedScene loaded))
+                {
+                    unloaded();
+                    return;
+                }
+
+                Scene scene = loaded.Scene;
+                idsByScene.Remove(scene);
+                unloadingScenes.Add(scene);
+                loaded.Loader.Unload(scene, () =>
+                {
+                    unloadingScenes.Remove(scene);
+                    unloaded();
+                });
+            }
+
+            public void SceneObjectsOf(uint sceneId, List<INetworkEntity> found)
+            {
+                if (!scenes.TryGetValue(sceneId, out LoadedScene loaded))
+                {
+                    return;
+                }
+
+                var objects = new List<NetworkObject>();
+                SceneObjects.AddFrom(loaded.Scene, objects);
+                found.AddRange(objects);
+            }
+
+            public bool Holds(uint sceneId, INetworkEntity entity)
+            {
+                var networkObject = (NetworkObject)entity;
+                return networkObject == null || (scenes.TryGetValue(sceneId, out LoadedScene loaded) && networkObject.gameObject.scene == loaded.Scene);
+            }
+
+            public bool TryGetScene(uint sceneId, out Scene scene)
+            {
+                if (scenes.TryGetValue(sceneId, out LoadedScene loaded))
+                {
+                    scene = loaded.Scene;
+                    return true;
+                }
+
+                scene = default;
+                return false;
+            }
+
+            public uint SceneIdOf(Scene scene) =>
+                scene.IsValid() && idsByScene.TryGetValue(scene, out uint sceneId) ? sceneId : 0;
+
+            public bool IsUnloading(Scene scene) => unloadingScenes.Contains(scene);
+
+            private void Arrive(uint sceneId, Scene scene, ISceneLoader loader, Func<bool> accept, Action loaded)
+            {
+                if (!accept())
+                {
+                    loader.Unload(scene, () => { });
+                    return;
+                }
+
+                scenes.Add(sceneId, new LoadedScene(scene, loader));
+                idsByScene[scene] = sceneId;
+                loaded();
+            }
+
+            private readonly struct LoadedScene
+            {
+                public LoadedScene(Scene scene, ISceneLoader loader)
+                {
+                    Scene = scene;
+                    Loader = loader;
+                }
+
+                public Scene Scene { get; }
+
+                public ISceneLoader Loader { get; }
+            }
         }
 
         private sealed class EntityBackend : IServerEntityBackend
@@ -509,19 +477,5 @@ namespace Fomoxa.Unity
                 networkObject.DestroyGameObject();
             }
         }
-
-        private readonly struct LoadedScene
-        {
-            public LoadedScene(Scene scene, ISceneLoader loader)
-            {
-                Scene = scene;
-                Loader = loader;
-            }
-
-            public Scene Scene { get; }
-
-            public ISceneLoader Loader { get; }
-        }
-
     }
 }
