@@ -226,7 +226,7 @@ namespace Fomoxa.Unity.Tests
 
             Assert.AreEqual(DoorId, copy.SceneObjectId);
             Assert.AreEqual(2u, copy.ObjectId);
-            NetworkObject remoteCopy = client.ClientManager.Spawned[2];
+            NetworkObject remoteCopy = (NetworkObject)client.ClientManager.Spawned[2];
             Assert.AreNotSame(clientDoor, remoteCopy);
             Assert.AreSame(clientDoor, client.ClientManager.Spawned[1]);
             Assert.AreEqual(ConnectionState.Started, client.ClientManager.State);

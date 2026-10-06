@@ -237,7 +237,7 @@ namespace Fomoxa.Unity.Tests
         }
 
         private static InputBehaviour Remote(NetworkManager client, InputBehaviour onServer) =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponent<InputBehaviour>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponent<InputBehaviour>();
 
         private NetworkManager CreateManager(TimingMode mode)
         {

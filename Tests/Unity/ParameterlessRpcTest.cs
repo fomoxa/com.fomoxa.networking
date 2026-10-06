@@ -174,7 +174,7 @@ namespace Fomoxa.Unity.Tests
         }
 
         private static EmptyRpcBehaviour Remote(NetworkManager client, EmptyRpcBehaviour onServer) =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponent<EmptyRpcBehaviour>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponent<EmptyRpcBehaviour>();
 
         private NetworkManager CreateManager(NetworkTransport transport)
         {

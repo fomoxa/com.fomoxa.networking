@@ -82,7 +82,7 @@ namespace Fomoxa.Unity.Tests
             Assert.AreEqual(SendResult.Queued, rpc.Whisper(peerId, 3));
             RunFrames(3);
 
-            NetworkObject remote = client.ClientManager.Spawned[instance.ObjectId];
+            NetworkObject remote = (NetworkObject)client.ClientManager.Spawned[instance.ObjectId];
             CollectionAssert.AreEqual(new[] { "Whisper 3" }, remote.GetComponent<RpcBehaviour>().Calls);
             CollectionAssert.Contains(RecordingBehaviour.Log, $"{instance.ObjectId} StartClient");
         }
@@ -154,7 +154,7 @@ namespace Fomoxa.Unity.Tests
             rule.Hidden.Clear();
             server.ServerManager.RebuildObservers(instance);
             RunFrames(3);
-            WideStateBehaviour onClient = client.ClientManager.Spawned[instance.ObjectId].GetComponent<WideStateBehaviour>();
+            WideStateBehaviour onClient = ((NetworkObject)client.ClientManager.Spawned[instance.ObjectId]).GetComponent<WideStateBehaviour>();
             Assert.AreEqual(WideStateBehaviour.Describe(onServer.State), onClient.ValuesAtStartClient);
 
             onServer.State.Values[5] = 9;
@@ -178,7 +178,7 @@ namespace Fomoxa.Unity.Tests
             server.ServerManager.RebuildObservers(instance);
             RunFrames(3);
 
-            NetworkTransform onClient = client.ClientManager.Spawned[instance.ObjectId].GetComponentInChildren<NetworkTransform>();
+            NetworkTransform onClient = ((NetworkObject)client.ClientManager.Spawned[instance.ObjectId]).GetComponentInChildren<NetworkTransform>();
             Assert.AreEqual(new Vector3(4, 0, 0), onClient.transform.localPosition);
         }
 

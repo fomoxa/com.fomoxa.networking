@@ -37,6 +37,30 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void TheRepresentationTablesOfBothSidesReturnTheBoundRepresentations()
+        {
+            var world = new World();
+            var served = world.Served();
+            world.Server.Spawn(served, 0);
+            world.Run(10);
+            FakeEntity created = world.Backend.Created[0];
+            uint objectId = served.Record.ObjectId;
+
+            Assert.AreSame(served, world.Server.Representations[objectId]);
+            Assert.AreSame(created, world.Client.Representations[objectId]);
+            Assert.IsTrue(world.Client.Representations.TryGetValue(objectId, out INetworkEntity found));
+            Assert.AreSame(created, found);
+            CollectionAssert.AreEqual(new INetworkEntity[] { created }, world.Client.Representations.Values);
+            CollectionAssert.AreEqual(new[] { objectId }, world.Client.Representations.Keys);
+
+            world.Client.ForgetDestroyed(created);
+
+            Assert.AreEqual(0, world.Client.Representations.Count);
+            Assert.IsFalse(world.Client.Representations.ContainsKey(objectId));
+            Assert.AreEqual(1, world.Server.Representations.Count);
+        }
+
+        [Test]
         public void AServerDespawnStopsAndEndsTheClientRepresentation()
         {
             var world = new World();

@@ -41,6 +41,7 @@ namespace Fomoxa.Networking.Objects
             this.hostServer = hostServer;
             this.backend = backend;
             this.log = log;
+            Representations = new RepresentationTable(spawned);
             dispatcher.RegisterObject(stateProtocol.DeltaCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverDelta(objectId, behaviourIndex, body));
         }
 
@@ -55,6 +56,8 @@ namespace Fomoxa.Networking.Objects
         public InputRules InputRules { get; set; } = new InputRules();
 
         public Dictionary<uint, EntityRecord> Spawned => spawned;
+
+        public IReadOnlyDictionary<uint, INetworkEntity> Representations { get; }
 
         public bool TryGet(uint objectId, out EntityRecord record) => spawned.TryGetValue(objectId, out record);
 

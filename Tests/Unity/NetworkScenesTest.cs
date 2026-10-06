@@ -82,7 +82,7 @@ namespace Fomoxa.Unity.Tests
             NetworkObject onServer = SceneObjectIn(serverScene);
             Assert.IsTrue(onServer.IsSpawned);
             CollectionAssert.AreEqual(new[] { Arena }, loaded);
-            NetworkObject onClient = client.ClientManager.Spawned[onServer.ObjectId];
+            NetworkObject onClient = (NetworkObject)client.ClientManager.Spawned[onServer.ObjectId];
             Assert.AreSame(SceneObjectIn(loaders[client].Scenes.Single()), onClient);
             Assert.IsTrue(onClient.gameObject.activeSelf);
             Assert.IsTrue(server.ServerManager.Scenes.HasLoaded(PeerIdOf(client), Arena));
@@ -101,7 +101,7 @@ namespace Fomoxa.Unity.Tests
             server.ServerManager.Spawn(instance);
             RunFrames(3);
 
-            Assert.AreEqual(loaders[client].Scenes.Single(), client.ClientManager.Spawned[instance.ObjectId].gameObject.scene);
+            Assert.AreEqual(loaders[client].Scenes.Single(), ((NetworkObject)client.ClientManager.Spawned[instance.ObjectId]).gameObject.scene);
         }
 
         [Test]

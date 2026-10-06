@@ -135,7 +135,7 @@ namespace Fomoxa.Unity.Tests
         }
 
         private static GeneratedRpcBehaviour Remote(NetworkManager client, GeneratedRpcBehaviour onServer) =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponent<GeneratedRpcBehaviour>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponent<GeneratedRpcBehaviour>();
 
         private NetworkManager CreateManager(NetworkTransport transport)
         {

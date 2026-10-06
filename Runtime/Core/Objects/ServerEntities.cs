@@ -52,6 +52,7 @@ namespace Fomoxa.Networking.Objects
             this.rpcIds = rpcIds;
             this.backend = backend;
             this.log = log;
+            Representations = new RepresentationTable(spawned);
             dispatcher.RegisterObject(stateProtocol.ResyncCodec.MessageId, Resync);
             inputs.OnInputRejected += LogRejectedInput;
             objects.Observes = DecideObserver;
@@ -79,6 +80,8 @@ namespace Fomoxa.Networking.Objects
         public Func<EntityRecord, ulong, bool> ObserverRule { get; set; }
 
         public IReadOnlyDictionary<uint, EntityRecord> Spawned => spawned;
+
+        public IReadOnlyDictionary<uint, INetworkEntity> Representations { get; }
 
         public LinkedList<EntityRecord> InSpawnOrder => spawnOrder;
 

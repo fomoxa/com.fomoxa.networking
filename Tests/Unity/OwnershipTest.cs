@@ -70,7 +70,7 @@ namespace Fomoxa.Unity.Tests
             NetworkObject unspawned = UnityEngine.Object.Instantiate(prefab);
             server.ServerManager.Spawn(instance);
             RunFrames(3);
-            NetworkObject remote = client.ClientManager.Spawned[instance.ObjectId];
+            NetworkObject remote = (NetworkObject)client.ClientManager.Spawned[instance.ObjectId];
 
             Assert.Throws<ArgumentNullException>(() => server.ServerManager.ChangeOwner(null, 0));
             Assert.IsFalse(server.ServerManager.ChangeOwner(unspawned, clientPeerId));

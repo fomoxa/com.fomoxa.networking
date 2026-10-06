@@ -243,7 +243,7 @@ namespace Fomoxa.Unity.Tests
         }
 
         private static StateBehaviour Remote(NetworkManager client, StateBehaviour onServer) =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponent<StateBehaviour>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponent<StateBehaviour>();
 
         private NetworkManager CreateManager(NetworkTransport transport)
         {

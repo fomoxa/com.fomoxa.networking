@@ -410,7 +410,7 @@ namespace Fomoxa.Unity.Tests
         }
 
         private static NetworkTransform Remote(NetworkManager client, NetworkTransform onServer) =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponentInChildren<NetworkTransform>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponentInChildren<NetworkTransform>();
 
         private NetworkManager CreateManager(NetworkTransport transport)
         {

@@ -292,7 +292,7 @@ namespace Fomoxa.Unity.Tests
 
         private static T Remote<T>(NetworkManager client, NetworkBehaviour onServer)
             where T : NetworkBehaviour =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponent<T>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponent<T>();
 
         private NetworkManager CreateManager()
         {

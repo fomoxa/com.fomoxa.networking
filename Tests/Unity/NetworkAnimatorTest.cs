@@ -258,7 +258,7 @@ namespace Fomoxa.Unity.Tests
         }
 
         private static NetworkAnimator Remote(NetworkManager client, NetworkAnimator onServer) =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponent<NetworkAnimator>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponent<NetworkAnimator>();
 
         private NetworkManager CreateManager(NetworkTransport transport, NetworkObject registered)
         {

@@ -204,13 +204,13 @@ namespace Fomoxa.Unity.Tests
                 RunFrames(1);
             }
 
-            SceneManager.MoveGameObjectToScene(client.ClientManager.Spawned[instance.ObjectId].gameObject, clientScene);
+            SceneManager.MoveGameObjectToScene(((NetworkObject)client.ClientManager.Spawned[instance.ObjectId]).gameObject, clientScene);
             return instance.GetComponent<T>();
         }
 
         private static T Remote<T>(NetworkManager client, NetworkBehaviour onServer)
             where T : NetworkBehaviour =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponent<T>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponent<T>();
 
         private NetworkManager CreateManager()
         {

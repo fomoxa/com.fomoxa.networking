@@ -245,7 +245,7 @@ namespace Fomoxa.Unity.Tests
         }
 
         private static WideStateBehaviour Remote(NetworkManager client, WideStateBehaviour onServer) =>
-            client.ClientManager.Spawned[onServer.NetworkObject.ObjectId].GetComponent<WideStateBehaviour>();
+            ((NetworkObject)client.ClientManager.Spawned[onServer.NetworkObject.ObjectId]).GetComponent<WideStateBehaviour>();
 
         private NetworkManager CreateManager(NetworkTransport transport)
         {

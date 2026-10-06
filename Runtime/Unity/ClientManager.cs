@@ -77,7 +77,6 @@ namespace Fomoxa.Unity
             session.OnHandlerException += RaiseHandlerException;
             Entities = new ClientEntities(this, session, Dispatcher, channels, stateProtocol, rpcIds, serverManager.Entities, new EntityBackend(this, prefabs), UnityNetworkLog.Instance);
             Entities.OnDespawning += record => Physics?.EndProxy((NetworkObject)record.Representation);
-            Spawned = new RepresentationView(Entities.Spawned);
             Dispatcher.RegisterObject(transformProtocol.UpdateCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, false));
             Dispatcher.RegisterObject(transformProtocol.SettleCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, true));
             Dispatcher.RegisterObject(inputProtocol.ReconcileCodec.MessageId, (peerId, objectId, behaviourIndex, body) => HoldReconcileState(objectId, behaviourIndex, body));
@@ -127,7 +126,7 @@ namespace Fomoxa.Unity
 
         public TimeSpan Rtt => connectedLocally ? TimeSpan.Zero : clock.Estimator.Rtt;
 
-        public IReadOnlyDictionary<uint, NetworkObject> Spawned { get; }
+        public IReadOnlyDictionary<uint, INetworkEntity> Spawned => Entities.Representations;
 
         internal ClientObjects Objects { get; }
 
@@ -933,11 +932,11 @@ namespace Fomoxa.Unity
                 return;
             }
 
-            foreach (NetworkObject networkObject in serverManager.Spawned.Values)
+            foreach (EntityRecord record in serverManager.Entities.InSpawnOrder)
             {
-                if (!serverManager.Objects.IsObserver(networkObject.ObjectId, localPeerId))
+                if (!serverManager.Objects.IsObserver(record.ObjectId, localPeerId))
                 {
-                    networkObject.HideOnHost();
+                    ((NetworkObject)record.Representation).HideOnHost();
                 }
             }
         }
@@ -983,9 +982,9 @@ namespace Fomoxa.Unity
             Objects.ForgetLoadedScenes();
 
             Entities.DespawnHiddenOnHost();
-            foreach (NetworkObject networkObject in serverManager.Spawned.Values)
+            foreach (EntityRecord record in serverManager.Entities.InSpawnOrder)
             {
-                networkObject.ShowOnHost();
+                ((NetworkObject)record.Representation).ShowOnHost();
             }
         }
 

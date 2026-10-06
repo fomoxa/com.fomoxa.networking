@@ -1,14 +1,13 @@
 using System.Collections;
 using System.Collections.Generic;
-using Fomoxa.Networking;
 
-namespace Fomoxa.Unity
+namespace Fomoxa.Networking.Objects
 {
-    internal sealed class RepresentationView : IReadOnlyDictionary<uint, NetworkObject>
+    internal sealed class RepresentationTable : IReadOnlyDictionary<uint, INetworkEntity>
     {
-        private readonly IReadOnlyDictionary<uint, EntityRecord> records;
+        private readonly Dictionary<uint, EntityRecord> records;
 
-        public RepresentationView(IReadOnlyDictionary<uint, EntityRecord> records)
+        public RepresentationTable(Dictionary<uint, EntityRecord> records)
         {
             this.records = records;
         }
@@ -17,26 +16,26 @@ namespace Fomoxa.Unity
 
         public IEnumerable<uint> Keys => records.Keys;
 
-        public IEnumerable<NetworkObject> Values
+        public IEnumerable<INetworkEntity> Values
         {
             get
             {
                 foreach (EntityRecord record in records.Values)
                 {
-                    yield return (NetworkObject)record.Representation;
+                    yield return record.Representation;
                 }
             }
         }
 
-        public NetworkObject this[uint key] => (NetworkObject)records[key].Representation;
+        public INetworkEntity this[uint key] => records[key].Representation;
 
         public bool ContainsKey(uint key) => records.ContainsKey(key);
 
-        public bool TryGetValue(uint key, out NetworkObject value)
+        public bool TryGetValue(uint key, out INetworkEntity value)
         {
             if (records.TryGetValue(key, out EntityRecord record))
             {
-                value = (NetworkObject)record.Representation;
+                value = record.Representation;
                 return true;
             }
 
@@ -44,11 +43,11 @@ namespace Fomoxa.Unity
             return false;
         }
 
-        public IEnumerator<KeyValuePair<uint, NetworkObject>> GetEnumerator()
+        public IEnumerator<KeyValuePair<uint, INetworkEntity>> GetEnumerator()
         {
             foreach (KeyValuePair<uint, EntityRecord> pair in records)
             {
-                yield return new KeyValuePair<uint, NetworkObject>(pair.Key, (NetworkObject)pair.Value.Representation);
+                yield return new KeyValuePair<uint, INetworkEntity>(pair.Key, pair.Value.Representation);
             }
         }
 

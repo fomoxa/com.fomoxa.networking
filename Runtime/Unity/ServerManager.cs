@@ -72,7 +72,6 @@ namespace Fomoxa.Unity
             Entities.OnSpawned += record => OnSpawnedForHost?.Invoke((NetworkObject)record.Representation);
             Entities.OnUnspawning += EndHostShare;
             Entities.OnFirstOwned += RebuildForFirstAnchor;
-            Spawned = new RepresentationView(Entities.Spawned);
             Scenes = new NetworkScenes(this, sceneRegistry);
             Objects.Scenes.OnSceneAdded += LoadNetworkScene;
             Objects.Scenes.OnSceneRemoved += UnloadNetworkScene;
@@ -123,7 +122,7 @@ namespace Fomoxa.Unity
 
         public ushort Port { get; private set; }
 
-        public IReadOnlyDictionary<uint, NetworkObject> Spawned { get; }
+        public IReadOnlyDictionary<uint, INetworkEntity> Spawned => Entities.Representations;
 
         public ObserverRule ObserverRule { get; set; }
 

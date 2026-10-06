@@ -86,7 +86,7 @@ namespace Fomoxa.Unity.Tests
             server.ServerManager.Spawn(instance);
             RunFrames(3);
 
-            NetworkObject remote = client.ClientManager.Spawned[instance.ObjectId];
+            NetworkObject remote = (NetworkObject)client.ClientManager.Spawned[instance.ObjectId];
             Assert.AreNotSame(instance, remote);
             Assert.AreEqual(PrefabId, remote.PrefabId);
             Assert.AreEqual(new Vector3(1, 2, 3), remote.transform.position);
@@ -108,7 +108,7 @@ namespace Fomoxa.Unity.Tests
             client.ClientManager.StartConnection("unused.invalid", 1);
             RunFrames(20);
 
-            Assert.AreEqual(new Vector3(4, 5, 6), client.ClientManager.Spawned[instance.ObjectId].transform.position);
+            Assert.AreEqual(new Vector3(4, 5, 6), ((NetworkObject)client.ClientManager.Spawned[instance.ObjectId]).transform.position);
         }
 
         [Test]
@@ -120,7 +120,7 @@ namespace Fomoxa.Unity.Tests
             server.ServerManager.Spawn(instance, clientPeerId);
             RunFrames(3);
 
-            NetworkObject remote = client.ClientManager.Spawned[instance.ObjectId];
+            NetworkObject remote = (NetworkObject)client.ClientManager.Spawned[instance.ObjectId];
             Assert.AreEqual(clientPeerId, instance.OwnerId);
             Assert.IsFalse(instance.IsOwner);
             Assert.AreEqual(clientPeerId, remote.OwnerId);
@@ -134,7 +134,7 @@ namespace Fomoxa.Unity.Tests
             NetworkObject instance = UnityEngine.Object.Instantiate(prefab);
             server.ServerManager.Spawn(instance);
             RunFrames(3);
-            NetworkObject remote = client.ClientManager.Spawned[instance.ObjectId];
+            NetworkObject remote = (NetworkObject)client.ClientManager.Spawned[instance.ObjectId];
             RecordingBehaviour.Log.Clear();
 
             server.ServerManager.Objects.ChangeOwner(instance.ObjectId, clientPeerId);
@@ -152,7 +152,7 @@ namespace Fomoxa.Unity.Tests
             NetworkObject instance = UnityEngine.Object.Instantiate(prefab);
             server.ServerManager.Spawn(instance);
             RunFrames(3);
-            NetworkObject remote = client.ClientManager.Spawned[instance.ObjectId];
+            NetworkObject remote = (NetworkObject)client.ClientManager.Spawned[instance.ObjectId];
             RecordingBehaviour.Log.Clear();
 
             Assert.IsTrue(server.ServerManager.Despawn(instance));
@@ -175,7 +175,7 @@ namespace Fomoxa.Unity.Tests
             NetworkObject instance = UnityEngine.Object.Instantiate(prefab);
             server.ServerManager.Spawn(instance);
             RunFrames(3);
-            NetworkObject remote = client.ClientManager.Spawned[instance.ObjectId];
+            NetworkObject remote = (NetworkObject)client.ClientManager.Spawned[instance.ObjectId];
 
             Assert.IsFalse(server.ServerManager.Despawn(unspawned));
             Assert.IsFalse(server.ServerManager.Despawn(remote));
@@ -379,7 +379,7 @@ namespace Fomoxa.Unity.Tests
             NetworkObject instance = UnityEngine.Object.Instantiate(prefab);
             server.ServerManager.Spawn(instance);
             RunFrames(3);
-            NetworkObject remote = client.ClientManager.Spawned[instance.ObjectId];
+            NetworkObject remote = (NetworkObject)client.ClientManager.Spawned[instance.ObjectId];
 
             LogAssert.Expect(LogType.Warning, new Regex("object 1 \\(prefab 0x000000A1\\) was destroyed on the client"));
             remote.HandleDestroy();
