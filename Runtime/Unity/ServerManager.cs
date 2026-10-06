@@ -19,15 +19,8 @@ namespace Fomoxa.Unity
         private readonly TransportManager transportManager;
         private readonly PrefabRegistry prefabs;
         private readonly ServerSession session;
-        private readonly List<ReadOnlyMemory<byte>> spawnStates = new List<ReadOnlyMemory<byte>>();
         private readonly MessageChannels channels;
         private readonly StateProtocol stateProtocol;
-        private readonly TransformProtocol transformProtocol;
-        private readonly TransformUpdate transformUpdate = new TransformUpdate();
-        private readonly TransformSettle transformSettle = new TransformSettle();
-        private readonly List<ObserverAddedArgs> enteredObservers = new List<ObserverAddedArgs>();
-        private readonly Dictionary<ulong, AnchorPositions> anchors = new Dictionary<ulong, AnchorPositions>();
-        private int anchorGeneration = 1;
         private readonly SceneRegistry sceneRegistry;
         private readonly Dictionary<uint, LoadedScene> networkScenes = new Dictionary<uint, LoadedScene>();
         private readonly Dictionary<Scene, uint> sceneIdsByScene = new Dictionary<Scene, uint>();
@@ -59,15 +52,14 @@ namespace Fomoxa.Unity
             this.prefabs = prefabs;
             channels = protocol.Channels;
             this.stateProtocol = stateProtocol;
-            this.transformProtocol = transformProtocol;
             RpcIds = rpcIds;
             Dispatcher = new MessageDispatcher(schema);
             session = new ServerSession(schema, sessionConfig, limits, Dispatcher, protocol);
             session.OnHandlerException += RaiseHandlerException;
-            Objects = new ServerObjects(session, objectProtocol, ReadSpawnData, sceneProtocol);
+            Objects = new ServerObjects(session, objectProtocol, objectId => Entities.ReadSpawnData(objectId), sceneProtocol);
             Clock = new ServerClock(session, clockProtocol);
             Inputs = new ServerInputs(session, Objects, inputProtocol, Clock);
-            Entities = new ServerEntities(this, session, Objects, Inputs, Dispatcher, channels, stateProtocol, inputProtocol, rpcIds, new EntityBackend(this, prefabs), UnityNetworkLog.Instance);
+            Entities = new ServerEntities(this, session, Objects, Inputs, Dispatcher, channels, stateProtocol, inputProtocol, transformProtocol, rpcIds, new EntityBackend(this, prefabs), UnityNetworkLog.Instance);
             Entities.ObserverRule = DecideByRule;
             Entities.OnSpawned += record => OnSpawnedForHost?.Invoke((NetworkObject)record.Representation);
             Entities.OnUnspawning += EndHostShare;
@@ -75,8 +67,6 @@ namespace Fomoxa.Unity
             Scenes = new NetworkScenes(this, sceneRegistry);
             Objects.Scenes.OnSceneAdded += LoadNetworkScene;
             Objects.Scenes.OnSceneRemoved += UnloadNetworkScene;
-            Objects.OnObserverAdded += enteredObservers.Add;
-            session.OnRemoteConnectionState += ForgetLeavingPeer;
             session.OnServerConnectionState += DespawnAllWhenStopped;
         }
 
@@ -202,7 +192,6 @@ namespace Fomoxa.Unity
                 throw new ArgumentNullException(nameof(networkObject));
             }
 
-            anchorGeneration++;
             Entities.Spawn(networkObject, ownerId);
         }
 
@@ -223,7 +212,6 @@ namespace Fomoxa.Unity
                 throw new ArgumentNullException(nameof(networkObject));
             }
 
-            anchorGeneration++;
             return Entities.ChangeOwner(networkObject, ownerId);
         }
 
@@ -244,21 +232,12 @@ namespace Fomoxa.Unity
                 throw new ArgumentNullException(nameof(networkObject));
             }
 
-            anchorGeneration++;
             return Entities.RebuildObservers(networkObject);
         }
 
-        public void RebuildObserversOfPeer(ulong peerId)
-        {
-            anchorGeneration++;
-            Objects.RebuildObserversOfPeer(peerId);
-        }
+        public void RebuildObserversOfPeer(ulong peerId) => Entities.RebuildObserversOfPeer(peerId);
 
-        public void RebuildObservers()
-        {
-            anchorGeneration++;
-            Objects.RebuildObservers();
-        }
+        public void RebuildObservers() => Entities.RebuildObservers();
 
         internal int BroadcastToObject(uint messageId, uint objectId, byte behaviourIndex, ReadOnlySpan<byte> body) =>
             Objects.SendToObservers(messageId, objectId, behaviourIndex, body);
@@ -266,38 +245,9 @@ namespace Fomoxa.Unity
         internal SendResult SendToObserver(ulong peerId, uint messageId, uint objectId, byte behaviourIndex, ReadOnlySpan<byte> body) =>
             Objects.SendToObserver(peerId, messageId, objectId, behaviourIndex, body);
 
-        internal void RebuildObserversRound()
-        {
-            anchorGeneration++;
-            Objects.RebuildObserversRound();
-        }
+        internal void RebuildObserversRound() => Entities.RebuildObserversRound();
 
-        internal IReadOnlyList<Vector3> AnchorsOf(ulong peerId)
-        {
-            List<EntityRecord> owned = Entities.OwnedBy(peerId);
-            if (owned.Count == 0)
-            {
-                return Array.Empty<Vector3>();
-            }
-
-            if (!anchors.TryGetValue(peerId, out AnchorPositions cached))
-            {
-                cached = new AnchorPositions();
-                anchors.Add(peerId, cached);
-            }
-
-            if (cached.Generation != anchorGeneration)
-            {
-                cached.Generation = anchorGeneration;
-                cached.Positions.Clear();
-                foreach (EntityRecord record in owned)
-                {
-                    cached.Positions.Add(((NetworkObject)record.Representation).transform.position);
-                }
-            }
-
-            return cached.Positions;
-        }
+        internal IReadOnlyList<System.Numerics.Vector3> AnchorsOf(ulong peerId) => Entities.AnchorsOf(peerId);
 
         internal bool IsLoadingNetworkScene(uint sceneId) => loadingScenes.Contains(sceneId);
 
@@ -315,7 +265,7 @@ namespace Fomoxa.Unity
 
         internal void Tick(TimeSpan now)
         {
-            anchorGeneration++;
+            Entities.NextAnchorRound();
             session.Tick(now);
         }
 
@@ -455,7 +405,6 @@ namespace Fomoxa.Unity
                 return;
             }
 
-            anchors.Clear();
             sceneEpoch++;
             loadingScenes.Clear();
             removedWhileLoading.Clear();
@@ -468,110 +417,9 @@ namespace Fomoxa.Unity
             }
         }
 
-        private SpawnData ReadSpawnData(uint objectId)
-        {
-            EntityRecord record = Entities.Spawning;
-            if (record == null && !Entities.TryGet(objectId, out record))
-            {
-                throw new InvalidOperationException($"object {objectId} has no NetworkObject on the server");
-            }
-
-            var networkObject = (NetworkObject)record.Representation;
-
-            spawnStates.Clear();
-            foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-            {
-                spawnStates.Add(behaviour.StateSlot?.Sent ?? ReadOnlyMemory<byte>.Empty);
-            }
-
-            Transform transform = networkObject.transform;
-            return new SpawnData(
-                record.Fingerprint,
-                transform.position.ToNumerics(),
-                transform.rotation.ToNumerics(),
-                transform.localScale.ToNumerics(),
-                spawnStates);
-        }
-
         internal void SyncStates() => Entities.SyncStates();
 
-        internal void SyncTransforms(uint tick)
-        {
-            foreach (ObserverAddedArgs entered in enteredObservers)
-            {
-                if (!Entities.TryGet(entered.ObjectId, out EntityRecord enteredRecord) || !Objects.IsObserver(entered.ObjectId, entered.PeerId))
-                {
-                    continue;
-                }
-
-                var networkObject = (NetworkObject)enteredRecord.Representation;
-
-                IReadOnlyList<NetworkBehaviour> behaviours = networkObject.Behaviours;
-                for (int index = 0; index < behaviours.Count; index++)
-                {
-                    if (behaviours[index] is NetworkTransform networkTransform && !networkTransform.SettlePending)
-                    {
-                        ReadOnlySpan<byte> settle = EncodeSettle(networkTransform, tick, networkTransform.SelectedMask);
-                        session.SendToObject(entered.PeerId, transformProtocol.SettleCodec.MessageId, networkObject.ObjectId, (byte)index, settle);
-                    }
-                }
-            }
-
-            enteredObservers.Clear();
-            foreach (EntityRecord record in Entities.InSpawnOrder)
-            {
-                var networkObject = (NetworkObject)record.Representation;
-                IReadOnlyList<NetworkBehaviour> behaviours = networkObject.Behaviours;
-                for (int index = 0; index < behaviours.Count; index++)
-                {
-                    if (!(behaviours[index] is NetworkTransform networkTransform))
-                    {
-                        continue;
-                    }
-
-                    if (networkTransform.SettlePending)
-                    {
-                        networkTransform.SettlePending = false;
-                        networkTransform.MarkSettled();
-                        Objects.SendToObservers(transformProtocol.SettleCodec.MessageId, networkObject.ObjectId, (byte)index, EncodeSettle(networkTransform, tick, networkTransform.SelectedMask));
-                        continue;
-                    }
-
-                    TransformSend send = networkTransform.Sample(out byte mask);
-                    if (send == TransformSend.Update)
-                    {
-                        Transform target = networkTransform.transform;
-                        transformUpdate.Tick = tick;
-                        transformUpdate.Mask = mask;
-                        transformUpdate.Generation = networkTransform.Generation;
-                        SpawnTransform.PackSelected(mask, target.localPosition.ToNumerics(), target.localRotation.ToNumerics(), target.localScale.ToNumerics(), transformUpdate.Values);
-                        Objects.SendToObservers(transformProtocol.UpdateCodec.MessageId, networkObject.ObjectId, (byte)index, transformProtocol.UpdateCodec.Encode(transformUpdate).Span);
-                    }
-                    else if (send == TransformSend.Settle)
-                    {
-                        Objects.SendToObservers(transformProtocol.SettleCodec.MessageId, networkObject.ObjectId, (byte)index, EncodeSettle(networkTransform, tick, mask));
-                    }
-                }
-            }
-        }
-
-        private ReadOnlySpan<byte> EncodeSettle(NetworkTransform networkTransform, uint tick, byte mask)
-        {
-            Transform target = networkTransform.transform;
-            transformSettle.Tick = tick;
-            transformSettle.Mask = mask;
-            transformSettle.Generation = networkTransform.Generation;
-            SpawnTransform.PackSelected(mask, target.localPosition.ToNumerics(), target.localRotation.ToNumerics(), target.localScale.ToNumerics(), transformSettle.Values);
-            return transformProtocol.SettleCodec.Encode(transformSettle).Span;
-        }
-
-        private void ForgetLeavingPeer(ConnectionStateArgs args)
-        {
-            if (args.State == ConnectionState.Stopped)
-            {
-                anchors.Remove(args.PeerId);
-            }
-        }
+        internal void SyncTransforms(uint tick) => Entities.SyncTransforms(tick);
 
         private void RebuildForFirstAnchor(ulong peerId)
         {
@@ -654,12 +502,7 @@ namespace Fomoxa.Unity
 
             public void PrepareSpawn(INetworkEntity entity)
             {
-                var networkObject = (NetworkObject)entity;
-                networkObject.CollectBehaviours();
-                foreach (NetworkBehaviour behaviour in networkObject.Behaviours)
-                {
-                    (behaviour as NetworkTransform)?.CaptureSpawn();
-                }
+                ((NetworkObject)entity).CollectBehaviours();
             }
 
             public void Activate(INetworkEntity entity) => ((NetworkObject)entity).gameObject.SetActive(true);
@@ -688,13 +531,6 @@ namespace Fomoxa.Unity
             public Scene Scene { get; }
 
             public ISceneLoader Loader { get; }
-        }
-
-        private sealed class AnchorPositions
-        {
-            public readonly List<Vector3> Positions = new List<Vector3>();
-
-            public int Generation;
         }
 
     }

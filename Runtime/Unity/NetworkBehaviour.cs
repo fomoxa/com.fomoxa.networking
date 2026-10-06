@@ -104,6 +104,11 @@ namespace Fomoxa.Unity
         {
             NetworkObject = networkObject;
             Core.Attach(networkObject, behaviourIndex);
+            OnAttached();
+        }
+
+        internal virtual void OnAttached()
+        {
         }
 
         internal void Register(RpcMessageIds rpcIds, MessageChannels channels, StateProtocol stateProtocol, InputRules inputRules) =>

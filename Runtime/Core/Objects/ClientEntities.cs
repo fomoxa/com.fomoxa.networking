@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Sessions;
 
@@ -11,6 +12,7 @@ namespace Fomoxa.Networking.Objects
         private readonly MessageDispatcher dispatcher;
         private readonly MessageChannels channels;
         private readonly StateProtocol stateProtocol;
+        private readonly TransformProtocol transformProtocol;
         private readonly RpcMessageIds rpcIds;
         private readonly ServerEntities hostServer;
         private readonly IClientEntityBackend backend;
@@ -20,6 +22,8 @@ namespace Fomoxa.Networking.Objects
         private readonly HashSet<uint> stateIds = new HashSet<uint>();
         private readonly List<EntityRecord> hiddenStarted = new List<EntityRecord>();
         private StateDelta stateDelta = new StateDelta();
+        private TransformUpdate transformUpdate = new TransformUpdate();
+        private TransformSettle transformSettle = new TransformSettle();
 
         public ClientEntities(
             object owner,
@@ -27,6 +31,7 @@ namespace Fomoxa.Networking.Objects
             MessageDispatcher dispatcher,
             MessageChannels channels,
             StateProtocol stateProtocol,
+            TransformProtocol transformProtocol,
             RpcMessageIds rpcIds,
             ServerEntities hostServer,
             IClientEntityBackend backend,
@@ -37,12 +42,15 @@ namespace Fomoxa.Networking.Objects
             this.dispatcher = dispatcher;
             this.channels = channels;
             this.stateProtocol = stateProtocol;
+            this.transformProtocol = transformProtocol;
             this.rpcIds = rpcIds;
             this.hostServer = hostServer;
             this.backend = backend;
             this.log = log;
             Representations = new RepresentationTable(spawned);
             dispatcher.RegisterObject(stateProtocol.DeltaCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverDelta(objectId, behaviourIndex, body));
+            dispatcher.RegisterObject(transformProtocol.UpdateCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, false));
+            dispatcher.RegisterObject(transformProtocol.SettleCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, true));
         }
 
         public event Action<EntityRecord> OnDespawning;
@@ -134,7 +142,7 @@ namespace Fomoxa.Networking.Objects
                 statesValid = TryApplyStates(record.Representation.EntityBehaviours, spawnedObject.States, record.Server != null);
                 if (statesValid)
                 {
-                    backend.PrepareReceive(entity);
+                    ResetReceive(entity.EntityBehaviours);
                     RouteRpcs(entity.EntityBehaviours);
                     RouteStates(entity.EntityBehaviours);
                     foreach (EntityBehaviour behaviour in entity.EntityBehaviours)
@@ -378,6 +386,75 @@ namespace Fomoxa.Networking.Objects
                 LoseSync(slot, objectId, behaviourIndex);
                 throw;
             }
+        }
+
+        private static void ResetReceive(IReadOnlyList<EntityBehaviour> behaviours)
+        {
+            foreach (EntityBehaviour behaviour in behaviours)
+            {
+                behaviour.TransformSlot?.Receiver.ResetReceive();
+            }
+        }
+
+        private static bool IsPredicting(IReadOnlyList<EntityBehaviour> behaviours)
+        {
+            for (int index = 0; index < behaviours.Count; index++)
+            {
+                if (behaviours[index].IsPredicting)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void DeliverTransform(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body, bool settle)
+        {
+            if (!spawned.TryGetValue(objectId, out EntityRecord record) || record.Server != null)
+            {
+                return;
+            }
+
+            IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
+            if (IsPredicting(behaviours) || behaviourIndex >= behaviours.Count)
+            {
+                return;
+            }
+
+            TransformSlot slot = behaviours[behaviourIndex].TransformSlot;
+            if (slot == null)
+            {
+                return;
+            }
+
+            uint tick;
+            byte mask;
+            byte generation;
+            List<float> values;
+            if (settle)
+            {
+                transformProtocol.SettleCodec.Decode(body, ref transformSettle);
+                tick = transformSettle.Tick;
+                mask = transformSettle.Mask;
+                generation = transformSettle.Generation;
+                values = transformSettle.Values;
+            }
+            else
+            {
+                transformProtocol.UpdateCodec.Decode(body, ref transformUpdate);
+                tick = transformUpdate.Tick;
+                mask = transformUpdate.Mask;
+                generation = transformUpdate.Generation;
+                values = transformUpdate.Values;
+            }
+
+            if (!SpawnTransform.TryUnpack(mask, values, out Vector3 position, out Quaternion rotation, out Vector3 scale))
+            {
+                throw new MessageDecodeException($"transform mask 0x{mask:X2} does not match its {values.Count} values", null);
+            }
+
+            slot.Receiver.Receive(new TransformSample(tick, mask, position, rotation, scale, settle, generation));
         }
 
         private void DeliverDelta(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)

@@ -26,11 +26,8 @@ namespace Fomoxa.Unity
         private readonly Dictionary<uint, HostSceneWait> hostWaits = new Dictionary<uint, HostSceneWait>();
         private readonly MessageChannels channels;
         private readonly StateProtocol stateProtocol;
-        private readonly TransformProtocol transformProtocol;
         private readonly TimeManager timeManager;
         private readonly ClientClock clock;
-        private TransformUpdate transformUpdate = new TransformUpdate();
-        private TransformSettle transformSettle = new TransformSettle();
         private readonly InputProtocol inputProtocol;
         private readonly InputFrames inputFrames = new InputFrames();
         private readonly List<NetworkObject> gathering = new List<NetworkObject>();
@@ -68,17 +65,14 @@ namespace Fomoxa.Unity
             this.sceneRegistry = sceneRegistry;
             channels = protocol.Channels;
             this.stateProtocol = stateProtocol;
-            this.transformProtocol = transformProtocol;
             this.timeManager = timeManager;
             this.inputProtocol = inputProtocol;
             RpcIds = rpcIds;
             Dispatcher = new MessageDispatcher(schema);
             session = new ClientSession(schema, sessionConfig, limits, Dispatcher, protocol);
             session.OnHandlerException += RaiseHandlerException;
-            Entities = new ClientEntities(this, session, Dispatcher, channels, stateProtocol, rpcIds, serverManager.Entities, new EntityBackend(this, prefabs), UnityNetworkLog.Instance);
+            Entities = new ClientEntities(this, session, Dispatcher, channels, stateProtocol, transformProtocol, rpcIds, serverManager.Entities, new EntityBackend(this, prefabs), UnityNetworkLog.Instance);
             Entities.OnDespawning += record => Physics?.EndProxy((NetworkObject)record.Representation);
-            Dispatcher.RegisterObject(transformProtocol.UpdateCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, false));
-            Dispatcher.RegisterObject(transformProtocol.SettleCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, true));
             Dispatcher.RegisterObject(inputProtocol.ReconcileCodec.MessageId, (peerId, objectId, behaviourIndex, body) => HoldReconcileState(objectId, behaviourIndex, body));
             session.OnClientConnectionState += PrepareSceneObjectsWhenStarted;
             session.OnClientConnectionState += EndHostVisibilityWhenStopped;
@@ -125,6 +119,8 @@ namespace Fomoxa.Unity
         public bool IsReplaying { get; private set; }
 
         public TimeSpan Rtt => connectedLocally ? TimeSpan.Zero : clock.Estimator.Rtt;
+
+        internal int TickRate => timeManager.TickRate;
 
         public IReadOnlyDictionary<uint, INetworkEntity> Spawned => Entities.Representations;
 
@@ -753,46 +749,6 @@ namespace Fomoxa.Unity
             }
         }
 
-        private void DeliverTransform(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body, bool settle)
-        {
-            if (!TryGetObject(objectId, out NetworkObject networkObject)
-                || networkObject.Server != null
-                || networkObject.IsPredicting
-                || behaviourIndex >= networkObject.Behaviours.Count
-                || !(networkObject.Behaviours[behaviourIndex] is NetworkTransform networkTransform))
-            {
-                return;
-            }
-
-            uint tick;
-            byte mask;
-            byte generation;
-            List<float> values;
-            if (settle)
-            {
-                transformProtocol.SettleCodec.Decode(body, ref transformSettle);
-                tick = transformSettle.Tick;
-                mask = transformSettle.Mask;
-                generation = transformSettle.Generation;
-                values = transformSettle.Values;
-            }
-            else
-            {
-                transformProtocol.UpdateCodec.Decode(body, ref transformUpdate);
-                tick = transformUpdate.Tick;
-                mask = transformUpdate.Mask;
-                generation = transformUpdate.Generation;
-                values = transformUpdate.Values;
-            }
-
-            if (!SpawnTransform.TryUnpack(mask, values, out System.Numerics.Vector3 position, out System.Numerics.Quaternion rotation, out System.Numerics.Vector3 scale))
-            {
-                throw new MessageDecodeException($"transform mask 0x{mask:X2} does not match its {values.Count} values", null);
-            }
-
-            networkTransform.Receive(tick, mask, position.ToUnity(), rotation.ToUnity(), scale.ToUnity(), settle, generation, timeManager.TickRate);
-        }
-
         private void PrepareSceneObjectsWhenStarted(ConnectionStateArgs args)
         {
             if (args.State != ConnectionState.Started || connectedLocally)
@@ -1163,8 +1119,6 @@ namespace Fomoxa.Unity
                 entity = instance;
                 return placed;
             }
-
-            public void PrepareReceive(INetworkEntity entity) => ((NetworkObject)entity).ResetClientReceive();
 
             public void End(INetworkEntity entity) => owner.End((NetworkObject)entity);
 

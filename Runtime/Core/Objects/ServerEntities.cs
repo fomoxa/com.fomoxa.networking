@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Prediction;
 using Fomoxa.Networking.Sessions;
@@ -13,6 +14,7 @@ namespace Fomoxa.Networking.Objects
         private readonly MessageChannels channels;
         private readonly StateProtocol stateProtocol;
         private readonly InputProtocol inputProtocol;
+        private readonly TransformProtocol transformProtocol;
         private readonly RpcMessageIds rpcIds;
         private readonly IServerEntityBackend backend;
         private readonly NetworkLog log;
@@ -26,6 +28,12 @@ namespace Fomoxa.Networking.Objects
         private readonly ReconcileState reconcileState = new ReconcileState();
         private readonly List<EntityRecord> applying = new List<EntityRecord>();
         private readonly List<ReconcileSend> reconciling = new List<ReconcileSend>();
+        private readonly List<ReadOnlyMemory<byte>> spawnStates = new List<ReadOnlyMemory<byte>>();
+        private readonly Dictionary<ulong, AnchorPositions> anchors = new Dictionary<ulong, AnchorPositions>();
+        private readonly List<ObserverAddedArgs> enteredObservers = new List<ObserverAddedArgs>();
+        private readonly TransformUpdate transformUpdate = new TransformUpdate();
+        private readonly TransformSettle transformSettle = new TransformSettle();
+        private int anchorGeneration = 1;
         private static readonly List<EntityRecord> NoRecords = new List<EntityRecord>();
 
         public ServerEntities(
@@ -37,6 +45,7 @@ namespace Fomoxa.Networking.Objects
             MessageChannels channels,
             StateProtocol stateProtocol,
             InputProtocol inputProtocol,
+            TransformProtocol transformProtocol,
             RpcMessageIds rpcIds,
             IServerEntityBackend backend,
             NetworkLog log)
@@ -49,6 +58,7 @@ namespace Fomoxa.Networking.Objects
             this.channels = channels;
             this.stateProtocol = stateProtocol;
             this.inputProtocol = inputProtocol;
+            this.transformProtocol = transformProtocol;
             this.rpcIds = rpcIds;
             this.backend = backend;
             this.log = log;
@@ -59,6 +69,7 @@ namespace Fomoxa.Networking.Objects
             objects.OnOwnerChanged += RaiseOwnerChanged;
             objects.DespawnWithOwner = objectId => !spawned.TryGetValue(objectId, out EntityRecord record) || record.Representation.DespawnWithOwner;
             objects.Despawner = DespawnForLeavingOwner;
+            objects.OnObserverAdded += enteredObservers.Add;
             session.OnRemoteConnectionState += ForgetLeavingPeer;
             session.OnServerConnectionState += DespawnAllWhenStopped;
         }
@@ -155,11 +166,14 @@ namespace Fomoxa.Networking.Objects
                 record.HasInput |= behaviour.InputSlot != null;
             }
 
+            CaptureTransforms(behaviours);
+
             RouteRpcs(behaviours);
             RouteStates(behaviours);
             CaptureStates(behaviours);
             uint sceneId = backend.SceneIdOf(entity);
             uint objectId;
+            anchorGeneration++;
             Spawning = record;
             try
             {
@@ -229,6 +243,7 @@ namespace Fomoxa.Networking.Objects
                 return false;
             }
 
+            anchorGeneration++;
             ulong previousOwnerId = record.OwnerId;
             if (!Objects.ChangeOwner(record.ObjectId, ownerId))
             {
@@ -261,8 +276,137 @@ namespace Fomoxa.Networking.Objects
                 throw new ArgumentNullException(nameof(entity));
             }
 
+            anchorGeneration++;
             EntityRecord record = entity.Record;
             return record != null && record.Server == this && Objects.RebuildObservers(record.ObjectId);
+        }
+
+        public void RebuildObserversOfPeer(ulong peerId)
+        {
+            anchorGeneration++;
+            Objects.RebuildObserversOfPeer(peerId);
+        }
+
+        public void RebuildObservers()
+        {
+            anchorGeneration++;
+            Objects.RebuildObservers();
+        }
+
+        public void RebuildObserversRound()
+        {
+            anchorGeneration++;
+            Objects.RebuildObserversRound();
+        }
+
+        public void NextAnchorRound() => anchorGeneration++;
+
+        public IReadOnlyList<Vector3> AnchorsOf(ulong peerId)
+        {
+            List<EntityRecord> records = OwnedBy(peerId);
+            if (records.Count == 0)
+            {
+                return Array.Empty<Vector3>();
+            }
+
+            if (!anchors.TryGetValue(peerId, out AnchorPositions cached))
+            {
+                cached = new AnchorPositions();
+                anchors.Add(peerId, cached);
+            }
+
+            if (cached.Generation != anchorGeneration)
+            {
+                cached.Generation = anchorGeneration;
+                cached.Positions.Clear();
+                foreach (EntityRecord record in records)
+                {
+                    cached.Positions.Add(record.Representation.ReadWorldPosition());
+                }
+            }
+
+            return cached.Positions;
+        }
+
+        public SpawnData ReadSpawnData(uint objectId)
+        {
+            EntityRecord record = Spawning;
+            if (record == null && !spawned.TryGetValue(objectId, out record))
+            {
+                throw new InvalidOperationException($"object {objectId} has no representation on the server");
+            }
+
+            INetworkEntity entity = record.Representation;
+            spawnStates.Clear();
+            IReadOnlyList<EntityBehaviour> behaviours = entity.EntityBehaviours;
+            for (int index = 0; index < behaviours.Count; index++)
+            {
+                spawnStates.Add(behaviours[index].StateSlot?.Sent ?? ReadOnlyMemory<byte>.Empty);
+            }
+
+            entity.ReadRootPose(out Vector3 worldPosition, out Quaternion worldRotation, out Vector3 localScale);
+            return new SpawnData(record.Fingerprint, worldPosition, worldRotation, localScale, spawnStates);
+        }
+
+        public void SyncTransforms(uint tick)
+        {
+            foreach (ObserverAddedArgs entered in enteredObservers)
+            {
+                if (!spawned.TryGetValue(entered.ObjectId, out EntityRecord enteredRecord) || !Objects.IsObserver(entered.ObjectId, entered.PeerId))
+                {
+                    continue;
+                }
+
+                IReadOnlyList<EntityBehaviour> enteredBehaviours = enteredRecord.Representation.EntityBehaviours;
+                for (int index = 0; index < enteredBehaviours.Count; index++)
+                {
+                    TransformSlot slot = enteredBehaviours[index].TransformSlot;
+                    if (slot != null && !slot.Sync.SettlePending)
+                    {
+                        slot.Source.ReadLocal(out Vector3 position, out Quaternion rotation, out Vector3 scale);
+                        ReadOnlySpan<byte> settle = EncodeSettle(slot.Sync, tick, slot.Sync.SelectedMask, position, rotation, scale);
+                        session.SendToObject(entered.PeerId, transformProtocol.SettleCodec.MessageId, enteredRecord.ObjectId, (byte)index, settle);
+                    }
+                }
+            }
+
+            enteredObservers.Clear();
+            foreach (EntityRecord record in spawnOrder)
+            {
+                IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
+                for (int index = 0; index < behaviours.Count; index++)
+                {
+                    TransformSlot slot = behaviours[index].TransformSlot;
+                    if (slot == null)
+                    {
+                        continue;
+                    }
+
+                    TransformSync sync = slot.Sync;
+                    slot.Source.ReadLocal(out Vector3 position, out Quaternion rotation, out Vector3 scale);
+                    if (sync.SettlePending)
+                    {
+                        sync.SettlePending = false;
+                        sync.MarkSettled(position, rotation, scale);
+                        Objects.SendToObservers(transformProtocol.SettleCodec.MessageId, record.ObjectId, (byte)index, EncodeSettle(sync, tick, sync.SelectedMask, position, rotation, scale));
+                        continue;
+                    }
+
+                    TransformSend send = sync.Sample(position, rotation, scale, out byte mask);
+                    if (send == TransformSend.Update)
+                    {
+                        transformUpdate.Tick = tick;
+                        transformUpdate.Mask = mask;
+                        transformUpdate.Generation = sync.Generation;
+                        SpawnTransform.PackSelected(mask, position, rotation, scale, transformUpdate.Values);
+                        Objects.SendToObservers(transformProtocol.UpdateCodec.MessageId, record.ObjectId, (byte)index, transformProtocol.UpdateCodec.Encode(transformUpdate).Span);
+                    }
+                    else if (send == TransformSend.Settle)
+                    {
+                        Objects.SendToObservers(transformProtocol.SettleCodec.MessageId, record.ObjectId, (byte)index, EncodeSettle(sync, tick, mask, position, rotation, scale));
+                    }
+                }
+            }
         }
 
         public void SyncStates()
@@ -613,11 +757,18 @@ namespace Fomoxa.Networking.Objects
 
             sceneObjects.Clear();
             owned.Clear();
+            anchors.Clear();
         }
 
         private void ForgetLeavingPeer(ConnectionStateArgs args)
         {
-            if (args.State == ConnectionState.Stopped && owned.TryGetValue(args.PeerId, out List<EntityRecord> records) && records.Count == 0)
+            if (args.State != ConnectionState.Stopped)
+            {
+                return;
+            }
+
+            anchors.Remove(args.PeerId);
+            if (owned.TryGetValue(args.PeerId, out List<EntityRecord> records) && records.Count == 0)
             {
                 owned.Remove(args.PeerId);
             }
@@ -669,6 +820,28 @@ namespace Fomoxa.Networking.Objects
             session.SendToObject(ownerId, inputProtocol.ReconcileCodec.MessageId, objectId, behaviourIndex, inputProtocol.ReconcileCodec.Encode(reconcileState).Span);
         }
 
+        private static void CaptureTransforms(IReadOnlyList<EntityBehaviour> behaviours)
+        {
+            foreach (EntityBehaviour behaviour in behaviours)
+            {
+                TransformSlot slot = behaviour.TransformSlot;
+                if (slot != null)
+                {
+                    slot.Source.ReadLocal(out Vector3 position, out Quaternion rotation, out Vector3 scale);
+                    slot.Sync.CaptureSpawn(position, rotation, scale);
+                }
+            }
+        }
+
+        private ReadOnlySpan<byte> EncodeSettle(TransformSync sync, uint tick, byte mask, in Vector3 position, in Quaternion rotation, in Vector3 scale)
+        {
+            transformSettle.Tick = tick;
+            transformSettle.Mask = mask;
+            transformSettle.Generation = sync.Generation;
+            SpawnTransform.PackSelected(mask, position, rotation, scale, transformSettle.Values);
+            return transformProtocol.SettleCodec.Encode(transformSettle).Span;
+        }
+
         private void LogRejectedInput(InputRejectedArgs args)
         {
             log.Warning($"Fomoxa dropped input to object {args.ObjectId} from peer {args.PeerId}, which does not own the object");
@@ -688,6 +861,13 @@ namespace Fomoxa.Networking.Objects
             public byte BehaviourIndex { get; }
 
             public ulong OwnerId { get; }
+        }
+
+        private sealed class AnchorPositions
+        {
+            public readonly List<Vector3> Positions = new List<Vector3>();
+
+            public int Generation;
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Fomoxa.Networking;
 using UnityEngine;
 
 namespace Fomoxa.Unity
@@ -21,7 +22,7 @@ namespace Fomoxa.Unity
 
         internal override bool Decide(ServerManager server, NetworkObject networkObject, ulong peerId)
         {
-            IReadOnlyList<Vector3> anchors = server.AnchorsOf(peerId);
+            IReadOnlyList<System.Numerics.Vector3> anchors = server.AnchorsOf(peerId);
             if (anchors.Count == 0)
             {
                 return false;
@@ -29,10 +30,10 @@ namespace Fomoxa.Unity
 
             float range = networkObject.Range != null ? networkObject.Range.Radius : radius;
             float limit = range * range;
-            Vector3 position = networkObject.transform.position;
+            System.Numerics.Vector3 position = ((INetworkEntity)networkObject).ReadWorldPosition();
             for (int index = 0; index < anchors.Count; index++)
             {
-                if ((anchors[index] - position).sqrMagnitude <= limit)
+                if ((anchors[index] - position).LengthSquared() <= limit)
                 {
                     return true;
                 }

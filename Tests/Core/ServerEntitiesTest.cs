@@ -141,7 +141,7 @@ namespace Fomoxa.Networking.Tests
             {
                 var dispatcher = new MessageDispatcher(TestObjects.Schema());
                 Session = new ServerSession(TestObjects.Schema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol(TestObjects.Channels()));
-                Objects = new ServerObjects(Session, TestObjects.Protocol(TestObjects.Channels()), Read);
+                Objects = new ServerObjects(Session, TestObjects.Protocol(TestObjects.Channels()), objectId => Entities.ReadSpawnData(objectId));
                 var clock = new ServerClock(Session, TestObjects.ClockProtocol());
                 var inputs = new ServerInputs(Session, Objects, TestObjects.InputProtocol(), clock);
                 Entities = new ServerEntities(
@@ -153,6 +153,7 @@ namespace Fomoxa.Networking.Tests
                     TestObjects.Channels(),
                     TestObjects.StateProtocol(TestObjects.Channels()),
                     TestObjects.InputProtocol(),
+                    TestObjects.TransformProtocol(TestObjects.Channels()),
                     new RpcMessageIds(),
                     Backend,
                     new NetworkLog(exception => throw exception, message => { }));
@@ -163,8 +164,6 @@ namespace Fomoxa.Networking.Tests
             }
 
             public EntityBehaviour Behaviour(string name) => new RecordingBehaviour(name, Calls);
-
-            private SpawnData Read(uint objectId) => new SpawnData(Fingerprint, Vector3.Zero, Quaternion.Identity, Vector3.One);
         }
 
         private sealed class FakeBackend : IServerEntityBackend
@@ -219,6 +218,27 @@ namespace Fomoxa.Networking.Tests
             public IReadOnlyList<EntityBehaviour> EntityBehaviours => behaviours;
 
             public EntityRecord Record { get; private set; }
+
+            public Vector3 Position { get; set; }
+
+            public Quaternion Rotation { get; set; } = Quaternion.Identity;
+
+            public Vector3 Scale { get; set; } = Vector3.One;
+
+            public int PositionReads { get; private set; }
+
+            public Vector3 ReadWorldPosition()
+            {
+                PositionReads++;
+                return Position;
+            }
+
+            public void ReadRootPose(out Vector3 worldPosition, out Quaternion worldRotation, out Vector3 localScale)
+            {
+                worldPosition = Position;
+                worldRotation = Rotation;
+                localScale = Scale;
+            }
 
             public void Bind(EntityRecord record) => Record = record;
 

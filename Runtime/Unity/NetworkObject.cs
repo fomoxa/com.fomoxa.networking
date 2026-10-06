@@ -120,14 +120,6 @@ namespace Fomoxa.Unity
             }
         }
 
-        internal void ResetClientReceive()
-        {
-            foreach (NetworkBehaviour behaviour in behaviours)
-            {
-                (behaviour as NetworkTransform)?.ResetReceive();
-            }
-        }
-
         internal void HideOnHost()
         {
             if (HiddenOnHost)
@@ -240,6 +232,16 @@ namespace Fomoxa.Unity
         IReadOnlyList<EntityBehaviour> INetworkEntity.EntityBehaviours => entityBehaviours;
 
         EntityRecord INetworkEntity.Record => record;
+
+        System.Numerics.Vector3 INetworkEntity.ReadWorldPosition() => transform.position.ToNumerics();
+
+        void INetworkEntity.ReadRootPose(out System.Numerics.Vector3 worldPosition, out System.Numerics.Quaternion worldRotation, out System.Numerics.Vector3 localScale)
+        {
+            Transform root = transform;
+            worldPosition = root.position.ToNumerics();
+            worldRotation = root.rotation.ToNumerics();
+            localScale = root.localScale.ToNumerics();
+        }
 
         void INetworkEntity.Bind(EntityRecord bound) => record = bound;
 

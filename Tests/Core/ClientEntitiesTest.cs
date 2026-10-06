@@ -130,7 +130,7 @@ namespace Fomoxa.Networking.Tests
             CollectionAssert.IsEmpty(world.Backend.Ended);
         }
 
-        private sealed class World
+        internal sealed class World
         {
             public readonly List<string> ServerCalls = new List<string>();
             public readonly List<string> ClientCalls = new List<string>();
@@ -148,24 +148,26 @@ namespace Fomoxa.Networking.Tests
                 var log = new NetworkLog(exception => throw exception, Warnings.Add);
                 var serverDispatcher = new MessageDispatcher(TestObjects.Schema());
                 ServerSession = new ServerSession(TestObjects.Schema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol(TestObjects.Channels()));
-                var serverObjects = new ServerObjects(ServerSession, TestObjects.Protocol(TestObjects.Channels()), Read);
+                var serverObjects = new ServerObjects(ServerSession, TestObjects.Protocol(TestObjects.Channels()), objectId => Server.ReadSpawnData(objectId));
                 var clock = new ServerClock(ServerSession, TestObjects.ClockProtocol());
                 var inputs = new ServerInputs(ServerSession, serverObjects, TestObjects.InputProtocol(), clock);
-                Server = new ServerEntities(this, ServerSession, serverObjects, inputs, serverDispatcher, TestObjects.Channels(), TestObjects.StateProtocol(TestObjects.Channels()), TestObjects.InputProtocol(), new RpcMessageIds(), new FakeServerBackend(), log);
+                Server = new ServerEntities(this, ServerSession, serverObjects, inputs, serverDispatcher, TestObjects.Channels(), TestObjects.StateProtocol(TestObjects.Channels()), TestObjects.InputProtocol(), TestObjects.TransformProtocol(TestObjects.Channels()), new RpcMessageIds(), new FakeServerBackend(), log);
                 var listener = new LoopbackListener(8);
                 ServerSession.Start(listener);
 
                 Backend = new FakeClientBackend(ClientCalls);
                 var clientDispatcher = new MessageDispatcher(TestObjects.Schema());
                 ClientSession = new ClientSession(TestObjects.Schema(), new SessionConfig(), new SessionLimits(), clientDispatcher, TestBundles.Protocol(TestObjects.Channels()));
-                Client = new ClientEntities(this, ClientSession, clientDispatcher, TestObjects.Channels(), TestObjects.StateProtocol(TestObjects.Channels()), new RpcMessageIds(), null, Backend, log);
+                Client = new ClientEntities(this, ClientSession, clientDispatcher, TestObjects.Channels(), TestObjects.StateProtocol(TestObjects.Channels()), TestObjects.TransformProtocol(TestObjects.Channels()), new RpcMessageIds(), null, Backend, log);
                 ClientObjects = new ClientObjects(ClientSession, TestObjects.Protocol(TestObjects.Channels()), Client);
                 Client.Attach(ClientObjects);
                 ClientSession.Start(listener.Connect(), now);
                 Run(20);
             }
 
-            public FakeEntity Served() => new FakeEntity(PrefabId, new RecordingBehaviour("server", ServerCalls));
+            public FakeEntity Served() => Served(new RecordingBehaviour("server", ServerCalls));
+
+            public FakeEntity Served(RecordingBehaviour behaviour) => new FakeEntity(PrefabId, behaviour);
 
             public void Run(int steps)
             {
@@ -178,26 +180,9 @@ namespace Fomoxa.Networking.Tests
                     ClientSession.Flush();
                 }
             }
-
-            private SpawnData Read(uint objectId)
-            {
-                EntityRecord record = Server.Spawning;
-                if (record == null)
-                {
-                    Server.TryGet(objectId, out record);
-                }
-
-                var states = new List<ReadOnlyMemory<byte>>();
-                foreach (EntityBehaviour behaviour in record.Representation.EntityBehaviours)
-                {
-                    states.Add(behaviour.StateSlot?.Sent ?? ReadOnlyMemory<byte>.Empty);
-                }
-
-                return new SpawnData(record.Fingerprint, Vector3.Zero, Quaternion.Identity, Vector3.One, states);
-            }
         }
 
-        private sealed class FakeServerBackend : IServerEntityBackend
+        internal sealed class FakeServerBackend : IServerEntityBackend
         {
             public string NameOf(INetworkEntity entity) => "served";
 
@@ -222,7 +207,7 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
-        private sealed class FakeClientBackend : IClientEntityBackend
+        internal sealed class FakeClientBackend : IClientEntityBackend
         {
             public readonly List<FakeEntity> Created = new List<FakeEntity>();
             public readonly List<FakeEntity> Ended = new List<FakeEntity>();
@@ -234,6 +219,8 @@ namespace Fomoxa.Networking.Tests
             }
 
             public bool KnownPrefab { get; set; } = true;
+
+            public Func<RecordingBehaviour> CreateBehaviour { get; set; }
 
             public SpawnResult CheckPrefab(in SpawnedObject spawned)
             {
@@ -247,7 +234,7 @@ namespace Fomoxa.Networking.Tests
 
             public INetworkEntity Create(in SpawnedObject spawned)
             {
-                var entity = new FakeEntity(spawned.PrefabId, new RecordingBehaviour("client", calls));
+                var entity = new FakeEntity(spawned.PrefabId, CreateBehaviour?.Invoke() ?? new RecordingBehaviour("client", calls));
                 Created.Add(entity);
                 return entity;
             }
@@ -256,10 +243,6 @@ namespace Fomoxa.Networking.Tests
             {
                 entity = null;
                 return SpawnResult.UnknownSceneObject;
-            }
-
-            public void PrepareReceive(INetworkEntity entity)
-            {
             }
 
             public void End(INetworkEntity entity) => Ended.Add((FakeEntity)entity);
@@ -273,7 +256,7 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
-        private sealed class FakeEntity : INetworkEntity
+        internal sealed class FakeEntity : INetworkEntity, IBehaviourLink
         {
             private readonly EntityBehaviour[] behaviours;
 
@@ -283,7 +266,7 @@ namespace Fomoxa.Networking.Tests
                 this.behaviours = behaviours;
                 for (int index = 0; index < behaviours.Length; index++)
                 {
-                    ((RecordingBehaviour)behaviours[index]).Attach(index);
+                    ((RecordingBehaviour)behaviours[index]).AttachTo(this, index);
                 }
             }
 
@@ -299,6 +282,27 @@ namespace Fomoxa.Networking.Tests
 
             public EntityRecord Record { get; private set; }
 
+            public Vector3 Position { get; set; }
+
+            public Quaternion Rotation { get; set; } = Quaternion.Identity;
+
+            public Vector3 Scale { get; set; } = Vector3.One;
+
+            public int PositionReads { get; private set; }
+
+            public Vector3 ReadWorldPosition()
+            {
+                PositionReads++;
+                return Position;
+            }
+
+            public void ReadRootPose(out Vector3 worldPosition, out Quaternion worldRotation, out Vector3 localScale)
+            {
+                worldPosition = Position;
+                worldRotation = Rotation;
+                localScale = Scale;
+            }
+
             public void Bind(EntityRecord record) => Record = record;
 
             public void Unbind(EntityRecord record)
@@ -308,9 +312,23 @@ namespace Fomoxa.Networking.Tests
                     Record = null;
                 }
             }
+
+            bool IBehaviourLink.SpawnedOnServer => Record != null && Record.OnServer;
+
+            bool IBehaviourLink.SpawnedOnClient => Record != null && Record.OnClient;
+
+            bool IBehaviourLink.IsReplaying => false;
+
+            RpcMessageIds IBehaviourLink.RpcIds(bool server) => throw new NotSupportedException();
+
+            SendResult IBehaviourLink.SendToServer(uint messageId, byte behaviourIndex, ReadOnlySpan<byte> body) => throw new NotSupportedException();
+
+            int IBehaviourLink.SendToObservers(uint messageId, byte behaviourIndex, ReadOnlySpan<byte> body) => throw new NotSupportedException();
+
+            SendResult IBehaviourLink.SendToObserver(ulong peerId, uint messageId, byte behaviourIndex, ReadOnlySpan<byte> body) => throw new NotSupportedException();
         }
 
-        private sealed class RecordingBehaviour : EntityBehaviour
+        internal class RecordingBehaviour : EntityBehaviour
         {
             private readonly string name;
             private readonly List<string> calls;
@@ -321,7 +339,7 @@ namespace Fomoxa.Networking.Tests
                 this.calls = calls;
             }
 
-            public void Attach(int index) => Attach(null, (byte)index);
+            public void AttachTo(IBehaviourLink link, int index) => Attach(link, (byte)index);
 
             public override void OnStartClient() => calls.Add($"{name} start client");
 

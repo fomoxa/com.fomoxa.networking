@@ -8,8 +8,6 @@ namespace Fomoxa.Networking.Objects
 
         SpawnResult PlaceSceneObject(in SpawnedObject spawned, out INetworkEntity entity);
 
-        void PrepareReceive(INetworkEntity entity);
-
         void End(INetworkEntity entity);
 
         void HideOnHost(INetworkEntity entity);

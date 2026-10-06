@@ -30,6 +30,10 @@ namespace Fomoxa.Networking
 
         internal InputSlot InputSlot { get; private set; }
 
+        internal TransformSlot TransformSlot { get; private set; }
+
+        internal bool SpawnedOnServer => link != null && link.SpawnedOnServer;
+
         internal virtual Type DeclaringType => GetType();
 
         internal virtual string DisplayName => DeclaringType.Name;
@@ -82,6 +86,8 @@ namespace Fomoxa.Networking
         internal virtual void PrepareState()
         {
         }
+
+        protected void SyncTransform(TransformSync sync, ITransformSource source, ITransformReceiver receiver) => SetTransform(sync, source, receiver);
 
         protected SendResult SendServerRpc<T>(IMessageCodec<T> codec, T value) => ServerRpcFrom(codec, value);
 
@@ -170,6 +176,32 @@ namespace Fomoxa.Networking
             }
 
             InputSlot = slot;
+        }
+
+        internal void SetTransform(TransformSync sync, ITransformSource source, ITransformReceiver receiver)
+        {
+            if (sync == null)
+            {
+                throw new ArgumentNullException(nameof(sync));
+            }
+
+            if (source == null)
+            {
+                throw new ArgumentNullException(nameof(source));
+            }
+
+            if (receiver == null)
+            {
+                throw new ArgumentNullException(nameof(receiver));
+            }
+
+            if (TransformSlot != null)
+            {
+                throw new HandlerRegistrationException($"{DeclaringType.FullName} synchronizes more than one transform");
+            }
+
+            sync.Bind(this);
+            TransformSlot = new TransformSlot(sync, source, receiver);
         }
 
         internal void Reconciled(uint tick)

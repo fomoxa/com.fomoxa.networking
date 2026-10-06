@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Objects;
 using UnityEngine;
 
 namespace Fomoxa.Unity
 {
-    public sealed class NetworkTransform : NetworkBehaviour
+    public sealed class NetworkTransform : NetworkBehaviour, ITransformSource, ITransformReceiver
     {
         [SerializeField] private bool syncPosition = true;
         [SerializeField] private bool syncRotation = true;
@@ -18,13 +19,7 @@ namespace Fomoxa.Unity
         [SerializeField] private float smoothingTime = 0.1f;
 
         private readonly List<Snapshot> snapshots = new List<Snapshot>();
-        private Vector3 sentPosition;
-        private Quaternion sentRotation;
-        private Vector3 sentScale;
-        private Vector3 sampledPosition;
-        private Quaternion sampledRotation;
-        private Vector3 sampledScale;
-        private bool moving;
+        private TransformSync sync;
         private bool received;
         private byte receivedMask;
         private byte receivedGeneration;
@@ -58,92 +53,47 @@ namespace Fomoxa.Unity
             set => smoothingTime = Mathf.Max(0f, value);
         }
 
-        internal byte SelectedMask =>
-            (byte)((syncPosition ? SpawnTransform.PositionBit : 0)
-                | (syncRotation ? SpawnTransform.RotationBit : 0)
-                | (syncScale ? SpawnTransform.ScaleBit : 0));
+        internal bool SettlePending => sync != null && sync.SettlePending;
 
-        internal bool SettlePending { get; set; }
-
-        internal byte Generation { get; private set; }
+        internal byte Generation => sync != null ? sync.Generation : (byte)0;
 
         internal uint LastTick { get; private set; }
 
         internal int SnapshotCount => snapshots.Count;
 
-        public void Teleport()
+        public void Teleport() => sync?.Teleport();
+
+        internal override void OnAttached()
         {
-            NetworkObject networkObject = NetworkObject;
-            if (networkObject == null || networkObject.Server == null)
+            if (sync != null)
             {
                 return;
             }
 
-            Generation++;
-            SettlePending = true;
+            sync = new TransformSync(CurrentSettings());
+            Core.SetTransform(sync, this, this);
         }
 
-        internal void CaptureSpawn()
-        {
-            MarkSettled();
-            SettlePending = true;
-        }
-
-        internal void MarkSettled()
+        void ITransformSource.ReadLocal(out System.Numerics.Vector3 localPosition, out System.Numerics.Quaternion localRotation, out System.Numerics.Vector3 localScale)
         {
             Transform target = transform;
-            sentPosition = sampledPosition = target.localPosition;
-            sentRotation = sampledRotation = target.localRotation;
-            sentScale = sampledScale = target.localScale;
-            moving = false;
+            localPosition = target.localPosition.ToNumerics();
+            localRotation = target.localRotation.ToNumerics();
+            localScale = target.localScale.ToNumerics();
         }
 
-        internal TransformSend Sample(out byte mask)
-        {
-            Transform target = transform;
-            Vector3 position = target.localPosition;
-            Quaternion rotation = target.localRotation;
-            Vector3 scale = target.localScale;
-            bool changed = (syncPosition && !position.Equals(sampledPosition))
-                || (syncRotation && !rotation.Equals(sampledRotation))
-                || (syncScale && !scale.Equals(sampledScale));
-            sampledPosition = position;
-            sampledRotation = rotation;
-            sampledScale = scale;
-            mask = 0;
-            if (changed)
-            {
-                moving = true;
-                if (syncPosition && Vector3.Distance(position, sentPosition) > positionThreshold)
-                {
-                    mask |= SpawnTransform.PositionBit;
-                    sentPosition = position;
-                }
+        void ITransformReceiver.ResetReceive() => ResetReceive();
 
-                if (syncRotation && Quaternion.Angle(rotation, sentRotation) > rotationThreshold)
-                {
-                    mask |= SpawnTransform.RotationBit;
-                    sentRotation = rotation;
-                }
-
-                if (syncScale && Vector3.Distance(scale, sentScale) > scaleThreshold)
-                {
-                    mask |= SpawnTransform.ScaleBit;
-                    sentScale = scale;
-                }
-
-                return mask == 0 ? TransformSend.None : TransformSend.Update;
-            }
-
-            if (!moving)
-            {
-                return TransformSend.None;
-            }
-
-            MarkSettled();
-            mask = SelectedMask;
-            return TransformSend.Settle;
-        }
+        void ITransformReceiver.Receive(in TransformSample sample) =>
+            Receive(
+                sample.Tick,
+                sample.Mask,
+                sample.LocalPosition.ToUnity(),
+                sample.LocalRotation.ToUnity(),
+                sample.LocalScale.ToUnity(),
+                sample.Settle,
+                sample.Generation,
+                NetworkObject.Client.TickRate);
 
         internal void ResetReceive()
         {
@@ -291,6 +241,17 @@ namespace Fomoxa.Unity
                 Vector3.LerpUnclamped(from.Scale, to.Scale, fraction)));
         }
 
+        private void OnValidate()
+        {
+            if (sync != null)
+            {
+                sync.Settings = CurrentSettings();
+            }
+        }
+
+        private TransformSyncSettings CurrentSettings() =>
+            new TransformSyncSettings(syncPosition, syncRotation, syncScale, positionThreshold, rotationThreshold, scaleThreshold);
+
         private void Update()
         {
             NetworkObject networkObject = NetworkObject;
@@ -341,12 +302,5 @@ namespace Fomoxa.Unity
             public static Snapshot Of(Transform target, uint tick) =>
                 new Snapshot(tick, target.localPosition, target.localRotation, target.localScale);
         }
-    }
-
-    internal enum TransformSend
-    {
-        None,
-        Update,
-        Settle,
     }
 }
