@@ -22,6 +22,7 @@ namespace Fomoxa.Unity
         private readonly MessageChannels channels;
         private readonly StateProtocol stateProtocol;
         private readonly SceneRegistry sceneRegistry;
+        private ObserverRule observerRule;
         private readonly Dictionary<uint, LoadedScene> networkScenes = new Dictionary<uint, LoadedScene>();
         private readonly Dictionary<Scene, uint> sceneIdsByScene = new Dictionary<Scene, uint>();
         private readonly HashSet<uint> loadingScenes = new HashSet<uint>();
@@ -60,10 +61,8 @@ namespace Fomoxa.Unity
             Clock = new ServerClock(session, clockProtocol);
             Inputs = new ServerInputs(session, Objects, inputProtocol, Clock);
             Entities = new ServerEntities(this, session, Objects, Inputs, Dispatcher, channels, stateProtocol, inputProtocol, transformProtocol, rpcIds, new EntityBackend(this, prefabs), UnityNetworkLog.Instance);
-            Entities.ObserverRule = DecideByRule;
             Entities.OnSpawned += record => OnSpawnedForHost?.Invoke((NetworkObject)record.Representation);
             Entities.OnUnspawning += EndHostShare;
-            Entities.OnFirstOwned += RebuildForFirstAnchor;
             Scenes = new NetworkScenes(this, sceneRegistry);
             Objects.Scenes.OnSceneAdded += LoadNetworkScene;
             Objects.Scenes.OnSceneRemoved += UnloadNetworkScene;
@@ -114,7 +113,15 @@ namespace Fomoxa.Unity
 
         public IReadOnlyDictionary<uint, INetworkEntity> Spawned => Entities.Representations;
 
-        public ObserverRule ObserverRule { get; set; }
+        public ObserverRule ObserverRule
+        {
+            get => observerRule;
+            set
+            {
+                observerRule = value;
+                Entities.ObserverRule = value != null ? value.CoreRule : null;
+            }
+        }
 
         public NetworkScenes Scenes { get; }
 
@@ -246,8 +253,6 @@ namespace Fomoxa.Unity
             Objects.SendToObserver(peerId, messageId, objectId, behaviourIndex, body);
 
         internal void RebuildObserversRound() => Entities.RebuildObserversRound();
-
-        internal IReadOnlyList<System.Numerics.Vector3> AnchorsOf(ulong peerId) => Entities.AnchorsOf(peerId);
 
         internal bool IsLoadingNetworkScene(uint sceneId) => loadingScenes.Contains(sceneId);
 
@@ -420,21 +425,6 @@ namespace Fomoxa.Unity
         internal void SyncStates() => Entities.SyncStates();
 
         internal void SyncTransforms(uint tick) => Entities.SyncTransforms(tick);
-
-        private void RebuildForFirstAnchor(ulong peerId)
-        {
-            ObserverRule rule = ObserverRule;
-            if (rule != null && rule.RebuildsOnFirstAnchor && session.PeerState(peerId) == ConnectionState.Started)
-            {
-                Objects.RebuildObserversOfPeer(peerId);
-            }
-        }
-
-        private bool DecideByRule(EntityRecord record, ulong peerId)
-        {
-            ObserverRule rule = ObserverRule;
-            return rule == null || rule.Decide(this, (NetworkObject)record.Representation, peerId);
-        }
 
         private void EndHostShare(EntityRecord record)
         {

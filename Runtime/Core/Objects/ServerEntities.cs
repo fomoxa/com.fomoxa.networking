@@ -63,6 +63,7 @@ namespace Fomoxa.Networking.Objects
             this.backend = backend;
             this.log = log;
             Representations = new RepresentationTable(spawned);
+            Observers = new ObserverContext(this);
             dispatcher.RegisterObject(stateProtocol.ResyncCodec.MessageId, Resync);
             inputs.OnInputRejected += LogRejectedInput;
             objects.Observes = DecideObserver;
@@ -78,8 +79,6 @@ namespace Fomoxa.Networking.Objects
 
         public event Action<EntityRecord> OnUnspawning;
 
-        public event Action<ulong> OnFirstOwned;
-
         public object Owner { get; }
 
         public ServerObjects Objects { get; }
@@ -88,7 +87,9 @@ namespace Fomoxa.Networking.Objects
 
         public InputRules InputRules { get; set; } = new InputRules();
 
-        public Func<EntityRecord, ulong, bool> ObserverRule { get; set; }
+        public IObserverRule ObserverRule { get; set; }
+
+        public ObserverContext Observers { get; }
 
         public IReadOnlyDictionary<uint, EntityRecord> Spawned => spawned;
 
@@ -209,7 +210,7 @@ namespace Fomoxa.Networking.Objects
                 OnSpawned?.Invoke(record);
                 if (firstOwned)
                 {
-                    OnFirstOwned?.Invoke(ownerId);
+                    RebuildForFirstAnchor(ownerId);
                 }
             }
         }
@@ -252,7 +253,7 @@ namespace Fomoxa.Networking.Objects
 
             if (previousOwnerId != ownerId && owned.TryGetValue(ownerId, out List<EntityRecord> records) && records.Count == 1)
             {
-                OnFirstOwned?.Invoke(ownerId);
+                RebuildForFirstAnchor(ownerId);
             }
 
             return true;
@@ -678,7 +679,7 @@ namespace Fomoxa.Networking.Objects
                     return false;
             }
 
-            Func<EntityRecord, ulong, bool> rule = ObserverRule;
+            IObserverRule rule = ObserverRule;
             if (rule == null)
             {
                 return true;
@@ -686,12 +687,21 @@ namespace Fomoxa.Networking.Objects
 
             try
             {
-                return rule(record, peerId);
+                return rule.Observes(Observers, record.Representation, peerId);
             }
             catch (Exception exception)
             {
                 log.Exception(exception);
                 return false;
+            }
+        }
+
+        private void RebuildForFirstAnchor(ulong peerId)
+        {
+            IObserverRule rule = ObserverRule;
+            if (rule != null && rule.RebuildsOnFirstAnchor && session.PeerState(peerId) == ConnectionState.Started)
+            {
+                Objects.RebuildObserversOfPeer(peerId);
             }
         }
 

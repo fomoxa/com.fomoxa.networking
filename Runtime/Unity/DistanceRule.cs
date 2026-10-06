@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Fomoxa.Networking;
 using UnityEngine;
 
@@ -9,37 +8,42 @@ namespace Fomoxa.Unity
     {
         [SerializeField] private float radius = 50f;
 
+        private RangeRule rule;
+
         public float Radius
         {
             get => radius;
             set => radius = Mathf.Max(0f, value);
         }
 
-        internal override bool RebuildsOnFirstAnchor => true;
+        internal override bool RebuildsOnFirstAnchor => Rule.RebuildsOnFirstAnchor;
 
-        public override bool Observes(NetworkObject networkObject, ulong peerId) =>
-            networkObject != null && networkObject.Server != null && Decide(networkObject.Server, networkObject, peerId);
+        private RangeRule Rule => rule ??= new RangeRule(this);
 
-        internal override bool Decide(ServerManager server, NetworkObject networkObject, ulong peerId)
+        public override bool Observes(NetworkObject networkObject, ulong peerId)
         {
-            IReadOnlyList<System.Numerics.Vector3> anchors = server.AnchorsOf(peerId);
-            if (anchors.Count == 0)
+            EntityRecord record = networkObject != null ? ((INetworkEntity)networkObject).Record : null;
+            return record != null && record.Server != null && Rule.Observes(record.Server.Observers, networkObject, peerId);
+        }
+
+        internal override bool ObservesEntity(ObserverContext context, INetworkEntity entity, ulong peerId) =>
+            Rule.Observes(context, entity, peerId);
+
+        private sealed class RangeRule : DistanceObserverRule
+        {
+            private readonly DistanceRule owner;
+
+            public RangeRule(DistanceRule owner)
+                : base(0f)
             {
-                return false;
+                this.owner = owner;
             }
 
-            float range = networkObject.Range != null ? networkObject.Range.Radius : radius;
-            float limit = range * range;
-            System.Numerics.Vector3 position = ((INetworkEntity)networkObject).ReadWorldPosition();
-            for (int index = 0; index < anchors.Count; index++)
+            protected override float RadiusOf(INetworkEntity entity)
             {
-                if ((anchors[index] - position).LengthSquared() <= limit)
-                {
-                    return true;
-                }
+                ObserverRange range = ((NetworkObject)entity).Range;
+                return range != null ? range.Radius : owner.radius;
             }
-
-            return false;
         }
     }
 }
