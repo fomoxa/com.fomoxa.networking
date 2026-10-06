@@ -1,5 +1,9 @@
+using System;
+using System.Buffers.Binary;
+using System.IO;
 using BundleFixture;
 using Fomoxa.Networking.Messaging;
+using Fomoxa.Networking.Objects;
 using NUnit.Framework;
 
 namespace Fomoxa.Networking.Tests
@@ -47,6 +51,40 @@ namespace Fomoxa.Networking.Tests
             Assert.AreEqual(9UL, decoded.Objects[1].SceneObjectId);
             Assert.IsEmpty(decoded.Objects[1].BehaviourTypes);
             Assert.AreEqual(0f, decoded.Objects[1].Pose.RotationW);
+        }
+
+        [Test]
+        public void TheFileFormatPutsTheModelFingerprintBeforeTheBody()
+        {
+            FomoxaRegistry registry = TestObjects.Registry();
+            var file = new SceneFile { SceneId = 42 };
+            file.Objects.Add(new SceneFileObject { SceneObjectId = 7, Fingerprint = 9 });
+
+            byte[] bytes = SceneFileFormat.Write(registry, file);
+            SceneFile read = SceneFileFormat.Read(registry, bytes);
+
+            Assert.AreEqual(Handshake.SceneFileNetFingerprint, BinaryPrimitives.ReadUInt64LittleEndian(bytes));
+            CollectionAssert.AreEqual(SceneFileNetAdapter.Instance.Encode(file).ToArray(), bytes.AsSpan(sizeof(ulong)).ToArray());
+            Assert.AreEqual(42U, read.SceneId);
+            Assert.AreEqual(7UL, read.Objects[0].SceneObjectId);
+        }
+
+        [Test]
+        public void AFileForAnotherFingerprintOrWithoutAHeaderIsRefused()
+        {
+            FomoxaRegistry registry = TestObjects.Registry();
+            byte[] bytes = SceneFileFormat.Write(registry, new SceneFile { SceneId = 42 });
+            BinaryPrimitives.WriteUInt64LittleEndian(bytes, Handshake.SceneFileNetFingerprint + 1);
+
+            InvalidDataException stale = Assert.Throws<InvalidDataException>(() => SceneFileFormat.Read(registry, bytes));
+            StringAssert.Contains("export the scene again", stale.Message);
+            Assert.Throws<InvalidDataException>(() => SceneFileFormat.Read(registry, new byte[4]));
+        }
+
+        [Test]
+        public void TheFileFormatNeedsTheSceneFileCodecAndSchema()
+        {
+            Assert.Throws<InvalidOperationException>(() => SceneFileFormat.Write(new FomoxaRegistry(), new SceneFile()));
         }
 
         [Test]

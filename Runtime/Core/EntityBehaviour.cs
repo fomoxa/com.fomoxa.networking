@@ -9,6 +9,8 @@ namespace Fomoxa.Networking
 {
     public abstract class EntityBehaviour
     {
+        private const int MaxBehaviours = 256;
+
         private readonly Dictionary<uint, ServerRpc> serverRpcs = new Dictionary<uint, ServerRpc>();
         private readonly Dictionary<uint, ClientRpc> clientRpcs = new Dictionary<uint, ClientRpc>();
         private IBehaviourLink link;
@@ -135,6 +137,34 @@ namespace Fomoxa.Networking
         {
             IBehaviourLink target = SpawnedOn(rpc, isServer: true);
             return target.SendToObserver(peerId, RpcMessageId(target, isServer: true, rpc), BehaviourIndex, ReadOnlySpan<byte>.Empty);
+        }
+
+        public static void Attach(INetworkEntity entity)
+        {
+            if (entity == null)
+            {
+                throw new ArgumentNullException(nameof(entity));
+            }
+
+            IReadOnlyList<EntityBehaviour> behaviours = entity.EntityBehaviours;
+            if (behaviours.Count > MaxBehaviours)
+            {
+                throw new ArgumentException($"{behaviours.Count} behaviours exceed the limit of {MaxBehaviours}", nameof(entity));
+            }
+
+            for (int index = 0; index < behaviours.Count; index++)
+            {
+                if (behaviours[index] == null)
+                {
+                    throw new ArgumentException($"behaviour {index} is null", nameof(entity));
+                }
+            }
+
+            var link = new EntityLink(entity);
+            for (int index = 0; index < behaviours.Count; index++)
+            {
+                behaviours[index].Attach(link, (byte)index);
+            }
         }
 
         internal void Attach(IBehaviourLink behaviourLink, byte behaviourIndex)
