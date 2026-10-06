@@ -132,7 +132,7 @@ namespace Fomoxa.Unity.Tests
             Assert.IsFalse(onServer.GetComponent<Rigidbody>().isKinematic);
             Assert.Greater(onClient.transform.position.x, 0.3f);
             Assert.AreEqual(onClient.transform.position.x, proxy.position.x, 0.1f);
-            UnityPhysicsWorld world = client.ClientManager.Physics.Of(clientScene);
+            UnityPhysicsWorld world = client.Physics.Of(clientScene);
             PhysicsSnapshot snapshot = world.CreateSnapshot();
             world.Save(snapshot);
             Assert.AreEqual(0, UnityPhysicsWorld.EntryCount(snapshot));
@@ -223,7 +223,7 @@ namespace Fomoxa.Unity.Tests
             manager.Registry = TestObjects.Registry();
             manager.Initialize();
             manager.FindServerSceneObjects = () => new List<NetworkObject>();
-            manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindClientSceneObjects = () => new List<NetworkObject>();
             foreach (NetworkObject registered in prefabs)
             {
                 manager.Prefabs.Register(registered);

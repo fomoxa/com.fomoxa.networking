@@ -35,7 +35,7 @@ namespace Fomoxa.Unity.Tests
             server = CreateManager(network);
             client = CreateManager(network);
             server.FindServerSceneObjects = () => serverScene;
-            client.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
+            client.FindClientSceneObjects = () => new List<NetworkObject>();
             prefab = TestPrefabs.Create("Prefab", PrefabId);
             server.Prefabs.Register(prefab);
             client.Prefabs.Register(prefab);
@@ -103,7 +103,7 @@ namespace Fomoxa.Unity.Tests
             NetworkObject door = TestPrefabs.CreateSceneObject("Door", DoorId);
             serverScene.Add(door);
             var clientScene = new List<NetworkObject> { TestPrefabs.CreateSceneObject("ClientDoor", DoorId) };
-            client.ClientManager.FindSceneObjects = () => clientScene;
+            client.FindClientSceneObjects = () => clientScene;
             Connect();
             NetworkObject owned = UnityEngine.Object.Instantiate(prefab);
             NetworkObject serverOwned = UnityEngine.Object.Instantiate(prefab);

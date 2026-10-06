@@ -74,7 +74,7 @@ namespace Fomoxa.Unity
 
         internal ClientManager Client => record?.Client?.Owner as ClientManager;
 
-        private PhysicsWorlds PhysicsWorlds => (Server?.EntityBackend as UnityServerEntityBackend)?.Physics ?? Client?.Physics;
+        private PhysicsWorlds PhysicsWorlds => (Server?.EntityBackend as UnityServerEntityBackend)?.Physics ?? (Client?.PredictionBackend as UnityPredictionBackend)?.Physics;
 
         internal uint Fingerprint { get; set; }
 
@@ -191,7 +191,11 @@ namespace Fomoxa.Unity
                 return;
             }
 
-            Client?.ForgetDestroyed(this);
+            ClientManager client = Client;
+            if (client != null && client.ForgetDestroyed(this))
+            {
+                (client.EntityBackend as UnityClientEntityBackend)?.ForgetDestroyed(this);
+            }
         }
 
         private void NotifyHostVisibility(bool visible)

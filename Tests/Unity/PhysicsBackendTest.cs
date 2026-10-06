@@ -93,7 +93,7 @@ namespace Fomoxa.Unity.Tests
             manager.Registry = TestObjects.Registry();
             manager.Initialize();
             manager.FindServerSceneObjects = () => new List<NetworkObject>();
-            manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindClientSceneObjects = () => new List<NetworkObject>();
             created.Add(manager.gameObject);
             managers.Add(manager);
             return manager;

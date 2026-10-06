@@ -52,6 +52,8 @@ namespace Fomoxa.Unity
         private PhysicsWorlds physicsWorlds;
         private UnityServerSceneHost serverScenes;
         private UnityServerEntityBackend serverBackend;
+        private UnityClientEntityBackend clientBackend;
+        private UnityPredictionBackend predictionBackend;
         private bool ownsPhysicsSimulation;
         private PlayerLoopSystem.UpdateFunction frameEnd;
 
@@ -76,6 +78,14 @@ namespace Fomoxa.Unity
             get => serverScenes.FindSceneObjects;
             set => serverScenes.FindSceneObjects = value;
         }
+
+        internal Func<IReadOnlyList<NetworkObject>> FindClientSceneObjects
+        {
+            get => clientBackend.FindSceneObjects;
+            set => clientBackend.FindSceneObjects = value;
+        }
+
+        internal PhysicsWorlds Physics => physicsWorlds;
 
         internal NetworkPrefabList CollectedPrefabs
         {
@@ -176,13 +186,15 @@ namespace Fomoxa.Unity
                 MaxRetries = maxReconnectRetries,
                 Interval = TimeSpan.FromSeconds(reconnectIntervalSeconds),
             };
-            ClientManager = new ClientManager(schema, limits, sessionConfig, protocol, objectProtocol, stateProtocol, transformProtocol, sceneProtocol, clockProtocol, clockSettings, inputProtocol, TimeManager, Prefabs, Scenes, Registry.Rpcs, reconnectPolicy, TransportManager, ServerManager);
+            clientBackend = new UnityClientEntityBackend(Prefabs);
+            predictionBackend = new UnityPredictionBackend();
+            ClientManager = new ClientManager(schema, limits, sessionConfig, protocol, objectProtocol, stateProtocol, transformProtocol, sceneProtocol, clockProtocol, clockSettings, inputProtocol, TimeManager, Registry.Rpcs, reconnectPolicy, TransportManager.Factory, ServerManager, clientBackend, new UnityClientSceneHost(Scenes, clientBackend), predictionBackend, () => MonotonicClock.Now, UnityNetworkLog.Instance);
             ServerManager.Objects.TickRate = (ushort)TimeManager.TickRate;
             ServerManager.Objects.PhysicsBackend = physicsBackend;
             ClientManager.Objects.PhysicsBackend = physicsBackend;
             physicsWorlds = new PhysicsWorlds(physicsBackend);
             serverBackend.Physics = physicsWorlds;
-            ClientManager.Physics = physicsWorlds;
+            predictionBackend.Physics = physicsWorlds;
             if (simulatePhysics)
             {
                 PhysicsSimulationOwner.Acquire();

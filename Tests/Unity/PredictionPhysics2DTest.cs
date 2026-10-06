@@ -141,7 +141,7 @@ namespace Fomoxa.Unity.Tests
             float cosmetic3DBefore = cosmetic3D.position.z;
 
             onClient.Bias = 5f;
-            PhysicsWorlds physics = client.ClientManager.Physics;
+            PhysicsWorlds physics = client.Physics;
             PhysicsHistory history2D = physics.HistoryOf(physics.Of2D(clientScene), client.ClientManager.InputRules.History);
             for (int frame = 0; frame < 30 && onClient.ReconcileCount == 1; frame++)
             {
@@ -170,7 +170,7 @@ namespace Fomoxa.Unity.Tests
             client.TimeManager.OnTick += () => firstRun[client.TimeManager.PredictionTick] = cosmetic3D.position.z;
 
             onClient.Bias = 5f;
-            PhysicsWorlds physics = client.ClientManager.Physics;
+            PhysicsWorlds physics = client.Physics;
             PhysicsHistory history2D = physics.HistoryOf(physics.Of2D(clientScene), client.ClientManager.InputRules.History);
             for (int frame = 0; frame < 30 && onClient.ReconcileCount == 1; frame++)
             {
@@ -269,7 +269,7 @@ namespace Fomoxa.Unity.Tests
             var events = new List<string>();
             zone.OnEnter += other => events.Add("enter");
             zone.OnExit += other => events.Add("exit");
-            PhysicsWorlds physics = client.ClientManager.Physics;
+            PhysicsWorlds physics = client.Physics;
             PhysicsHistory history2D = physics.HistoryOf(physics.Of2D(clientScene), client.ClientManager.InputRules.History);
             try
             {
@@ -312,7 +312,7 @@ namespace Fomoxa.Unity.Tests
             Assert.AreEqual(RigidbodyType2D.Dynamic, onServer.GetComponent<Rigidbody2D>().bodyType);
             Assert.AreEqual(1.5f, proxy.position.x, 1e-4f);
             Assert.AreEqual(1.5f, onClient.transform.position.x, 1e-4f);
-            UnityPhysicsWorld2D world = client.ClientManager.Physics.Of2D(clientScene);
+            UnityPhysicsWorld2D world = client.Physics.Of2D(clientScene);
             PhysicsSnapshot snapshot = world.CreateSnapshot();
             world.Save(snapshot);
             Assert.AreEqual(0, UnityPhysicsWorld2D.EntryCount(snapshot));
@@ -481,7 +481,7 @@ namespace Fomoxa.Unity.Tests
             manager.Registry = TestObjects.Registry();
             manager.Initialize();
             manager.FindServerSceneObjects = () => new List<NetworkObject>();
-            manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindClientSceneObjects = () => new List<NetworkObject>();
             foreach (NetworkObject registered in prefabs)
             {
                 manager.Prefabs.Register(registered);

@@ -18,9 +18,6 @@ namespace Fomoxa.Unity
 
         public ITransportFactory Factory { get; }
 
-        internal ITransportConnector CreateConnector(string address, ushort port) =>
-            Factory.CreateConnector(address, port);
-
         private sealed class ListenerGuard : ITransportFactory
         {
             private readonly ITransportFactory inner;

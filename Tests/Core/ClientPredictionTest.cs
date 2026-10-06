@@ -260,7 +260,7 @@ namespace Fomoxa.Networking.Tests
                 value.Number = BinaryPrimitives.ReadInt32LittleEndian(payload.Span);
         }
 
-        private sealed class FakeWorld : IPhysicsSimulation
+        internal sealed class FakeWorld : IPhysicsSimulation
         {
             public int Steps { get; private set; }
 
@@ -283,7 +283,7 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
-        private sealed class FakeTracker : IContactTracker
+        internal sealed class FakeTracker : IContactTracker
         {
             private readonly string name;
 
@@ -304,7 +304,7 @@ namespace Fomoxa.Networking.Tests
             public void Publish() => Calls.Add($"{name} publish");
         }
 
-        private sealed class FakeBackend : IClientPredictionBackend
+        internal sealed class FakeBackend : IClientPredictionBackend
         {
             public readonly Dictionary<INetworkEntity, FakeWorld[]> Worlds = new Dictionary<INetworkEntity, FakeWorld[]>();
             public readonly Dictionary<IPhysicsSimulation, FakeTracker> Trackers = new Dictionary<IPhysicsSimulation, FakeTracker>();

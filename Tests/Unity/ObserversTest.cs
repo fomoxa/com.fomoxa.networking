@@ -211,7 +211,7 @@ namespace Fomoxa.Unity.Tests
             server.ServerManager.StopConnection();
             server.FindServerSceneObjects = () => new List<NetworkObject> { onServer };
             server.ServerManager.StartConnection(1);
-            (NetworkManager client, ulong peerId) = Connect(manager => manager.ClientManager.FindSceneObjects = () => new List<NetworkObject> { onClient });
+            (NetworkManager client, ulong peerId) = Connect(manager => manager.FindClientSceneObjects = () => new List<NetworkObject> { onClient });
             Assert.AreSame(onClient, client.ClientManager.Spawned[onServer.ObjectId]);
             NetworkTransform transform = onClient.GetComponentInChildren<NetworkTransform>();
             transform.Receive(1_000_000, 1, Vector3.zero, Quaternion.identity, Vector3.one, true, 0, 30);
@@ -445,7 +445,7 @@ namespace Fomoxa.Unity.Tests
             manager.Registry = registry;
             manager.Initialize();
             manager.FindServerSceneObjects = () => new List<NetworkObject>();
-            manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindClientSceneObjects = () => new List<NetworkObject>();
             manager.Prefabs.Register(prefab);
             created.Add(manager.gameObject);
             managers.Add(manager);

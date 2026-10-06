@@ -13,5 +13,7 @@ namespace Fomoxa.Networking.Objects
         void HideOnHost(INetworkEntity entity);
 
         void ShowOnHost(INetworkEntity entity);
+
+        void PrepareSceneObjects();
     }
 }

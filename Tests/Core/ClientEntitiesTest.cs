@@ -255,6 +255,10 @@ namespace Fomoxa.Networking.Tests
             public void ShowOnHost(INetworkEntity entity)
             {
             }
+
+            public void PrepareSceneObjects()
+            {
+            }
         }
 
         internal sealed class FakeEntity : INetworkEntity, IBehaviourLink
