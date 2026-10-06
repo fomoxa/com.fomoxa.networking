@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using BundleFixture;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Sessions;
 using Fomoxa.Unity.Tests.Support;

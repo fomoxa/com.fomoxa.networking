@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using BundleFixture;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Sessions;
 using Fomoxa.Unity.Tests.Support;
 using Fomoxa.Networking.Timing;

@@ -1,14 +1,8 @@
 using System;
 using Fomoxa.Networking.Timing;
 
-namespace Fomoxa.Unity
+namespace Fomoxa.Networking
 {
-    public enum TimingMode
-    {
-        Tick,
-        Variable,
-    }
-
     public sealed class TimeManager
     {
         private const double TickRoundingTolerance = 1e-9;
