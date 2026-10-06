@@ -625,54 +625,16 @@ namespace Fomoxa.Unity
                 }
             }
 
-            public void RestoreContacts(IPhysicsSimulation world, uint tick)
+            public IContactTracker TrackerOf(IPhysicsSimulation world)
             {
                 switch (world)
                 {
                     case UnityPhysicsWorld world3D:
-                        ContactTrackers.Of(world3D.PhysicsScene)?.Restore(tick);
-                        break;
+                        return ContactTrackers.Of(world3D.PhysicsScene);
                     case UnityPhysicsWorld2D world2D:
-                        ContactTrackers.Of(world2D.PhysicsScene)?.Restore(tick);
-                        break;
-                }
-            }
-
-            public void QueryContacts(IPhysicsSimulation world, uint tick, bool record, int capacity)
-            {
-                switch (world)
-                {
-                    case UnityPhysicsWorld world3D:
-                        ContactTracker<Collider> tracker = ContactTrackers.Of(world3D.PhysicsScene);
-                        tracker?.Query();
-                        if (record)
-                        {
-                            tracker?.Record(tick, capacity);
-                        }
-
-                        break;
-                    case UnityPhysicsWorld2D world2D:
-                        ContactTracker<Collider2D> tracker2D = ContactTrackers.Of(world2D.PhysicsScene);
-                        tracker2D?.Query();
-                        if (record)
-                        {
-                            tracker2D?.Record(tick, capacity);
-                        }
-
-                        break;
-                }
-            }
-
-            public void PublishContacts(IPhysicsSimulation world)
-            {
-                switch (world)
-                {
-                    case UnityPhysicsWorld world3D:
-                        ContactTrackers.Of(world3D.PhysicsScene)?.Publish();
-                        break;
-                    case UnityPhysicsWorld2D world2D:
-                        ContactTrackers.Of(world2D.PhysicsScene)?.Publish();
-                        break;
+                        return ContactTrackers.Of(world2D.PhysicsScene);
+                    default:
+                        return null;
                 }
             }
         }

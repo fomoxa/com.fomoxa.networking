@@ -80,6 +80,87 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void AReplayThatLoadedRestoresRecordsAndPublishesTheTrackerOfEachWorld()
+        {
+            var rig = new Rig();
+            var world = new FakeWorld();
+            var tracker = new FakeTracker("A", new List<string>());
+            rig.Backend.Trackers[world] = tracker;
+            Mover mover = rig.Spawn(world);
+            rig.StartPredicting(mover);
+            rig.Tick(3);
+            rig.Tick(4);
+            tracker.Calls.Clear();
+
+            rig.Mismatch(mover, 3);
+            rig.Tick(5);
+
+            CollectionAssert.AreEqual(new[] { "A restore 3", "A query", "A record 4", "A publish" }, tracker.Calls);
+        }
+
+        [Test]
+        public void AReplayWithoutALoadQueriesAndPublishesButDoesNotRestoreOrRecord()
+        {
+            var rig = new Rig();
+            var world = new FakeWorld();
+            var tracker = new FakeTracker("A", new List<string>());
+            rig.Backend.Trackers[world] = tracker;
+            Mover mover = rig.Spawn(world);
+            rig.Tick(1);
+            rig.Tick(2);
+            mover.InputSlot.HoldPending(1, Value.Encode(0));
+
+            rig.Tick(3);
+
+            CollectionAssert.AreEqual(new[] { "A query", "A publish" }, tracker.Calls);
+        }
+
+        [Test]
+        public void TheTrackersOfAGroupAreCalledWorldByWorldAtEachPoint()
+        {
+            var rig = new Rig();
+            var calls = new List<string>();
+            var a = new FakeWorld();
+            var b = new FakeWorld();
+            rig.Backend.Trackers[a] = new FakeTracker("A", calls);
+            rig.Backend.Trackers[b] = new FakeTracker("B", calls);
+            Mover mover = rig.Spawn(a, b);
+            rig.StartPredicting(mover);
+            rig.Tick(3);
+            rig.Tick(4);
+            calls.Clear();
+
+            rig.Mismatch(mover, 3);
+            rig.Tick(5);
+
+            CollectionAssert.AreEqual(
+                new[] { "A restore 3", "B restore 3", "A query", "A record 4", "B query", "B record 4", "A publish", "B publish" },
+                calls);
+        }
+
+        [Test]
+        public void AWorldWithoutATrackerStillReplays()
+        {
+            var rig = new Rig();
+            var calls = new List<string>();
+            var tracked = new FakeWorld();
+            var untracked = new FakeWorld();
+            rig.Backend.Trackers[tracked] = new FakeTracker("A", calls);
+            Mover mover = rig.Spawn(tracked, untracked);
+            rig.StartPredicting(mover);
+            rig.Tick(3);
+            rig.Tick(4);
+            calls.Clear();
+
+            rig.Mismatch(mover, 3);
+            rig.Tick(5);
+
+            Assert.AreEqual(1, untracked.Loads);
+            Assert.AreEqual(1, untracked.Steps);
+            CollectionAssert.AreEqual(new[] { "A restore 3", "A query", "A record 4", "A publish" }, calls);
+        }
+
+        [Test]
         public void AnEntityWithoutAWorldReconcilesOnItsOwn()
         {
             var rig = new Rig();
@@ -202,9 +283,31 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
+        private sealed class FakeTracker : IContactTracker
+        {
+            private readonly string name;
+
+            public FakeTracker(string name, List<string> calls)
+            {
+                this.name = name;
+                Calls = calls;
+            }
+
+            public List<string> Calls { get; }
+
+            public void Query() => Calls.Add($"{name} query");
+
+            public void Record(uint tick, int capacity) => Calls.Add($"{name} record {tick}");
+
+            public void Restore(uint tick) => Calls.Add($"{name} restore {tick}");
+
+            public void Publish() => Calls.Add($"{name} publish");
+        }
+
         private sealed class FakeBackend : IClientPredictionBackend
         {
             public readonly Dictionary<INetworkEntity, FakeWorld[]> Worlds = new Dictionary<INetworkEntity, FakeWorld[]>();
+            public readonly Dictionary<IPhysicsSimulation, FakeTracker> Trackers = new Dictionary<IPhysicsSimulation, FakeTracker>();
             private readonly PhysicsHistories histories = new PhysicsHistories();
 
             public int HistoryRequests { get; private set; }
@@ -246,17 +349,8 @@ namespace Fomoxa.Networking.Tests
             {
             }
 
-            public void RestoreContacts(IPhysicsSimulation world, uint tick)
-            {
-            }
-
-            public void QueryContacts(IPhysicsSimulation world, uint tick, bool record, int capacity)
-            {
-            }
-
-            public void PublishContacts(IPhysicsSimulation world)
-            {
-            }
+            public IContactTracker TrackerOf(IPhysicsSimulation world) =>
+                Trackers.TryGetValue(world, out FakeTracker tracker) ? tracker : null;
         }
     }
 }

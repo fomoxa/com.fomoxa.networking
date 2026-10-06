@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Fomoxa.Networking.Simulation;
 using UnityEngine;
 
 namespace Fomoxa.Unity

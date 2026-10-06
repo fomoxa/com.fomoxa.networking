@@ -387,7 +387,7 @@ namespace Fomoxa.Networking.Prediction
             {
                 foreach (IPhysicsSimulation world in group.Worlds)
                 {
-                    backend.RestoreContacts(world, target);
+                    backend.TrackerOf(world)?.Restore(target);
                 }
             }
 
@@ -429,7 +429,12 @@ namespace Fomoxa.Networking.Prediction
 
                 foreach (IPhysicsSimulation world in group.Worlds)
                 {
-                    backend.QueryContacts(world, tick, loaded, capacity);
+                    IContactTracker tracker = backend.TrackerOf(world);
+                    tracker?.Query();
+                    if (loaded)
+                    {
+                        tracker?.Record(tick, capacity);
+                    }
                 }
 
                 foreach (EntityRecord record in records)
@@ -459,7 +464,7 @@ namespace Fomoxa.Networking.Prediction
             IsReplaying = false;
             foreach (IPhysicsSimulation world in group.Worlds)
             {
-                backend.PublishContacts(world);
+                backend.TrackerOf(world)?.Publish();
             }
 
             foreach (EntityRecord record in records)

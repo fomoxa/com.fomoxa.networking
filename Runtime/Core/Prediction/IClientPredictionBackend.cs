@@ -19,10 +19,6 @@ namespace Fomoxa.Networking.Prediction
 
         void EndCorrection(INetworkEntity entity);
 
-        void RestoreContacts(IPhysicsSimulation world, uint tick);
-
-        void QueryContacts(IPhysicsSimulation world, uint tick, bool record, int capacity);
-
-        void PublishContacts(IPhysicsSimulation world);
+        IContactTracker TrackerOf(IPhysicsSimulation world);
     }
 }
