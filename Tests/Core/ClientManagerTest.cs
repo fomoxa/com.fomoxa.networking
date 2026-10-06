@@ -115,7 +115,7 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
-        private sealed class Factory : ITransportFactory
+        internal sealed class Factory : ITransportFactory
         {
             public List<string> Connectors { get; } = new List<string>();
 
@@ -134,7 +134,7 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
-        private sealed class PendingConnector : ITransportConnector
+        internal sealed class PendingConnector : ITransportConnector
         {
             public ConnectStatus Poll(out ITransport transport)
             {
@@ -147,7 +147,7 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
-        private sealed class NoScenes : ISceneHost
+        internal sealed class NoScenes : ISceneHost
         {
             public bool TryLoad(uint sceneId, Action loaded, Action failed) => false;
 

@@ -54,16 +54,16 @@ namespace Fomoxa.Unity
         private UnityServerEntityBackend serverBackend;
         private UnityClientEntityBackend clientBackend;
         private UnityPredictionBackend predictionBackend;
-        private bool ownsPhysicsSimulation;
+        private NetworkRuntime runtime;
         private PlayerLoopSystem.UpdateFunction frameEnd;
 
         public FomoxaRegistry Registry { get; set; } = FomoxaRegistry.Default;
 
-        public ServerManager ServerManager { get; private set; }
+        public ServerManager ServerManager => runtime?.ServerManager;
 
-        public ClientManager ClientManager { get; private set; }
+        public ClientManager ClientManager => runtime?.ClientManager;
 
-        public TimeManager TimeManager { get; private set; }
+        public TimeManager TimeManager => runtime?.TimeManager;
 
         public TransportManager TransportManager { get; private set; }
 
@@ -101,41 +101,36 @@ namespace Fomoxa.Unity
 
         internal void Initialize()
         {
-            if (TimeManager != null)
+            if (runtime != null)
             {
                 return;
             }
 
-            Schema schema = Registry?.Schema
-                ?? throw new InvalidOperationException("no Fomoxa schema is registered; FomoxaAdapters.RegisterAll has not run");
-            IMessageCodec<MessageBundle> bundleCodec = RequireCodec<MessageBundle>();
-            IMessageCodec<ReliableAck> ackCodec = RequireCodec<ReliableAck>();
-            IMessageCodec<PeerLeave> leaveCodec = RequireCodec<PeerLeave>();
-            var objectProtocol = new ObjectProtocol(
-                RequireCodec<LocalPeer>(),
-                RequireCodec<ObjectSpawn>(),
-                RequireCodec<ObjectSceneSpawn>(),
-                RequireCodec<ObjectDespawn>(),
-                RequireCodec<ObjectOwnerChange>(),
-                Registry.Channels);
-            var stateProtocol = new StateProtocol(RequireCodec<StateDelta>(), RequireCodec<StateResync>(), RequireCodec<AnimatorState>(), Registry.Channels);
-            var transformProtocol = new TransformProtocol(RequireCodec<TransformUpdate>(), RequireCodec<TransformSettle>(), Registry.Channels);
-            var sceneProtocol = new SceneProtocol(RequireCodec<SceneLoad>(), RequireCodec<SceneUnload>(), RequireCodec<SceneLoaded>(), Registry.Channels);
-            var clockProtocol = new ClockProtocol(RequireCodec<TickPing>(), RequireCodec<TickPong>());
-            var inputProtocol = new InputProtocol(RequireCodec<InputFrames>(), RequireCodec<ReconcileState>());
-            var inputRules = new InputRules
+            var settings = new NetworkSettings
             {
-                Allowed = timingMode == TimingMode.Tick,
-                Redundancy = inputRedundancy,
-                History = predictionHistory,
-                ReconcileInterval = reconcileInterval,
-            };
-            var clockSettings = new ClockSettings
-            {
-                PingInterval = TimeSpan.FromSeconds(clockPingIntervalSeconds),
+                TickRate = tickRate,
+                MaxTicksPerFrame = maxTicksPerFrame,
+                TimingMode = timingMode,
+                MessageCapacity = messageCapacity,
+                ByteCapacity = byteCapacity,
+                ReliableWindow = reliableWindow,
+                LogSendDropped = logSendDropped,
+                LogReceiveDropped = logReceiveDropped,
+                MaxReconnectRetries = maxReconnectRetries,
+                ReconnectInterval = TimeSpan.FromSeconds(reconnectIntervalSeconds),
+                HandshakeTimeout = TimeSpan.FromSeconds(handshakeTimeoutSeconds),
+                HeartbeatInterval = TimeSpan.FromSeconds(heartbeatIntervalSeconds),
+                HeartbeatTimeout = TimeSpan.FromSeconds(heartbeatTimeoutSeconds),
+                ObserverInterval = observerInterval,
+                ClockPingInterval = TimeSpan.FromSeconds(clockPingIntervalSeconds),
                 InputBuffer = inputBuffer,
-                MaxSpeedAdjust = maxTickSpeedAdjust,
-                ResetThreshold = clockResetTicks,
+                MaxTickSpeedAdjust = maxTickSpeedAdjust,
+                ClockResetTicks = clockResetTicks,
+                InputRedundancy = inputRedundancy,
+                MaxInputLead = maxInputLead,
+                PredictionHistory = predictionHistory,
+                ReconcileInterval = reconcileInterval,
+                PhysicsBackend = physicsBackend,
             };
             if (collectPrefabs && collectedPrefabs != null)
             {
@@ -147,141 +142,36 @@ namespace Fomoxa.Unity
             {
                 Scenes.RegisterBuildScenes(collectedScenes);
             }
+
             if (transport == null)
             {
                 transport = gameObject.AddComponent<UdpNetworkTransport>();
             }
 
-            var limits = new SessionLimits
-            {
-                MessageCapacity = messageCapacity,
-                ByteCapacity = byteCapacity,
-                ReliableWindow = reliableWindow,
-            };
-            TimeManager = new TimeManager(tickRate, maxTicksPerFrame, timingMode);
             TransportManager = new TransportManager(transport);
-            var protocol = new SessionProtocol(
-                new BundleFormat(bundleCodec, TransportManager.Factory.FrameBudget),
-                ackCodec,
-                leaveCodec,
-                Registry.Channels);
-            var sessionConfig = new SessionConfig
-            {
-                HandshakeTimeout = TimeSpan.FromSeconds(handshakeTimeoutSeconds),
-                HeartbeatInterval = TimeSpan.FromSeconds(heartbeatIntervalSeconds),
-                HeartbeatTimeout = TimeSpan.FromSeconds(heartbeatTimeoutSeconds),
-            };
             serverScenes = new UnityServerSceneHost(Scenes);
             serverBackend = new UnityServerEntityBackend(Prefabs, serverScenes);
-            ServerManager = new ServerManager(schema, limits, sessionConfig, protocol, objectProtocol, stateProtocol, transformProtocol, sceneProtocol, clockProtocol, inputProtocol, Registry.Rpcs, TransportManager.Factory, messageCapacity, serverBackend, serverScenes, UnityNetworkLog.Instance)
-            {
-                ObserverRule = observerRule != null ? observerRule : null,
-                ObserverInterval = observerInterval,
-                InputRules = inputRules,
-            };
-            ServerManager.Inputs.MaxInputLead = maxInputLead;
-            ServerManager.Entities.OnUnspawning += EndHostShare;
-            var reconnectPolicy = new ReconnectPolicy
-            {
-                MaxRetries = maxReconnectRetries,
-                Interval = TimeSpan.FromSeconds(reconnectIntervalSeconds),
-            };
             clientBackend = new UnityClientEntityBackend(Prefabs);
             predictionBackend = new UnityPredictionBackend();
-            ClientManager = new ClientManager(schema, limits, sessionConfig, protocol, objectProtocol, stateProtocol, transformProtocol, sceneProtocol, clockProtocol, clockSettings, inputProtocol, TimeManager, Registry.Rpcs, reconnectPolicy, TransportManager.Factory, ServerManager, clientBackend, new UnityClientSceneHost(Scenes, clientBackend), predictionBackend, () => MonotonicClock.Now, UnityNetworkLog.Instance);
-            ServerManager.Objects.TickRate = (ushort)TimeManager.TickRate;
-            ServerManager.Objects.PhysicsBackend = physicsBackend;
-            ClientManager.Objects.PhysicsBackend = physicsBackend;
+            var backends = new NetworkBackends(serverBackend, serverScenes, clientBackend, new UnityClientSceneHost(Scenes, clientBackend), predictionBackend);
+            runtime = new NetworkRuntime(Registry, settings, TransportManager.Factory, backends, () => MonotonicClock.Now, UnityNetworkLog.Instance);
+            ServerManager.ObserverRule = observerRule != null ? observerRule : null;
+            ServerManager.Entities.OnUnspawning += EndHostShare;
             physicsWorlds = new PhysicsWorlds(physicsBackend);
             serverBackend.Physics = physicsWorlds;
             predictionBackend.Physics = physicsWorlds;
             if (simulatePhysics)
             {
                 PhysicsSimulationOwner.Acquire();
-                ownsPhysicsSimulation = true;
+                runtime.Physics = physicsWorlds;
             }
 
-            ClientManager.SimulatesPhysics = ownsPhysicsSimulation;
             Application.quitting += StopConnections;
-            ClientManager.InputRules = inputRules;
-            TimeManager.Clock = ClientManager.Clock;
-            TimeManager.FollowsClock = () => ServerManager.State != ServerState.Started && !ClientManager.ConnectedLocally;
-            if (logSendDropped)
-            {
-                ServerManager.OnSendDropped += LogSendDropped;
-                ClientManager.OnSendDropped += LogSendDropped;
-            }
-
-            if (logReceiveDropped)
-            {
-                ServerManager.OnReceiveDropped += LogReceiveDropped;
-                ClientManager.OnReceiveDropped += LogReceiveDropped;
-            }
         }
 
-        internal void RunFrameStart(double unscaledDeltaSeconds, TimeSpan now)
-        {
-            int ticks = TimeManager.Advance(unscaledDeltaSeconds);
-            if (TimeManager.Mode == TimingMode.Variable)
-            {
-                Receive(now);
-            }
+        internal void RunFrameStart(double unscaledDeltaSeconds, TimeSpan now) => runtime.BeginFrame(now, unscaledDeltaSeconds);
 
-            for (int index = 0; index < ticks; index++)
-            {
-                TimeManager.RaisePreTick(now);
-                if (index == 0 && TimeManager.Mode == TimingMode.Tick)
-                {
-                    Receive(now);
-                }
-
-                if (ownsPhysicsSimulation)
-                {
-                    ClientManager.PlaceProxies();
-                }
-
-                if (TimeManager.Mode == TimingMode.Tick)
-                {
-                    ClientManager.Predict(TimeManager.PredictionTick);
-                    ServerManager.ApplyInputs(TimeManager.Tick, ClientManager.ConnectedLocally ? ClientManager.Objects.LocalPeerId : 0);
-                }
-
-                if (ownsPhysicsSimulation)
-                {
-                    physicsWorlds.StepWorlds((float)TimeManager.TickDelta);
-                    physicsWorlds.QueryContacts(TimeManager.PredictionTick, TimeManager.Mode == TimingMode.Tick && ClientManager.RecordsContacts, ClientManager.InputRules.History);
-                }
-
-                if (TimeManager.Mode == TimingMode.Tick)
-                {
-                    ClientManager.CapturePredicted(TimeManager.PredictionTick);
-                    ServerManager.SendReconcileStates(TimeManager.Tick);
-                }
-
-                if (ownsPhysicsSimulation)
-                {
-                    physicsWorlds.PublishContacts();
-                }
-
-                TimeManager.RaiseTick();
-                TimeManager.RaisePostTick();
-                ServerManager.RebuildObserversRound();
-                ServerManager.SyncStates();
-                ServerManager.SyncTransforms(TimeManager.Tick);
-                if (TimeManager.Mode == TimingMode.Tick)
-                {
-                    Send();
-                }
-            }
-        }
-
-        internal void RunFrameEnd()
-        {
-            if (TimeManager.Mode == TimingMode.Variable)
-            {
-                Send();
-            }
-        }
+        internal void RunFrameEnd() => runtime.EndFrame();
 
         private void Awake()
         {
@@ -290,7 +180,7 @@ namespace Fomoxa.Unity
 
         private void OnEnable()
         {
-            if (TimeManager == null)
+            if (runtime == null)
             {
                 return;
             }
@@ -316,7 +206,7 @@ namespace Fomoxa.Unity
 
         private void OnDestroy()
         {
-            if (TimeManager == null)
+            if (runtime == null)
             {
                 return;
             }
@@ -340,10 +230,9 @@ namespace Fomoxa.Unity
 
         internal void ReleasePhysicsSimulation()
         {
-            if (ownsPhysicsSimulation)
+            if (runtime?.Physics != null)
             {
-                ownsPhysicsSimulation = false;
-                ClientManager.SimulatesPhysics = false;
+                runtime.Physics = null;
                 ClientManager.EndProxies();
                 physicsWorlds.ReleaseStepping();
                 PhysicsSimulationOwner.Release();
@@ -360,20 +249,6 @@ namespace Fomoxa.Unity
             RunFrameEnd();
         }
 
-        private void Receive(TimeSpan now)
-        {
-            ServerManager.Clock.Tick = TimeManager.Tick;
-            ServerManager.Tick(now);
-            ClientManager.Tick(now);
-            ClientManager.UpdateClock(now);
-        }
-
-        private void Send()
-        {
-            ServerManager.Flush();
-            ClientManager.Flush();
-        }
-
         private void RegisterPrefabs(IReadOnlyList<NetworkObject> list)
         {
             foreach (NetworkObject prefab in list)
@@ -385,25 +260,11 @@ namespace Fomoxa.Unity
             }
         }
 
-        private IMessageCodec<T> RequireCodec<T>() =>
-            Registry.Codec<T>()
-            ?? throw new InvalidOperationException($"no {typeof(T).Name} codec is registered; FomoxaAdapters.RegisterAll has not run");
-
         private static void EndHostShare(EntityRecord record)
         {
             var networkObject = (NetworkObject)record.Representation;
             networkObject.Client?.EndShared(networkObject);
             networkObject.RestoreRenderers();
-        }
-
-        private static void LogSendDropped(SendDroppedArgs args)
-        {
-            Debug.LogWarning($"Fomoxa dropped message 0x{args.MessageId:X8} ({args.PayloadLength} bytes) to peer {args.PeerId}: {args.Reason}");
-        }
-
-        private static void LogReceiveDropped(ReceiveDroppedArgs args)
-        {
-            Debug.LogWarning($"Fomoxa dropped {args.FrameLength} received bytes from peer {args.PeerId}: a message bundle, or a model in it, could not be read");
         }
     }
 }

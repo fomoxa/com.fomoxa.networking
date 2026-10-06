@@ -41,7 +41,9 @@ namespace Fomoxa.Networking.Prediction
 
         public bool IsReplaying { get; private set; }
 
-        public bool SimulatesPhysics { get; set; }
+        public IPhysicsWorlds Physics { get; set; }
+
+        public bool SimulatesPhysics => Physics != null;
 
         public void PlaceProxies()
         {
@@ -387,7 +389,7 @@ namespace Fomoxa.Networking.Prediction
             {
                 foreach (IPhysicsSimulation world in group.Worlds)
                 {
-                    backend.TrackerOf(world)?.Restore(target);
+                    Physics.TrackerOf(world)?.Restore(target);
                 }
             }
 
@@ -429,7 +431,7 @@ namespace Fomoxa.Networking.Prediction
 
                 foreach (IPhysicsSimulation world in group.Worlds)
                 {
-                    IContactTracker tracker = backend.TrackerOf(world);
+                    IContactTracker tracker = Physics.TrackerOf(world);
                     tracker?.Query();
                     if (loaded)
                     {
@@ -464,7 +466,7 @@ namespace Fomoxa.Networking.Prediction
             IsReplaying = false;
             foreach (IPhysicsSimulation world in group.Worlds)
             {
-                backend.TrackerOf(world)?.Publish();
+                Physics.TrackerOf(world)?.Publish();
             }
 
             foreach (EntityRecord record in records)

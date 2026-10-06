@@ -134,11 +134,7 @@ namespace Fomoxa.Networking
 
         internal IClientPredictionBackend PredictionBackend { get; }
 
-        internal bool SimulatesPhysics
-        {
-            get => Prediction.SimulatesPhysics;
-            set => Prediction.SimulatesPhysics = value;
-        }
+        internal bool SimulatesPhysics => Prediction.SimulatesPhysics;
 
         internal ClientPrediction Prediction { get; }
 

@@ -280,18 +280,5 @@ namespace Fomoxa.Unity
                 (behaviour as NetworkTransform)?.EndCorrection();
             }
         }
-
-        public IContactTracker TrackerOf(IPhysicsSimulation world)
-        {
-            switch (world)
-            {
-                case UnityPhysicsWorld world3D:
-                    return ContactTrackers.Of(world3D.PhysicsScene);
-                case UnityPhysicsWorld2D world2D:
-                    return ContactTrackers.Of(world2D.PhysicsScene);
-                default:
-                    return null;
-            }
-        }
     }
 }

@@ -234,9 +234,7 @@ namespace Fomoxa.Unity.Tests
             uint inside = 0;
             for (int step = 0; step < 40; step++)
             {
-                worlds.StepWorlds(StepSeconds);
-                worlds.QueryContacts(tick, true, 64);
-                worlds.PublishContacts();
+                PhysicsSteps.StepAndPublish(worlds, StepSeconds, tick, true, 64);
                 if (inside == 0 && trigger.Touching.Count > 0)
                 {
                     inside = tick;
@@ -263,9 +261,7 @@ namespace Fomoxa.Unity.Tests
 
         private void Tick()
         {
-            worlds.StepWorlds(StepSeconds);
-            worlds.QueryContacts(tick, false, 64);
-            worlds.PublishContacts();
+            PhysicsSteps.StepAndPublish(worlds, StepSeconds, tick, false, 64);
             tick++;
         }
 

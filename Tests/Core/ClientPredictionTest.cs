@@ -183,7 +183,7 @@ namespace Fomoxa.Networking.Tests
                 World.Client.InputRules.Allowed = true;
                 Prediction = new ClientPrediction(World.Client, World.ClientSession, World.ClientDispatcher, TestObjects.InputProtocol(), Backend, new NetworkLog(exception => throw exception, message => { }))
                 {
-                    SimulatesPhysics = true,
+                    Physics = Backend,
                 };
             }
 
@@ -304,7 +304,7 @@ namespace Fomoxa.Networking.Tests
             public void Publish() => Calls.Add($"{name} publish");
         }
 
-        internal sealed class FakeBackend : IClientPredictionBackend
+        internal sealed class FakeBackend : IClientPredictionBackend, IPhysicsWorlds
         {
             public readonly Dictionary<INetworkEntity, FakeWorld[]> Worlds = new Dictionary<INetworkEntity, FakeWorld[]>();
             public readonly Dictionary<IPhysicsSimulation, FakeTracker> Trackers = new Dictionary<IPhysicsSimulation, FakeTracker>();
@@ -346,6 +346,10 @@ namespace Fomoxa.Networking.Tests
             }
 
             public void EndCorrection(INetworkEntity entity)
+            {
+            }
+
+            public void WorldsToStep(List<IPhysicsSimulation> worlds)
             {
             }
 

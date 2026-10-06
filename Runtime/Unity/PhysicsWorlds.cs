@@ -111,7 +111,7 @@ namespace Fomoxa.Unity
         }
     }
 
-    internal sealed class PhysicsWorlds
+    internal sealed class PhysicsWorlds : IPhysicsWorlds
     {
         private readonly Dictionary<PhysicsScene, UnityPhysicsWorld> worlds = new Dictionary<PhysicsScene, UnityPhysicsWorld>();
         private readonly Dictionary<PhysicsScene2D, UnityPhysicsWorld2D> worlds2D = new Dictionary<PhysicsScene2D, UnityPhysicsWorld2D>();
@@ -124,8 +124,6 @@ namespace Fomoxa.Unity
         private readonly List<PhysicsScene2D> emptied2D = new List<PhysicsScene2D>();
         private readonly List<Rigidbody> leaving = new List<Rigidbody>();
         private readonly List<Rigidbody2D> leaving2D = new List<Rigidbody2D>();
-        private readonly List<ContactTracker<Collider>> queried = new List<ContactTracker<Collider>>();
-        private readonly List<ContactTracker<Collider2D>> queried2D = new List<ContactTracker<Collider2D>>();
 
         public PhysicsWorlds(PhysicsBackend backend)
         {
@@ -190,7 +188,7 @@ namespace Fomoxa.Unity
 
         public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) => histories.Of(world, capacity);
 
-        public void StepWorlds(float seconds)
+        public void WorldsToStep(List<IPhysicsSimulation> into)
         {
             for (int index = 0; index < SceneManager.sceneCount; index++)
             {
@@ -202,47 +200,21 @@ namespace Fomoxa.Unity
                 }
             }
 
-            queried.Clear();
-            queried2D.Clear();
-            Step3D(seconds);
-            Step2D(seconds);
+            Claim3D(into);
+            Claim2D(into);
         }
 
-        public void QueryContacts(uint tick, bool record, int capacity)
+        public IContactTracker TrackerOf(IPhysicsSimulation world)
         {
-            foreach (ContactTracker<Collider> tracker in queried)
+            switch (world)
             {
-                tracker.Query();
-                if (record)
-                {
-                    tracker.Record(tick, capacity);
-                }
+                case UnityPhysicsWorld world3D:
+                    return ContactTrackers.Of(world3D.PhysicsScene);
+                case UnityPhysicsWorld2D world2D:
+                    return ContactTrackers.Of(world2D.PhysicsScene);
+                default:
+                    return null;
             }
-
-            foreach (ContactTracker<Collider2D> tracker in queried2D)
-            {
-                tracker.Query();
-                if (record)
-                {
-                    tracker.Record(tick, capacity);
-                }
-            }
-        }
-
-        public void PublishContacts()
-        {
-            foreach (ContactTracker<Collider> tracker in queried)
-            {
-                tracker.Publish();
-            }
-
-            foreach (ContactTracker<Collider2D> tracker in queried2D)
-            {
-                tracker.Publish();
-            }
-
-            queried.Clear();
-            queried2D.Clear();
         }
 
         public void ReleaseStepping() => PhysicsStepOwners.ReleaseAll(this);
@@ -348,7 +320,7 @@ namespace Fomoxa.Unity
             });
         }
 
-        private void Step3D(float seconds)
+        private void Claim3D(List<IPhysicsSimulation> into)
         {
             emptied.Clear();
             stepping.Clear();
@@ -371,21 +343,13 @@ namespace Fomoxa.Unity
                 PhysicsStepOwners.Worlds.Release(physicsScene, this);
             }
 
-            foreach (UnityPhysicsWorld world in stepping)
-            {
-                world.Step(seconds);
-                ContactTracker<Collider> tracker = ContactTrackers.Of(world.PhysicsScene);
-                if (tracker != null)
-                {
-                    queried.Add(tracker);
-                }
-            }
+            into.AddRange(stepping);
 
             emptied.Clear();
             stepping.Clear();
         }
 
-        private void Step2D(float seconds)
+        private void Claim2D(List<IPhysicsSimulation> into)
         {
             emptied2D.Clear();
             stepping2D.Clear();
@@ -408,15 +372,7 @@ namespace Fomoxa.Unity
                 PhysicsStepOwners.Worlds2D.Release(physicsScene, this);
             }
 
-            foreach (UnityPhysicsWorld2D world in stepping2D)
-            {
-                world.Step(seconds);
-                ContactTracker<Collider2D> tracker = ContactTrackers.Of(world.PhysicsScene);
-                if (tracker != null)
-                {
-                    queried2D.Add(tracker);
-                }
-            }
+            into.AddRange(stepping2D);
 
             emptied2D.Clear();
             stepping2D.Clear();

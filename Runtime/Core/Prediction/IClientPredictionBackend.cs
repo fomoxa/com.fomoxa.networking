@@ -18,7 +18,5 @@ namespace Fomoxa.Networking.Prediction
         void BeginCorrection(INetworkEntity entity);
 
         void EndCorrection(INetworkEntity entity);
-
-        IContactTracker TrackerOf(IPhysicsSimulation world);
     }
 }

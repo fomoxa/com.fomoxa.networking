@@ -278,7 +278,7 @@ namespace Fomoxa.Unity.Tests
             worlds.Of2D(scene);
             try
             {
-                worlds.StepWorlds(0.5f);
+                PhysicsSteps.Step(worlds, 0.5f);
 
                 Assert.AreEqual(0.5f, moving2D.position.x, 1e-3f);
                 Assert.AreEqual(0.5f, moving3D.position.x, 1e-3f);
@@ -300,14 +300,14 @@ namespace Fomoxa.Unity.Tests
             second.Of2D(scene);
             try
             {
-                first.StepWorlds(0.5f);
-                second.StepWorlds(0.5f);
+                PhysicsSteps.Step(first, 0.5f);
+                PhysicsSteps.Step(second, 0.5f);
 
                 Assert.AreEqual(0.5f, moving.position.x, 1e-3f);
 
                 first.ReleaseStepping();
-                second.StepWorlds(0.5f);
-                first.StepWorlds(0.5f);
+                PhysicsSteps.Step(second, 0.5f);
+                PhysicsSteps.Step(first, 0.5f);
 
                 Assert.AreEqual(1f, moving.position.x, 1e-3f);
             }

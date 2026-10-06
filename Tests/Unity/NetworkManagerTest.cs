@@ -245,6 +245,8 @@ namespace Fomoxa.Unity.Tests
                 now += TimeSpan.FromSeconds(FrameSeconds);
                 server.RunFrameStart(FrameSeconds, now);
                 client.RunFrameStart(FrameSeconds, now);
+                server.RunFrameEnd();
+                client.RunFrameEnd();
             }
 
             Assert.AreEqual(1, server.ServerManager.Port);
@@ -467,12 +469,14 @@ namespace Fomoxa.Unity.Tests
 
             host.ClientManager.Send(GreetingId, new byte[] { 5 });
             host.RunFrameStart(FrameSeconds, now);
-            host.RunFrameStart(FrameSeconds, now);
             Assert.AreEqual(0, received.Count);
 
             host.RunFrameEnd();
+            Assert.AreEqual(0, received.Count);
+
             host.RunFrameStart(FrameSeconds, now);
             Assert.AreEqual(new byte[] { 5 }, received.ToArray());
+            host.RunFrameEnd();
         }
 
         [Test]

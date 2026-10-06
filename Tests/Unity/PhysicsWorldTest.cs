@@ -251,7 +251,7 @@ namespace Fomoxa.Unity.Tests
 
                 Assert.AreSame(shared, worlds.Of(second));
                 Assert.AreEqual(2, shared.Scenes.Count);
-                worlds.StepWorlds(0.5f);
+                PhysicsSteps.Step(worlds, 0.5f);
 
                 Assert.AreEqual(200.5f, inSecond.position.x, 1e-3f);
                 PhysicsSnapshot snapshot = shared.CreateSnapshot();
@@ -282,14 +282,14 @@ namespace Fomoxa.Unity.Tests
             second.Of(scene);
             try
             {
-                first.StepWorlds(0.5f);
-                second.StepWorlds(0.5f);
+                PhysicsSteps.Step(first, 0.5f);
+                PhysicsSteps.Step(second, 0.5f);
 
                 Assert.AreEqual(0.5f, moving.position.x, 1e-3f);
 
                 first.ReleaseStepping();
-                second.StepWorlds(0.5f);
-                first.StepWorlds(0.5f);
+                PhysicsSteps.Step(second, 0.5f);
+                PhysicsSteps.Step(first, 0.5f);
 
                 Assert.AreEqual(1f, moving.position.x, 1e-3f);
             }
