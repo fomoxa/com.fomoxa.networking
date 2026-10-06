@@ -88,6 +88,27 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void TheRuleAssetIsTheServerRuleAndADestroyedOrMissingAssetActsAsNoRule()
+        {
+            (NetworkManager _, ulong peerId) = Connect();
+            rule.HideAll = true;
+
+            Assert.AreSame(rule, server.ServerManager.ObserverRule);
+            Assert.IsFalse(server.ServerManager.IsObserver(Spawn(), peerId));
+
+            TestObserverRule destroyed = rule;
+            UnityEngine.Object.DestroyImmediate(destroyed);
+            rule = ScriptableObject.CreateInstance<TestObserverRule>();
+
+            Assert.IsTrue(server.ServerManager.IsObserver(Spawn(), peerId));
+
+            server.ServerManager.ObserverRule = null;
+
+            Assert.IsNull(server.ServerManager.ObserverRule);
+            Assert.IsTrue(server.ServerManager.IsObserver(Spawn(), peerId));
+        }
+
+        [Test]
         public void VisibilityEveryoneIgnoresTheRuleAndOwnerOnlyShowsOnlyTheOwner()
         {
             (NetworkManager owner, ulong ownerId) = Connect();
@@ -188,7 +209,7 @@ namespace Fomoxa.Unity.Tests
             NetworkObject onServer = CreatePrefab(TestPrefabs.CreateSceneObject("ServerScene", SceneObjectId));
             NetworkObject onClient = CreatePrefab(TestPrefabs.CreateSceneObject("ClientScene", SceneObjectId));
             server.ServerManager.StopConnection();
-            server.ServerManager.FindSceneObjects = () => new List<NetworkObject> { onServer };
+            server.FindServerSceneObjects = () => new List<NetworkObject> { onServer };
             server.ServerManager.StartConnection(1);
             (NetworkManager client, ulong peerId) = Connect(manager => manager.ClientManager.FindSceneObjects = () => new List<NetworkObject> { onClient });
             Assert.AreSame(onClient, client.ClientManager.Spawned[onServer.ObjectId]);
@@ -423,7 +444,7 @@ namespace Fomoxa.Unity.Tests
             registry.Channels.Set(RpcCodecs.WhisperId, Channel.ReliableOrdered);
             manager.Registry = registry;
             manager.Initialize();
-            manager.ServerManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindServerSceneObjects = () => new List<NetworkObject>();
             manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
             manager.Prefabs.Register(prefab);
             created.Add(manager.gameObject);

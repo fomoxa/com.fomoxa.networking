@@ -226,7 +226,7 @@ namespace Fomoxa.Unity.Tests
 
             server.ServerManager.StopConnection();
             Assert.AreEqual(1, loaders[server].Unloading.Count);
-            server.ServerManager.FindSceneObjects = () => new List<NetworkObject> { sceneObject };
+            server.FindServerSceneObjects = () => new List<NetworkObject> { sceneObject };
             server.ServerManager.StartConnection(1);
 
             Assert.IsFalse(sceneObject.IsSpawned);
@@ -293,7 +293,7 @@ namespace Fomoxa.Unity.Tests
             serialized.ApplyModifiedPropertiesWithoutUndo();
             manager.Registry = TestObjects.Registry();
             manager.Initialize();
-            manager.ServerManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindServerSceneObjects = () => new List<NetworkObject>();
             manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
             manager.Prefabs.Register(prefab);
             var loader = new PreviewLoader();

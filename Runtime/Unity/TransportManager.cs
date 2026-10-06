@@ -6,33 +6,43 @@ namespace Fomoxa.Unity
 {
     public sealed class TransportManager
     {
-        private readonly int loopbackCapacity;
-
-        internal TransportManager(NetworkTransport transport, int loopbackCapacity)
+        internal TransportManager(NetworkTransport transport)
         {
             Transport = transport;
-            Factory = transport.CreateFactory()
+            ITransportFactory factory = transport.CreateFactory()
                 ?? throw new InvalidOperationException($"{transport.GetType().Name} returned no transport factory");
-            this.loopbackCapacity = loopbackCapacity;
+            Factory = new ListenerGuard(factory);
         }
 
         public NetworkTransport Transport { get; }
 
         public ITransportFactory Factory { get; }
 
-        internal IListenerTransport CreateListener(ushort port, out LoopbackListener localListener, out ushort boundPort)
-        {
-            if (NetworkTransport.RunsInBrowser)
-            {
-                throw new PlatformNotSupportedException("a server cannot listen in a browser; WebGL builds are clients only");
-            }
-
-            IListenerTransport network = Factory.CreateListener(port, out boundPort);
-            localListener = new LoopbackListener(loopbackCapacity);
-            return new CompositeListener(new[] { network, localListener }, new[] { Factory.FrameBudget, Factory.FrameBudget });
-        }
-
         internal ITransportConnector CreateConnector(string address, ushort port) =>
             Factory.CreateConnector(address, port);
+
+        private sealed class ListenerGuard : ITransportFactory
+        {
+            private readonly ITransportFactory inner;
+
+            public ListenerGuard(ITransportFactory inner)
+            {
+                this.inner = inner;
+            }
+
+            public int FrameBudget => inner.FrameBudget;
+
+            public IListenerTransport CreateListener(ushort port, out ushort boundPort)
+            {
+                if (NetworkTransport.RunsInBrowser)
+                {
+                    throw new PlatformNotSupportedException("a server cannot listen in a browser; WebGL builds are clients only");
+                }
+
+                return inner.CreateListener(port, out boundPort);
+            }
+
+            public ITransportConnector CreateConnector(string address, ushort port) => inner.CreateConnector(address, port);
+        }
     }
 }

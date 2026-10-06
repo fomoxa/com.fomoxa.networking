@@ -3,32 +3,18 @@ using UnityEngine;
 
 namespace Fomoxa.Unity
 {
-    public abstract class ObserverRule : ScriptableObject
+    public abstract class ObserverRule : ScriptableObject, IObserverRule
     {
-        private Adapter adapter;
-
-        public abstract bool Observes(NetworkObject networkObject, ulong peerId);
-
-        internal IObserverRule CoreRule => adapter ??= new Adapter(this);
+        bool IObserverRule.RebuildsOnFirstAnchor => this != null && RebuildsOnFirstAnchor;
 
         internal virtual bool RebuildsOnFirstAnchor => false;
 
+        public abstract bool Observes(NetworkObject networkObject, ulong peerId);
+
+        bool IObserverRule.Observes(ObserverContext context, INetworkEntity entity, ulong peerId) =>
+            this == null || ObservesEntity(context, entity, peerId);
+
         internal virtual bool ObservesEntity(ObserverContext context, INetworkEntity entity, ulong peerId) =>
             Observes((NetworkObject)entity, peerId);
-
-        private sealed class Adapter : IObserverRule
-        {
-            private readonly ObserverRule owner;
-
-            public Adapter(ObserverRule owner)
-            {
-                this.owner = owner;
-            }
-
-            public bool RebuildsOnFirstAnchor => owner != null && owner.RebuildsOnFirstAnchor;
-
-            public bool Observes(ObserverContext context, INetworkEntity entity, ulong peerId) =>
-                owner == null || owner.ObservesEntity(context, entity, peerId);
-        }
     }
 }

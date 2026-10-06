@@ -50,6 +50,8 @@ namespace Fomoxa.Unity
 
         private PlayerLoopSystem.UpdateFunction frameStart;
         private PhysicsWorlds physicsWorlds;
+        private UnityServerSceneHost serverScenes;
+        private UnityServerEntityBackend serverBackend;
         private bool ownsPhysicsSimulation;
         private PlayerLoopSystem.UpdateFunction frameEnd;
 
@@ -68,6 +70,12 @@ namespace Fomoxa.Unity
         public SceneRegistry Scenes { get; } = new SceneRegistry();
 
         internal bool CollectPrefabs => collectPrefabs;
+
+        internal Func<IReadOnlyList<NetworkObject>> FindServerSceneObjects
+        {
+            get => serverScenes.FindSceneObjects;
+            set => serverScenes.FindSceneObjects = value;
+        }
 
         internal NetworkPrefabList CollectedPrefabs
         {
@@ -141,7 +149,7 @@ namespace Fomoxa.Unity
                 ReliableWindow = reliableWindow,
             };
             TimeManager = new TimeManager(tickRate, maxTicksPerFrame, timingMode);
-            TransportManager = new TransportManager(transport, messageCapacity);
+            TransportManager = new TransportManager(transport);
             var protocol = new SessionProtocol(
                 new BundleFormat(bundleCodec, TransportManager.Factory.FrameBudget),
                 ackCodec,
@@ -153,13 +161,16 @@ namespace Fomoxa.Unity
                 HeartbeatInterval = TimeSpan.FromSeconds(heartbeatIntervalSeconds),
                 HeartbeatTimeout = TimeSpan.FromSeconds(heartbeatTimeoutSeconds),
             };
-            ServerManager = new ServerManager(schema, limits, sessionConfig, protocol, objectProtocol, stateProtocol, transformProtocol, sceneProtocol, clockProtocol, inputProtocol, Prefabs, Scenes, Registry.Rpcs, TransportManager)
+            serverScenes = new UnityServerSceneHost(Scenes);
+            serverBackend = new UnityServerEntityBackend(Prefabs, serverScenes);
+            ServerManager = new ServerManager(schema, limits, sessionConfig, protocol, objectProtocol, stateProtocol, transformProtocol, sceneProtocol, clockProtocol, inputProtocol, Registry.Rpcs, TransportManager.Factory, messageCapacity, serverBackend, serverScenes, UnityNetworkLog.Instance)
             {
-                ObserverRule = observerRule,
+                ObserverRule = observerRule != null ? observerRule : null,
                 ObserverInterval = observerInterval,
                 InputRules = inputRules,
             };
             ServerManager.Inputs.MaxInputLead = maxInputLead;
+            ServerManager.Entities.OnUnspawning += EndHostShare;
             var reconnectPolicy = new ReconnectPolicy
             {
                 MaxRetries = maxReconnectRetries,
@@ -170,7 +181,7 @@ namespace Fomoxa.Unity
             ServerManager.Objects.PhysicsBackend = physicsBackend;
             ClientManager.Objects.PhysicsBackend = physicsBackend;
             physicsWorlds = new PhysicsWorlds(physicsBackend);
-            ServerManager.Physics = physicsWorlds;
+            serverBackend.Physics = physicsWorlds;
             ClientManager.Physics = physicsWorlds;
             if (simulatePhysics)
             {
@@ -365,6 +376,13 @@ namespace Fomoxa.Unity
         private IMessageCodec<T> RequireCodec<T>() =>
             Registry.Codec<T>()
             ?? throw new InvalidOperationException($"no {typeof(T).Name} codec is registered; FomoxaAdapters.RegisterAll has not run");
+
+        private static void EndHostShare(EntityRecord record)
+        {
+            var networkObject = (NetworkObject)record.Representation;
+            networkObject.Client?.EndShared(networkObject);
+            networkObject.RestoreRenderers();
+        }
 
         private static void LogSendDropped(SendDroppedArgs args)
         {

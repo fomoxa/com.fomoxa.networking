@@ -34,7 +34,7 @@ namespace Fomoxa.Unity.Tests
             created.Add(network.gameObject);
             server = CreateManager(network);
             client = CreateManager(network);
-            server.ServerManager.FindSceneObjects = () => serverScene;
+            server.FindServerSceneObjects = () => serverScene;
             client.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
             prefab = TestPrefabs.Create("Prefab", PrefabId);
             server.Prefabs.Register(prefab);
@@ -188,7 +188,7 @@ namespace Fomoxa.Unity.Tests
             var hostNetwork = new GameObject("HostNetwork").AddComponent<InMemoryNetworkTransport>();
             created.Add(hostNetwork.gameObject);
             NetworkManager host = CreateManager(hostNetwork);
-            host.ServerManager.FindSceneObjects = () => new List<NetworkObject>();
+            host.FindServerSceneObjects = () => new List<NetworkObject>();
             host.Prefabs.Register(prefab);
             host.ServerManager.StartConnection(2);
             host.ClientManager.StartConnection("unused.invalid", 2);

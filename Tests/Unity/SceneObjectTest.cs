@@ -35,7 +35,7 @@ namespace Fomoxa.Unity.Tests
             created.Add(network.gameObject);
             server = CreateManager(network);
             client = CreateManager(network);
-            server.ServerManager.FindSceneObjects = () => serverScene;
+            server.FindServerSceneObjects = () => serverScene;
             client.ClientManager.FindSceneObjects = () => clientScene;
         }
 
@@ -270,7 +270,7 @@ namespace Fomoxa.Unity.Tests
         {
             NetworkManager host = CreateManager(host: true);
             var hostScene = new List<NetworkObject>();
-            host.ServerManager.FindSceneObjects = () => hostScene;
+            host.FindServerSceneObjects = () => hostScene;
             host.ClientManager.FindSceneObjects = () => hostScene;
             NetworkObject door = SceneObject(hostScene, "Door", DoorId);
             host.ServerManager.StartConnection(1);

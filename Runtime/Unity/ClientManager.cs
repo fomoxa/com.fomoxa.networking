@@ -72,7 +72,7 @@ namespace Fomoxa.Unity
             Objects.OnLocalPeerAssigned += FollowServerTickRate;
             clock = new ClientClock(session, clockProtocol, clockSettings);
             session.OnClientConnectionState += RestoreTickRateWhenStopped;
-            serverManager.OnSpawnedForHost += HideIfUnobservedOnHost;
+            serverManager.Entities.OnSpawned += record => HideIfUnobservedOnHost((NetworkObject)record.Representation);
             serverManager.OnNetworkSceneReady += sceneId => FinishHostWait(sceneId, true);
             serverManager.OnNetworkSceneFailed += sceneId => FinishHostWait(sceneId, false);
             serverManager.OnServerConnectionState += FailHostWaitsWhenStopped;
@@ -240,7 +240,7 @@ namespace Fomoxa.Unity
         {
             if (connectedLocally)
             {
-                if (serverManager.TryGetNetworkScene(sceneId, out Scene _))
+                if (serverManager.SceneContent.IsLoaded(sceneId))
                 {
                     loaded();
                 }

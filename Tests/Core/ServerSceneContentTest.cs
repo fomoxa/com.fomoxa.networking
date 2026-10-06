@@ -177,7 +177,7 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
-        private sealed class FakeHost : IServerSceneHost
+        internal sealed class FakeHost : IServerSceneHost
         {
             public readonly List<Load> Loads = new List<Load>();
             public readonly List<List<SceneEntity>> Discarded = new List<List<SceneEntity>>();
@@ -233,10 +233,18 @@ namespace Fomoxa.Networking.Tests
             public bool Holds(uint sceneId, INetworkEntity entity) =>
                 accepted.TryGetValue(sceneId, out List<SceneEntity> content) && content.Contains((SceneEntity)entity);
 
+            public List<SceneEntity> Present { get; } = new List<SceneEntity>();
+
+            public HashSet<uint> Unknown { get; } = new HashSet<uint>();
+
+            public bool Knows(uint sceneId) => !Unknown.Contains(sceneId);
+
+            public void PresentSceneObjects(List<INetworkEntity> found) => found.AddRange(Present);
+
             public uint SceneOf(INetworkEntity entity) => ((SceneEntity)entity).SceneId;
         }
 
-        private sealed class Load
+        internal sealed class Load
         {
             public Load(uint sceneId, Func<bool> accept, Action loaded, Action<Exception> failed)
             {
@@ -255,7 +263,7 @@ namespace Fomoxa.Networking.Tests
             public Action<Exception> Failed { get; }
         }
 
-        private sealed class SceneBackend : IServerEntityBackend
+        internal sealed class SceneBackend : IServerEntityBackend
         {
             private readonly FakeHost host;
 
@@ -287,7 +295,7 @@ namespace Fomoxa.Networking.Tests
             }
         }
 
-        private sealed class SceneEntity : INetworkEntity
+        internal sealed class SceneEntity : INetworkEntity
         {
             public SceneEntity(uint sceneId, ulong sceneObjectId)
             {

@@ -68,11 +68,13 @@ namespace Fomoxa.Unity
 
         internal ServerManager Server => record?.Server?.Owner as ServerManager;
 
-        public Fomoxa.Networking.Simulation.PhysicsBody Body => (Server?.Physics ?? Client?.Physics)?.BodyOf(this) ?? default;
+        public Fomoxa.Networking.Simulation.PhysicsBody Body => PhysicsWorlds?.BodyOf(this) ?? default;
 
-        public Fomoxa.Networking.Simulation.PhysicsBody2D Body2D => (Server?.Physics ?? Client?.Physics)?.Body2DOf(this) ?? default;
+        public Fomoxa.Networking.Simulation.PhysicsBody2D Body2D => PhysicsWorlds?.Body2DOf(this) ?? default;
 
         internal ClientManager Client => record?.Client?.Owner as ClientManager;
+
+        private PhysicsWorlds PhysicsWorlds => (Server?.EntityBackend as UnityServerEntityBackend)?.Physics ?? Client?.Physics;
 
         internal uint Fingerprint { get; set; }
 

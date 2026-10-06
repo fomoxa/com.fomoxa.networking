@@ -191,7 +191,7 @@ namespace Fomoxa.Unity.Tests
             EmptyRpcBehaviour.Declare(registry.Rpcs);
             manager.Registry = registry;
             manager.Initialize();
-            manager.ServerManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindServerSceneObjects = () => new List<NetworkObject>();
             manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
             manager.Prefabs.Register(prefab);
             manager.Prefabs.Register(derivedPrefab);

@@ -1,19 +1,16 @@
 using System;
 using System.Collections.Generic;
 using Fomoxa.Networking.Objects;
-using UnityEngine.SceneManagement;
 
-namespace Fomoxa.Unity
+namespace Fomoxa.Networking
 {
     public sealed class NetworkScenes
     {
         private readonly ServerManager server;
-        private readonly SceneRegistry registry;
 
-        internal NetworkScenes(ServerManager server, SceneRegistry registry)
+        internal NetworkScenes(ServerManager server)
         {
             this.server = server;
-            this.registry = registry;
         }
 
         public event Action<uint> OnLoaded;
@@ -21,6 +18,8 @@ namespace Fomoxa.Unity
         public event Action<uint, Exception> OnLoadFailed;
 
         public IReadOnlyList<uint> Global => Tier.Global;
+
+        internal ServerManager Server => server;
 
         private ServerScenes Tier => server.Objects.Scenes;
 
@@ -31,8 +30,6 @@ namespace Fomoxa.Unity
         public bool HasLoaded(ulong peerId, uint sceneId) => Tier.HasLoaded(peerId, sceneId);
 
         public IReadOnlyCollection<ulong> PeersOf(uint sceneId) => Tier.PeersOf(sceneId);
-
-        public bool TryGetScene(uint sceneId, out Scene scene) => server.TryGetNetworkScene(sceneId, out scene);
 
         public void LoadGlobal(IReadOnlyList<uint> sceneIds, bool replace = false)
         {
@@ -71,7 +68,7 @@ namespace Fomoxa.Unity
 
         private void EnsureRegistered(uint sceneId)
         {
-            if (sceneId != 0 && !registry.Contains(sceneId))
+            if (sceneId != 0 && !server.SceneHost.Knows(sceneId))
             {
                 throw new ArgumentException($"scene 0x{sceneId:X8} is not in the scene registry", nameof(sceneId));
             }

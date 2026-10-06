@@ -374,7 +374,7 @@ namespace Fomoxa.Unity.Tests
             serialized.ApplyModifiedPropertiesWithoutUndo();
             manager.Registry = TestObjects.Registry();
             manager.Initialize();
-            manager.ServerManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindServerSceneObjects = () => new List<NetworkObject>();
             manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
             manager.Prefabs.Register(prefab);
             created.Add(manager.gameObject);

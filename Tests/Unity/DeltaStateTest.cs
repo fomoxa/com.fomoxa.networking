@@ -257,7 +257,7 @@ namespace Fomoxa.Unity.Tests
             registry.Channels.Set(WideStateCodec.WideId, Channel.ReliableOrdered);
             manager.Registry = registry;
             manager.Initialize();
-            manager.ServerManager.FindSceneObjects = () => new List<NetworkObject>();
+            manager.FindServerSceneObjects = () => new List<NetworkObject>();
             manager.ClientManager.FindSceneObjects = () => new List<NetworkObject>();
             manager.Prefabs.Register(prefab);
             created.Add(manager.gameObject);

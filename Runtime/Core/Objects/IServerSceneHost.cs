@@ -12,5 +12,9 @@ namespace Fomoxa.Networking.Objects
         void SceneObjectsOf(uint sceneId, List<INetworkEntity> found);
 
         bool Holds(uint sceneId, INetworkEntity entity);
+
+        bool Knows(uint sceneId);
+
+        void PresentSceneObjects(List<INetworkEntity> found);
     }
 }
