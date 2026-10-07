@@ -265,7 +265,7 @@ namespace Fomoxa.Unity.Tests
         [Test]
         public void StepWorldsStepsThe3DAnd2DWorldsOfAScene()
         {
-            var worlds = new PhysicsWorlds(PhysicsBackend.Rigidbody);
+            var worlds = new PhysicsWorlds();
             Rigidbody2D moving2D = Rigid(new Vector2(0f, 0f), 1f);
             moving2D.linearVelocity = new Vector2(1f, 0f);
             var gameObject = new GameObject("Body3D");
@@ -292,8 +292,8 @@ namespace Fomoxa.Unity.Tests
         [Test]
         public void A2DWorldIsSteppedByOneOwnerAtATimeAndPassesOnWhenReleased()
         {
-            var first = new PhysicsWorlds(PhysicsBackend.Rigidbody);
-            var second = new PhysicsWorlds(PhysicsBackend.Rigidbody);
+            var first = new PhysicsWorlds();
+            var second = new PhysicsWorlds();
             Rigidbody2D moving = Rigid(new Vector2(0f, 0f), 1f);
             moving.linearVelocity = new Vector2(1f, 0f);
             first.Of2D(scene);
@@ -329,7 +329,7 @@ namespace Fomoxa.Unity.Tests
             rigidbody.gravityScale = 0f;
             rigidbody.linearVelocity = new Vector2(5f, 0f);
             rigidbody.angularVelocity = 90f;
-            var worlds = new PhysicsWorlds(PhysicsBackend.Rigidbody);
+            var worlds = new PhysicsWorlds();
             networkObject.transform.SetPositionAndRotation(new Vector3(3f, 1f, 0f), Quaternion.AngleAxis(30f, Vector3.forward));
 
             worlds.PlaceProxy(networkObject);
@@ -391,7 +391,7 @@ namespace Fomoxa.Unity.Tests
             var manager = new GameObject("NetworkManager").AddComponent<NetworkManager>();
             var serialized = new SerializedObject(manager);
             serialized.FindProperty("transport").objectReferenceValue = transport;
-            serialized.FindProperty("simulatePhysics").boolValue = simulate;
+            serialized.FindProperty("physics").objectReferenceValue = TestPhysics.Rigidbody(manager.gameObject, simulate);
             serialized.ApplyModifiedPropertiesWithoutUndo();
             manager.Registry = TestObjects.Registry();
             manager.Initialize();

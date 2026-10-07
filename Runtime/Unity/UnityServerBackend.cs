@@ -17,7 +17,7 @@ namespace Fomoxa.Unity
             this.scenes = scenes;
         }
 
-        public PhysicsWorlds Physics { get; set; }
+        public NetworkPhysics Physics { get; set; }
 
         public string NameOf(INetworkEntity entity) => ((NetworkObject)entity).name;
 

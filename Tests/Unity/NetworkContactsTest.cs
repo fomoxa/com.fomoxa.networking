@@ -24,7 +24,7 @@ namespace Fomoxa.Unity.Tests
         {
             PhysicsSimulationOwner.Acquire();
             scene = EditorSceneManager.NewPreviewScene();
-            worlds = new PhysicsWorlds(PhysicsBackend.Rigidbody);
+            worlds = new PhysicsWorlds();
             worlds.Of(scene);
             worlds.Of2D(scene);
             tick = 1;

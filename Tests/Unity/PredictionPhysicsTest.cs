@@ -132,7 +132,7 @@ namespace Fomoxa.Unity.Tests
             Assert.IsFalse(onServer.GetComponent<Rigidbody>().isKinematic);
             Assert.Greater(onClient.transform.position.x, 0.3f);
             Assert.AreEqual(onClient.transform.position.x, proxy.position.x, 0.1f);
-            UnityPhysicsWorld world = client.Physics.Of(clientScene);
+            UnityPhysicsWorld world = ((RigidbodyPhysics)client.Physics).Worlds.Of(clientScene);
             PhysicsSnapshot snapshot = world.CreateSnapshot();
             world.Save(snapshot);
             Assert.AreEqual(0, UnityPhysicsWorld.EntryCount(snapshot));
@@ -218,7 +218,7 @@ namespace Fomoxa.Unity.Tests
             var serialized = new SerializedObject(manager);
             serialized.FindProperty("transport").objectReferenceValue = network;
             serialized.FindProperty("tickRate").intValue = 60;
-            serialized.FindProperty("simulatePhysics").boolValue = true;
+            serialized.FindProperty("physics").objectReferenceValue = TestPhysics.Rigidbody(manager.gameObject, true);
             serialized.ApplyModifiedPropertiesWithoutUndo();
             manager.Registry = TestObjects.Registry();
             manager.Initialize();

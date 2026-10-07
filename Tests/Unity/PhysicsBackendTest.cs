@@ -88,7 +88,10 @@ namespace Fomoxa.Unity.Tests
             var manager = new GameObject("NetworkManager").AddComponent<NetworkManager>();
             var serialized = new SerializedObject(manager);
             serialized.FindProperty("transport").objectReferenceValue = network;
-            serialized.FindProperty("physicsBackend").intValue = (int)backend;
+            NetworkPhysics physics = backend == PhysicsBackend.Rigidbody
+                ? TestPhysics.Rigidbody(manager.gameObject, false)
+                : (NetworkPhysics)manager.gameObject.AddComponent<RecordingPhysics>();
+            serialized.FindProperty("physics").objectReferenceValue = physics;
             serialized.ApplyModifiedPropertiesWithoutUndo();
             manager.Registry = TestObjects.Registry();
             manager.Initialize();

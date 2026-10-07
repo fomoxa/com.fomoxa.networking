@@ -45,11 +45,9 @@ namespace Fomoxa.Unity
         [SerializeField] private int maxInputLead = 30;
         [SerializeField] private int predictionHistory = 64;
         [SerializeField] private int reconcileInterval = 1;
-        [SerializeField] private PhysicsBackend physicsBackend = PhysicsBackend.Rigidbody;
-        [SerializeField] private bool simulatePhysics;
+        [SerializeField] private NetworkPhysics physics;
 
         private PlayerLoopSystem.UpdateFunction frameStart;
-        private PhysicsWorlds physicsWorlds;
         private UnityServerSceneHost serverScenes;
         private UnityServerEntityBackend serverBackend;
         private UnityClientEntityBackend clientBackend;
@@ -85,7 +83,7 @@ namespace Fomoxa.Unity
             set => clientBackend.FindSceneObjects = value;
         }
 
-        internal PhysicsWorlds Physics => physicsWorlds;
+        internal NetworkPhysics Physics => physics;
 
         internal NetworkPrefabList CollectedPrefabs
         {
@@ -104,6 +102,11 @@ namespace Fomoxa.Unity
             if (runtime != null)
             {
                 return;
+            }
+
+            if (physics == null)
+            {
+                physics = gameObject.AddComponent<RigidbodyPhysics>();
             }
 
             var settings = new NetworkSettings
@@ -130,7 +133,7 @@ namespace Fomoxa.Unity
                 MaxInputLead = maxInputLead,
                 PredictionHistory = predictionHistory,
                 ReconcileInterval = reconcileInterval,
-                PhysicsBackend = physicsBackend,
+                PhysicsBackend = physics.Backend,
             };
             if (collectPrefabs && collectedPrefabs != null)
             {
@@ -157,13 +160,12 @@ namespace Fomoxa.Unity
             runtime = new NetworkRuntime(Registry, settings, TransportManager.Factory, backends, () => MonotonicClock.Now, UnityNetworkLog.Instance);
             ServerManager.ObserverRule = observerRule != null ? observerRule : null;
             ServerManager.Entities.OnUnspawning += EndHostShare;
-            physicsWorlds = new PhysicsWorlds(physicsBackend);
-            serverBackend.Physics = physicsWorlds;
-            predictionBackend.Physics = physicsWorlds;
-            if (simulatePhysics)
+            serverBackend.Physics = physics;
+            predictionBackend.Physics = physics;
+            if (physics.Simulates)
             {
-                PhysicsSimulationOwner.Acquire();
-                runtime.Physics = physicsWorlds;
+                physics.Begin();
+                runtime.Physics = physics;
             }
 
             Application.quitting += StopConnections;
@@ -234,8 +236,7 @@ namespace Fomoxa.Unity
             {
                 runtime.Physics = null;
                 ClientManager.EndProxies();
-                physicsWorlds.ReleaseStepping();
-                PhysicsSimulationOwner.Release();
+                physics.Release();
             }
         }
 

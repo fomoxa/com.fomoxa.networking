@@ -241,7 +241,7 @@ namespace Fomoxa.Unity.Tests
             System.IO.File.WriteAllText(SharedScenePath, "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n");
             AssetDatabase.ImportAsset(SharedScenePath);
             Scene second = EditorSceneManager.OpenScene(SharedScenePath, OpenSceneMode.Additive);
-            var worlds = new PhysicsWorlds(PhysicsBackend.Rigidbody);
+            var worlds = new PhysicsWorlds();
             try
             {
                 Rigidbody inFirst = RigidIn(first, new Vector3(100f, 0f, 0f));
@@ -274,8 +274,8 @@ namespace Fomoxa.Unity.Tests
         [Test]
         public void AWorldIsSteppedByOneOwnerAtATimeAndPassesOnWhenReleased()
         {
-            var first = new PhysicsWorlds(PhysicsBackend.Rigidbody);
-            var second = new PhysicsWorlds(PhysicsBackend.Rigidbody);
+            var first = new PhysicsWorlds();
+            var second = new PhysicsWorlds();
             Rigidbody moving = Rigid(new Vector3(0f, 0f, 0f), 1f);
             moving.linearVelocity = new Vector3(1f, 0f, 0f);
             first.Of(scene);
@@ -309,7 +309,7 @@ namespace Fomoxa.Unity.Tests
             networkObject.gameObject.AddComponent<SphereCollider>().radius = 0.5f;
             var rigidbody = networkObject.gameObject.AddComponent<Rigidbody>();
             rigidbody.useGravity = false;
-            var worlds = new PhysicsWorlds(PhysicsBackend.Rigidbody);
+            var worlds = new PhysicsWorlds();
             networkObject.transform.position = new Vector3(3f, 0f, 0f);
 
             worlds.PlaceProxy(networkObject);
@@ -370,7 +370,7 @@ namespace Fomoxa.Unity.Tests
             var manager = new GameObject("NetworkManager").AddComponent<NetworkManager>();
             var serialized = new SerializedObject(manager);
             serialized.FindProperty("transport").objectReferenceValue = transport;
-            serialized.FindProperty("simulatePhysics").boolValue = simulate;
+            serialized.FindProperty("physics").objectReferenceValue = TestPhysics.Rigidbody(manager.gameObject, simulate);
             serialized.ApplyModifiedPropertiesWithoutUndo();
             manager.Registry = TestObjects.Registry();
             manager.Initialize();

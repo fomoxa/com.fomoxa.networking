@@ -141,7 +141,7 @@ namespace Fomoxa.Unity.Tests
             float cosmetic3DBefore = cosmetic3D.position.z;
 
             onClient.Bias = 5f;
-            PhysicsWorlds physics = client.Physics;
+            PhysicsWorlds physics = ((RigidbodyPhysics)client.Physics).Worlds;
             PhysicsHistory history2D = physics.HistoryOf(physics.Of2D(clientScene), client.ClientManager.InputRules.History);
             for (int frame = 0; frame < 30 && onClient.ReconcileCount == 1; frame++)
             {
@@ -170,7 +170,7 @@ namespace Fomoxa.Unity.Tests
             client.TimeManager.OnTick += () => firstRun[client.TimeManager.PredictionTick] = cosmetic3D.position.z;
 
             onClient.Bias = 5f;
-            PhysicsWorlds physics = client.Physics;
+            PhysicsWorlds physics = ((RigidbodyPhysics)client.Physics).Worlds;
             PhysicsHistory history2D = physics.HistoryOf(physics.Of2D(clientScene), client.ClientManager.InputRules.History);
             for (int frame = 0; frame < 30 && onClient.ReconcileCount == 1; frame++)
             {
@@ -269,7 +269,7 @@ namespace Fomoxa.Unity.Tests
             var events = new List<string>();
             zone.OnEnter += other => events.Add("enter");
             zone.OnExit += other => events.Add("exit");
-            PhysicsWorlds physics = client.Physics;
+            PhysicsWorlds physics = ((RigidbodyPhysics)client.Physics).Worlds;
             PhysicsHistory history2D = physics.HistoryOf(physics.Of2D(clientScene), client.ClientManager.InputRules.History);
             try
             {
@@ -312,7 +312,7 @@ namespace Fomoxa.Unity.Tests
             Assert.AreEqual(RigidbodyType2D.Dynamic, onServer.GetComponent<Rigidbody2D>().bodyType);
             Assert.AreEqual(1.5f, proxy.position.x, 1e-4f);
             Assert.AreEqual(1.5f, onClient.transform.position.x, 1e-4f);
-            UnityPhysicsWorld2D world = client.Physics.Of2D(clientScene);
+            UnityPhysicsWorld2D world = ((RigidbodyPhysics)client.Physics).Worlds.Of2D(clientScene);
             PhysicsSnapshot snapshot = world.CreateSnapshot();
             world.Save(snapshot);
             Assert.AreEqual(0, UnityPhysicsWorld2D.EntryCount(snapshot));
@@ -328,7 +328,7 @@ namespace Fomoxa.Unity.Tests
             Scene third = EditorSceneManager.NewPreviewScene();
             try
             {
-                var worlds = new PhysicsWorlds(PhysicsBackend.Rigidbody);
+                var worlds = new PhysicsWorlds();
                 var groups = new ReplayGroups();
                 groups.Add(Worlds(worlds.Of(serverScene), worlds.Of2D(serverScene)));
                 groups.Add(Worlds(worlds.Of(clientScene), worlds.Of2D(clientScene)));
@@ -476,7 +476,7 @@ namespace Fomoxa.Unity.Tests
             var serialized = new SerializedObject(manager);
             serialized.FindProperty("transport").objectReferenceValue = network;
             serialized.FindProperty("tickRate").intValue = 60;
-            serialized.FindProperty("simulatePhysics").boolValue = true;
+            serialized.FindProperty("physics").objectReferenceValue = TestPhysics.Rigidbody(manager.gameObject, true);
             serialized.ApplyModifiedPropertiesWithoutUndo();
             manager.Registry = TestObjects.Registry();
             manager.Initialize();

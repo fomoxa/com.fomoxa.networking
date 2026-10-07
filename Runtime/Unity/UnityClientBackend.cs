@@ -242,19 +242,11 @@ namespace Fomoxa.Unity
 
     internal sealed class UnityPredictionBackend : IClientPredictionBackend
     {
-        public PhysicsWorlds Physics { get; set; }
+        public NetworkPhysics Physics { get; set; }
 
         public void WorldsOf(INetworkEntity entity, List<IPhysicsSimulation> worlds)
         {
-            PhysicsWorlds physics = Physics;
-            if (physics == null)
-            {
-                return;
-            }
-
-            Scene scene = ((NetworkObject)entity).gameObject.scene;
-            worlds.Add(physics.Of(scene));
-            worlds.Add(physics.Of2D(scene));
+            Physics?.WorldsOf(((NetworkObject)entity).gameObject.scene, worlds);
         }
 
         public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) => Physics.HistoryOf(world, capacity);

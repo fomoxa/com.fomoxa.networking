@@ -125,12 +125,7 @@ namespace Fomoxa.Unity
         private readonly List<Rigidbody> leaving = new List<Rigidbody>();
         private readonly List<Rigidbody2D> leaving2D = new List<Rigidbody2D>();
 
-        public PhysicsWorlds(PhysicsBackend backend)
-        {
-            Backend = backend;
-        }
-
-        public PhysicsBackend Backend { get; }
+        public PhysicsBackend Backend => PhysicsBackend.Rigidbody;
 
         public UnityPhysicsWorld Of(Scene scene)
         {
@@ -378,16 +373,16 @@ namespace Fomoxa.Unity
             stepping2D.Clear();
         }
 
-        private bool TryGetRigidbody(NetworkObject networkObject, out Rigidbody rigidbody)
+        private static bool TryGetRigidbody(NetworkObject networkObject, out Rigidbody rigidbody)
         {
             rigidbody = null;
-            return Backend == PhysicsBackend.Rigidbody && networkObject != null && networkObject.TryGetComponent(out rigidbody);
+            return networkObject != null && networkObject.TryGetComponent(out rigidbody);
         }
 
-        private bool TryGetRigidbody2D(NetworkObject networkObject, out Rigidbody2D rigidbody)
+        private static bool TryGetRigidbody2D(NetworkObject networkObject, out Rigidbody2D rigidbody)
         {
             rigidbody = null;
-            return Backend == PhysicsBackend.Rigidbody && networkObject != null && networkObject.TryGetComponent(out rigidbody);
+            return networkObject != null && networkObject.TryGetComponent(out rigidbody);
         }
     }
 }

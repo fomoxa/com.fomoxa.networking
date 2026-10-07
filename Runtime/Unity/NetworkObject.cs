@@ -74,7 +74,7 @@ namespace Fomoxa.Unity
 
         internal ClientManager Client => record?.Client?.Owner as ClientManager;
 
-        private PhysicsWorlds PhysicsWorlds => (Server?.EntityBackend as UnityServerEntityBackend)?.Physics ?? (Client?.PredictionBackend as UnityPredictionBackend)?.Physics;
+        private NetworkPhysics PhysicsWorlds => (Server?.EntityBackend as UnityServerEntityBackend)?.Physics ?? (Client?.PredictionBackend as UnityPredictionBackend)?.Physics;
 
         internal uint Fingerprint { get; set; }
 
