@@ -60,7 +60,11 @@ namespace Fomoxa.Unity
             var body = new GameObject("FomoxaBody2D");
             SceneManager.MoveGameObjectToScene(body, FirstLoadedScene());
             body.transform.SetPositionAndRotation(desc.Position.ToUnity(), Quaternion.AngleAxis(ToDegrees(desc.Rotation), Vector3.forward));
-            AddCollider(body, desc.Shape);
+            foreach (ColliderDesc2D collider in desc.Colliders)
+            {
+                AddCollider(body.transform, collider);
+            }
+
             var rigidbody = body.AddComponent<Rigidbody2D>();
             rigidbody.bodyType = desc.Kind == BodyKind.Dynamic ? RigidbodyType2D.Dynamic : RigidbodyType2D.Kinematic;
             rigidbody.mass = desc.Mass > 0f ? desc.Mass : 1f;
@@ -305,22 +309,54 @@ namespace Fomoxa.Unity
             placed.SetPositionAndRotation(new Vector3(position.x, position.y, placed.position.z), Quaternion.AngleAxis(degrees, Vector3.forward));
         }
 
-        private static void AddCollider(GameObject body, in BodyShape2D shape)
+        private static void AddCollider(Transform body, in ColliderDesc2D desc)
+        {
+            var part = new GameObject("FomoxaCollider2D") { layer = desc.Layer };
+            part.transform.SetParent(body, false);
+            part.transform.SetLocalPositionAndRotation(new Vector3(desc.Position.X, desc.Position.Y, 0f), Quaternion.AngleAxis(ToDegrees(desc.Rotation), Vector3.forward));
+            Collider2D collider = AddShape(part, desc.Shape);
+            collider.isTrigger = desc.IsTrigger;
+            collider.sharedMaterial = ColliderMaterials.ToUnity2D(desc.Material);
+        }
+
+        private static Collider2D AddShape(GameObject part, in BodyShape2D shape)
         {
             switch (shape.Kind)
             {
                 case ShapeKind2D.Box:
-                    body.AddComponent<BoxCollider2D>().size = (shape.HalfExtents * 2f).ToUnity();
-                    break;
+                    var box = part.AddComponent<BoxCollider2D>();
+                    box.size = (shape.HalfExtents * 2f).ToUnity();
+                    return box;
                 case ShapeKind2D.Circle:
-                    body.AddComponent<CircleCollider2D>().radius = shape.Radius;
-                    break;
-                default:
-                    var capsule = body.AddComponent<CapsuleCollider2D>();
+                    var circle = part.AddComponent<CircleCollider2D>();
+                    circle.radius = shape.Radius;
+                    return circle;
+                case ShapeKind2D.Capsule:
+                    var capsule = part.AddComponent<CapsuleCollider2D>();
                     capsule.direction = CapsuleDirection2D.Vertical;
                     capsule.size = new Vector2(shape.Radius * 2f, (shape.HalfHeight + shape.Radius) * 2f);
-                    break;
+                    return capsule;
+                case ShapeKind2D.ConvexPolygon:
+                    var polygon = part.AddComponent<PolygonCollider2D>();
+                    polygon.pathCount = 1;
+                    polygon.SetPath(0, ToUnity(shape.Points));
+                    return polygon;
+                default:
+                    var edge = part.AddComponent<EdgeCollider2D>();
+                    edge.points = ToUnity(shape.Points);
+                    return edge;
             }
+        }
+
+        private static Vector2[] ToUnity(IReadOnlyList<System.Numerics.Vector2> points)
+        {
+            var converted = new Vector2[points.Count];
+            for (int index = 0; index < converted.Length; index++)
+            {
+                converted[index] = points[index].ToUnity();
+            }
+
+            return converted;
         }
 
         private static float ToDegrees(float radians) => radians * Mathf.Rad2Deg;

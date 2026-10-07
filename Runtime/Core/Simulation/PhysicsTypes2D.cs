@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Numerics;
 
 namespace Fomoxa.Networking.Simulation
@@ -7,16 +10,21 @@ namespace Fomoxa.Networking.Simulation
         Box,
         Circle,
         Capsule,
+        ConvexPolygon,
+        Polyline,
     }
 
     public readonly struct BodyShape2D
     {
-        private BodyShape2D(ShapeKind2D kind, Vector2 halfExtents, float radius, float halfHeight)
+        private readonly IReadOnlyList<Vector2> points;
+
+        private BodyShape2D(ShapeKind2D kind, Vector2 halfExtents, float radius, float halfHeight, IReadOnlyList<Vector2> points)
         {
             Kind = kind;
             HalfExtents = halfExtents;
             Radius = radius;
             HalfHeight = halfHeight;
+            this.points = points;
         }
 
         public ShapeKind2D Kind { get; }
@@ -27,19 +35,92 @@ namespace Fomoxa.Networking.Simulation
 
         public float HalfHeight { get; }
 
-        public static BodyShape2D Box(Vector2 halfExtents) => new BodyShape2D(ShapeKind2D.Box, halfExtents, 0f, 0f);
+        public IReadOnlyList<Vector2> Points => points ?? Array.Empty<Vector2>();
 
-        public static BodyShape2D Circle(float radius) => new BodyShape2D(ShapeKind2D.Circle, Vector2.Zero, radius, 0f);
+        internal bool StaticOnly => Kind == ShapeKind2D.Polyline;
 
-        public static BodyShape2D Capsule(float radius, float halfHeight) => new BodyShape2D(ShapeKind2D.Capsule, Vector2.Zero, radius, halfHeight);
+        public static BodyShape2D Box(Vector2 halfExtents) => new BodyShape2D(ShapeKind2D.Box, halfExtents, 0f, 0f, null);
+
+        public static BodyShape2D Circle(float radius) => new BodyShape2D(ShapeKind2D.Circle, Vector2.Zero, radius, 0f, null);
+
+        public static BodyShape2D Capsule(float radius, float halfHeight) => new BodyShape2D(ShapeKind2D.Capsule, Vector2.Zero, radius, halfHeight, null);
+
+        public static BodyShape2D ConvexPolygon(IReadOnlyList<Vector2> points)
+        {
+            ReadOnlyCollection<Vector2> copied = ShapeData.Copy(points, nameof(points));
+            if (copied.Count < 3)
+            {
+                throw new ArgumentException("a convex polygon needs at least 3 points", nameof(points));
+            }
+
+            return new BodyShape2D(ShapeKind2D.ConvexPolygon, Vector2.Zero, 0f, 0f, copied);
+        }
+
+        public static BodyShape2D Polyline(IReadOnlyList<Vector2> points)
+        {
+            ReadOnlyCollection<Vector2> copied = ShapeData.Copy(points, nameof(points));
+            if (copied.Count < 2)
+            {
+                throw new ArgumentException("a polyline needs at least 2 points", nameof(points));
+            }
+
+            return new BodyShape2D(ShapeKind2D.Polyline, Vector2.Zero, 0f, 0f, copied);
+        }
+    }
+
+    public readonly struct ColliderDesc2D
+    {
+        public ColliderDesc2D(BodyShape2D shape, Vector2 position, float rotation, ColliderMaterial material, int layer, bool isTrigger)
+        {
+            ShapeData.CheckLayer(layer);
+            Shape = shape;
+            Position = position;
+            Rotation = rotation;
+            Material = material;
+            Layer = layer;
+            IsTrigger = isTrigger;
+        }
+
+        public BodyShape2D Shape { get; }
+
+        public Vector2 Position { get; }
+
+        public float Rotation { get; }
+
+        public ColliderMaterial Material { get; }
+
+        public int Layer { get; }
+
+        public bool IsTrigger { get; }
     }
 
     public readonly struct BodyDesc2D
     {
+        private readonly IReadOnlyList<ColliderDesc2D> colliders;
+
         public BodyDesc2D(BodyKind kind, BodyShape2D shape, Vector2 position, float rotation, float mass)
+            : this(kind, new[] { new ColliderDesc2D(shape, Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) }, position, rotation, mass)
         {
+        }
+
+        public BodyDesc2D(BodyKind kind, IReadOnlyList<ColliderDesc2D> colliders, Vector2 position, float rotation, float mass)
+        {
+            ReadOnlyCollection<ColliderDesc2D> copied = ShapeData.Copy(colliders, nameof(colliders));
+            if (copied.Count == 0)
+            {
+                throw new ArgumentException("a body needs at least one collider", nameof(colliders));
+            }
+
+            foreach (ColliderDesc2D collider in copied)
+            {
+                if (collider.Shape.StaticOnly && kind != BodyKind.Static)
+                {
+                    throw new ArgumentException($"a {collider.Shape.Kind} collider needs a static body", nameof(colliders));
+                }
+            }
+
             Kind = kind;
-            Shape = shape;
+            this.colliders = copied;
             Position = position;
             Rotation = rotation;
             Mass = mass;
@@ -47,7 +128,7 @@ namespace Fomoxa.Networking.Simulation
 
         public BodyKind Kind { get; }
 
-        public BodyShape2D Shape { get; }
+        public IReadOnlyList<ColliderDesc2D> Colliders => colliders ?? Array.Empty<ColliderDesc2D>();
 
         public Vector2 Position { get; }
 

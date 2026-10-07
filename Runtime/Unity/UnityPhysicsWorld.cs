@@ -13,6 +13,7 @@ namespace Fomoxa.Unity
         private readonly Dictionary<int, Rigidbody> bodies = new Dictionary<int, Rigidbody>();
         private readonly Dictionary<Rigidbody, int> handles = new Dictionary<Rigidbody, int>();
         private readonly HashSet<int> created = new HashSet<int>();
+        private readonly Dictionary<int, List<Mesh>> meshes = new Dictionary<int, List<Mesh>>();
         private readonly HashSet<Rigidbody> pinned = new HashSet<Rigidbody>();
         private readonly List<GameObject> roots = new List<GameObject>();
         private readonly List<Rigidbody> found = new List<Rigidbody>();
@@ -57,16 +58,31 @@ namespace Fomoxa.Unity
 
         public BodyHandle CreateBody(in BodyDesc desc)
         {
+            foreach (ColliderDesc collider in desc.Colliders)
+            {
+                ColliderMaterials.Check(collider.Material);
+            }
+
             var body = new GameObject("FomoxaBody");
             SceneManager.MoveGameObjectToScene(body, FirstLoadedScene());
             body.transform.SetPositionAndRotation(desc.Position.ToUnity(), desc.Rotation.ToUnity());
-            AddCollider(body, desc.Shape);
+            var owned = new List<Mesh>();
+            foreach (ColliderDesc collider in desc.Colliders)
+            {
+                AddCollider(body.transform, collider, owned);
+            }
+
             var rigidbody = body.AddComponent<Rigidbody>();
             rigidbody.mass = desc.Mass > 0f ? desc.Mass : 1f;
             rigidbody.isKinematic = desc.Kind != BodyKind.Dynamic;
             rigidbody.useGravity = desc.Kind == BodyKind.Dynamic;
             BodyHandle handle = Register(rigidbody);
             created.Add(handle.Value);
+            if (owned.Count > 0)
+            {
+                meshes.Add(handle.Value, owned);
+            }
+
             return handle;
         }
 
@@ -85,6 +101,14 @@ namespace Fomoxa.Unity
                 if (created.Remove(body.Value))
                 {
                     UnityEngine.Object.DestroyImmediate(rigidbody.gameObject);
+                }
+            }
+
+            if (meshes.Remove(body.Value, out List<Mesh> owned))
+            {
+                foreach (Mesh mesh in owned)
+                {
+                    UnityEngine.Object.DestroyImmediate(mesh);
                 }
             }
 
@@ -288,22 +312,67 @@ namespace Fomoxa.Unity
             rigidbody.transform.SetPositionAndRotation(position, rotation);
         }
 
-        private static void AddCollider(GameObject body, in BodyShape shape)
+        private static void AddCollider(Transform body, in ColliderDesc desc, List<Mesh> owned)
+        {
+            var part = new GameObject("FomoxaCollider") { layer = desc.Layer };
+            part.transform.SetParent(body, false);
+            part.transform.SetLocalPositionAndRotation(desc.Position.ToUnity(), desc.Rotation.ToUnity());
+            Collider collider = AddShape(part, desc.Shape, owned);
+            collider.isTrigger = desc.IsTrigger;
+            collider.sharedMaterial = ColliderMaterials.ToUnity(desc.Material);
+        }
+
+        private static Collider AddShape(GameObject part, in BodyShape shape, List<Mesh> owned)
         {
             switch (shape.Kind)
             {
                 case ShapeKind.Box:
-                    body.AddComponent<BoxCollider>().size = (shape.HalfExtents * 2f).ToUnity();
-                    break;
+                    var box = part.AddComponent<BoxCollider>();
+                    box.size = (shape.HalfExtents * 2f).ToUnity();
+                    return box;
                 case ShapeKind.Sphere:
-                    body.AddComponent<SphereCollider>().radius = shape.Radius;
-                    break;
-                default:
-                    var capsule = body.AddComponent<CapsuleCollider>();
+                    var sphere = part.AddComponent<SphereCollider>();
+                    sphere.radius = shape.Radius;
+                    return sphere;
+                case ShapeKind.Capsule:
+                    var capsule = part.AddComponent<CapsuleCollider>();
                     capsule.radius = shape.Radius;
                     capsule.height = (shape.HalfHeight + shape.Radius) * 2f;
-                    break;
+                    return capsule;
+                case ShapeKind.ConvexHull:
+                    var hull = part.AddComponent<MeshCollider>();
+                    hull.convex = true;
+                    hull.sharedMesh = CreateMesh(shape.Points, null, owned);
+                    return hull;
+                default:
+                    var mesh = part.AddComponent<MeshCollider>();
+                    mesh.sharedMesh = CreateMesh(shape.Points, shape.Triangles, owned);
+                    return mesh;
             }
+        }
+
+        private static Mesh CreateMesh(IReadOnlyList<System.Numerics.Vector3> points, IReadOnlyList<int> triangles, List<Mesh> owned)
+        {
+            var vertices = new Vector3[points.Count];
+            for (int index = 0; index < vertices.Length; index++)
+            {
+                vertices[index] = points[index].ToUnity();
+            }
+
+            var mesh = new Mesh { name = "FomoxaMesh", vertices = vertices };
+            if (triangles != null)
+            {
+                var indices = new int[triangles.Count];
+                for (int index = 0; index < indices.Length; index++)
+                {
+                    indices[index] = triangles[index];
+                }
+
+                mesh.triangles = indices;
+            }
+
+            owned.Add(mesh);
+            return mesh;
         }
 
         private static RigidbodySnapshot Expect(PhysicsSnapshot snapshot) =>
