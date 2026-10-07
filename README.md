@@ -25,7 +25,7 @@
 In Unity, open Window > Package Manager, click +, choose Install package from git URL and enter:
 
 ```
-https://github.com/fomoxa/com.fomoxa.unity.git
+https://github.com/fomoxa/com.fomoxa.networking.git
 ```
 
 To work from a local copy, choose Install package from disk and select `package.json`.
@@ -86,18 +86,18 @@ manager.ServerManager.StartConnection(7777);
 manager.ClientManager.StartConnection("127.0.0.1", 7777);
 ```
 
-The [tutorial](../unity-docs/getting-started/first-project.md) builds this into a complete game.
+The [tutorial](https://github.com/fomoxa/unity-docs/blob/main/getting-started/first-project.md) builds this into a complete game.
 
 ## Documentation
 
-The documentation is in [`unity-docs`](../unity-docs/README.md) at the root of the repository and is published with GitBook through Git Sync; `unity-docs/gitbook-docs.yaml` describes the site.
+The documentation is in [fomoxa/unity-docs](https://github.com/fomoxa/unity-docs) and is published with GitBook through Git Sync; `gitbook-docs.yaml` in that repository describes the site.
 
-- [Introduction](../unity-docs/getting-started/introduction.md)
-- [Installation](../unity-docs/getting-started/installation.md)
-- [Concepts](../unity-docs/concepts/architecture.md)
-- [Example: Red Runner offline to online](../unity-docs/examples/redrunner/README.md)
-- [API reference](../unity-docs/reference/api.md)
-- [Troubleshooting](../unity-docs/getting-started/troubleshooting.md)
+- [Introduction](https://github.com/fomoxa/unity-docs/blob/main/getting-started/introduction.md)
+- [Installation](https://github.com/fomoxa/unity-docs/blob/main/getting-started/installation.md)
+- [Concepts](https://github.com/fomoxa/unity-docs/blob/main/concepts/architecture.md)
+- [Example: Red Runner offline to online](https://github.com/fomoxa/unity-docs/blob/main/examples/redrunner/README.md)
+- [API reference](https://github.com/fomoxa/unity-docs/blob/main/reference/api.md)
+- [Troubleshooting](https://github.com/fomoxa/unity-docs/blob/main/getting-started/troubleshooting.md)
 
 ## Not included
 
