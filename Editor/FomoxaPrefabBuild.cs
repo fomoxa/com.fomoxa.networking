@@ -12,6 +12,7 @@ namespace Fomoxa.Unity.Editor
         public void OnPreprocessBuild(BuildReport report)
         {
             var errors = new List<string>(FomoxaPrefabStep.RunForProject());
+            errors.AddRange(FomoxaSceneFileStep.ExportStale());
             errors.AddRange(FomoxaSceneStep.RunForProject());
             if (errors.Count > 0)
             {

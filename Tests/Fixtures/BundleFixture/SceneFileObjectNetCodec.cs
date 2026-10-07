@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/SceneFile.cs
 // model: SceneFileObject
 // codec: net
-// fingerprint: sha256:59c69ba0955be7cdc8b6dc66f25786232b64ac879a97e288690d9ec030760b8b
+// fingerprint: sha256:2f95d86d6b2b7e7f0a37a0d22d5cff126b83b0041c4652e318d9967680ea301c
 // fomoxac-version: 0.2.2
-// generated-at: 2026-10-06T10:34:00Z
+// generated-at: 2026-10-07T06:14:32Z
 
 namespace BundleFixture
 {
@@ -18,6 +18,8 @@ namespace BundleFixture
 /// <item><description><c>Fingerprint</c>: <c>u32</c></description></item>
 /// <item><description><c>BehaviourTypes</c>: <c>Array&lt;string&gt;</c></description></item>
 /// <item><description><c>Pose</c>: <c>SceneFilePose</c></description></item>
+/// <item><description><c>Body</c>: <c>SceneFileBody</c></description></item>
+/// <item><description><c>Body2D</c>: <c>SceneFileBody2D</c></description></item>
 /// </list>
 /// </remarks>
 public static class SceneFileObjectNetCodec
@@ -30,7 +32,7 @@ public static class SceneFileObjectNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0x59C69BA0955BE7CD;
+    public const ulong Fingerprint = 0x2F95D86D6B2B7E7F;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.SceneFileObject value)
@@ -43,6 +45,8 @@ public static class SceneFileObjectNetCodec
             writer.WriteString(element);
         }
         SceneFilePoseNetCodec.Encode(writer, value.Pose);
+        SceneFileBodyNetCodec.Encode(writer, value.Body);
+        SceneFileBody2DNetCodec.Encode(writer, value.Body2D);
     }
 
     /// <summary>Reads the <c>net</c> fields into <paramref name="value"/>, in declaration order.</summary>
@@ -78,6 +82,12 @@ public static class SceneFileObjectNetCodec
         var poseValue = value.Pose;
         SceneFilePoseNetCodec.Decode(ref reader, ref poseValue);
         value.Pose = poseValue;
+        var bodyValue = value.Body;
+        SceneFileBodyNetCodec.Decode(ref reader, ref bodyValue);
+        value.Body = bodyValue;
+        var body2DValue = value.Body2D;
+        SceneFileBody2DNetCodec.Decode(ref reader, ref body2DValue);
+        value.Body2D = body2DValue;
     }
 }
 

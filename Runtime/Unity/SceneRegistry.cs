@@ -9,6 +9,7 @@ namespace Fomoxa.Unity
     {
         private readonly Dictionary<uint, ISceneLoader> loaders = new Dictionary<uint, ISceneLoader>();
         private readonly Dictionary<string, uint> idsByPath = new Dictionary<string, uint>(StringComparer.Ordinal);
+        private readonly Dictionary<uint, TextAsset> files = new Dictionary<uint, TextAsset>();
 
         public int Count => loaders.Count;
 
@@ -32,6 +33,18 @@ namespace Fomoxa.Unity
 
         public bool Contains(uint sceneId) => loaders.ContainsKey(sceneId);
 
+        public bool TryGetSceneFile(uint sceneId, out byte[] bytes)
+        {
+            if (files.TryGetValue(sceneId, out TextAsset file) && file != null)
+            {
+                bytes = file.bytes;
+                return true;
+            }
+
+            bytes = null;
+            return false;
+        }
+
         public uint IdOf(string path) =>
             path != null && idsByPath.TryGetValue(path, out uint sceneId) ? sceneId : 0;
 
@@ -45,6 +58,11 @@ namespace Fomoxa.Unity
                 string path = list.PathAt(index);
                 Register(sceneId, new BuildSceneLoader(path));
                 idsByPath[path] = sceneId;
+                TextAsset file = list.SceneFileAt(index);
+                if (file != null)
+                {
+                    files[sceneId] = file;
+                }
             }
         }
 

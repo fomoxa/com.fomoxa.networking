@@ -121,21 +121,25 @@ namespace Fomoxa.Unity.Editor
 
         public static void WriteList(string assetPath, IReadOnlyList<FomoxaScene> scenes)
         {
+            string folder = Path.GetDirectoryName(assetPath).Replace('\\', '/');
+            List<(uint SceneId, string Path, TextAsset File)> entries = scenes
+                .Select(scene => (scene.SceneId, scene.Path, AssetDatabase.LoadAssetAtPath<TextAsset>(FomoxaSceneFileStep.FilePath(folder, scene.SceneId))))
+                .ToList();
             var list = AssetDatabase.LoadAssetAtPath<NetworkSceneList>(assetPath);
             if (list == null)
             {
                 list = ScriptableObject.CreateInstance<NetworkSceneList>();
-                list.Set(scenes.Select(scene => (scene.SceneId, scene.Path)));
+                list.Set(entries);
                 AssetDatabase.CreateAsset(list, assetPath);
                 return;
             }
 
-            if (Matches(list, scenes))
+            if (Matches(list, entries))
             {
                 return;
             }
 
-            list.Set(scenes.Select(scene => (scene.SceneId, scene.Path)));
+            list.Set(entries);
             EditorUtility.SetDirty(list);
             AssetDatabase.SaveAssetIfDirty(list);
         }
@@ -181,16 +185,16 @@ namespace Fomoxa.Unity.Editor
                 .ToString();
         }
 
-        private static bool Matches(NetworkSceneList list, IReadOnlyList<FomoxaScene> scenes)
+        private static bool Matches(NetworkSceneList list, IReadOnlyList<(uint SceneId, string Path, TextAsset File)> entries)
         {
-            if (list.Count != scenes.Count)
+            if (list.Count != entries.Count)
             {
                 return false;
             }
 
-            for (int index = 0; index < scenes.Count; index++)
+            for (int index = 0; index < entries.Count; index++)
             {
-                if (list.SceneIdAt(index) != scenes[index].SceneId || list.PathAt(index) != scenes[index].Path)
+                if (list.SceneIdAt(index) != entries[index].SceneId || list.PathAt(index) != entries[index].Path || list.SceneFileAt(index) != entries[index].File)
                 {
                     return false;
                 }

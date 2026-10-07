@@ -11,6 +11,7 @@ namespace Fomoxa.Unity.Editor
             EditorSceneManager.sceneSaving += (scene, path) =>
                 FomoxaSceneObjectIds.Assign(scene, FomoxaSceneObjectIds.SceneHashOf(AssetDatabase.AssetPathToGUID(path)));
             EditorBuildSettings.sceneListChanged += FomoxaPrefabPostprocessor.ScheduleScenes;
+            EditorSceneManager.sceneSaved += FomoxaSceneFileStep.ExportSaved;
         }
     }
 }

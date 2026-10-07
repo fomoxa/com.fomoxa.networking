@@ -24,7 +24,7 @@ namespace Fomoxa.Unity.Tests
         public void BuildScenesAreRegisteredAndFoundByPath()
         {
             var list = ScriptableObject.CreateInstance<NetworkSceneList>();
-            list.Set(new[] { (0x21u, "Assets/Scenes/Arena.unity"), (0x22u, "Assets/Scenes/Lobby.unity") });
+            list.Set(new[] { (0x21u, "Assets/Scenes/Arena.unity", (TextAsset)null), (0x22u, "Assets/Scenes/Lobby.unity", (TextAsset)null) });
             var registry = new SceneRegistry();
 
             registry.RegisterBuildScenes(list);
@@ -41,7 +41,7 @@ namespace Fomoxa.Unity.Tests
         public void TheBuildLoaderReportsAFailureWhenUnityRefusesToLoad()
         {
             var list = ScriptableObject.CreateInstance<NetworkSceneList>();
-            list.Set(new[] { (0x31u, "Assets/Scenes/NotInTheBuild.unity") });
+            list.Set(new[] { (0x31u, "Assets/Scenes/NotInTheBuild.unity", (TextAsset)null) });
             var registry = new SceneRegistry();
             registry.RegisterBuildScenes(list);
             Assert.IsTrue(registry.TryGet(0x31, out ISceneLoader loader));

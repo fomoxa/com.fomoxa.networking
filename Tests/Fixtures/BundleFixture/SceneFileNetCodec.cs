@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/SceneFile.cs
 // model: SceneFile
 // codec: net
-// fingerprint: sha256:8ec26e99e1db814898183bbca51c6081853b476a68e1cd3a388f810010f49ed0
+// fingerprint: sha256:d9c44c7e4a9b807fe51ec4e5a265c3d90cc742f77a3c8dedfe41db8d0a55f81b
 // fomoxac-version: 0.2.2
-// generated-at: 2026-10-06T10:34:00Z
+// generated-at: 2026-10-07T06:14:32Z
 
 namespace BundleFixture
 {
@@ -16,6 +16,10 @@ namespace BundleFixture
 /// <list type="number">
 /// <item><description><c>SceneId</c>: <c>u32</c></description></item>
 /// <item><description><c>Objects</c>: <c>Array&lt;SceneFileObject&gt;</c></description></item>
+/// <item><description><c>Colliders</c>: <c>Array&lt;SceneFileCollider&gt;</c></description></item>
+/// <item><description><c>Colliders2D</c>: <c>Array&lt;SceneFileCollider2D&gt;</c></description></item>
+/// <item><description><c>LayerCollisions</c>: <c>Array&lt;u32&gt;</c></description></item>
+/// <item><description><c>LayerCollisions2D</c>: <c>Array&lt;u32&gt;</c></description></item>
 /// </list>
 /// </remarks>
 public static class SceneFileNetCodec
@@ -28,7 +32,7 @@ public static class SceneFileNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0x8EC26E99E1DB8148;
+    public const ulong Fingerprint = 0xD9C44C7E4A9B807F;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.SceneFile value)
@@ -38,6 +42,26 @@ public static class SceneFileNetCodec
         foreach (var element in value.Objects)
         {
             SceneFileObjectNetCodec.Encode(writer, element);
+        }
+        writer.WriteArrayCount(value.Colliders.Count);
+        foreach (var element in value.Colliders)
+        {
+            SceneFileColliderNetCodec.Encode(writer, element);
+        }
+        writer.WriteArrayCount(value.Colliders2D.Count);
+        foreach (var element in value.Colliders2D)
+        {
+            SceneFileCollider2DNetCodec.Encode(writer, element);
+        }
+        writer.WriteArrayCount(value.LayerCollisions.Count);
+        foreach (var element in value.LayerCollisions)
+        {
+            writer.WriteU32(element);
+        }
+        writer.WriteArrayCount(value.LayerCollisions2D.Count);
+        foreach (var element in value.LayerCollisions2D)
+        {
+            writer.WriteU32(element);
         }
     }
 
@@ -70,6 +94,72 @@ public static class SceneFileNetCodec
         }
         ArrayField.Trim(objectsValueList, objectsValueCount);
         value.Objects = objectsValueList;
+        int collidersValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var collidersValueList = ArrayField.Reuse(value.Colliders, collidersValueCount);
+        for (int i = 0; i < collidersValueCount; i++)
+        {
+            var element = i < collidersValueList.Count ? collidersValueList[i] : new Fomoxa.Networking.Messaging.SceneFileCollider();
+            SceneFileColliderNetCodec.Decode(ref reader, ref element);
+            if (i < collidersValueList.Count)
+            {
+                collidersValueList[i] = element;
+            }
+            else
+            {
+                collidersValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(collidersValueList, collidersValueCount);
+        value.Colliders = collidersValueList;
+        int colliders2DValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var colliders2DValueList = ArrayField.Reuse(value.Colliders2D, colliders2DValueCount);
+        for (int i = 0; i < colliders2DValueCount; i++)
+        {
+            var element = i < colliders2DValueList.Count ? colliders2DValueList[i] : new Fomoxa.Networking.Messaging.SceneFileCollider2D();
+            SceneFileCollider2DNetCodec.Decode(ref reader, ref element);
+            if (i < colliders2DValueList.Count)
+            {
+                colliders2DValueList[i] = element;
+            }
+            else
+            {
+                colliders2DValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(colliders2DValueList, colliders2DValueCount);
+        value.Colliders2D = colliders2DValueList;
+        int layerCollisionsValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var layerCollisionsValueList = ArrayField.Reuse(value.LayerCollisions, layerCollisionsValueCount);
+        for (int i = 0; i < layerCollisionsValueCount; i++)
+        {
+            var element = reader.ReadU32();
+            if (i < layerCollisionsValueList.Count)
+            {
+                layerCollisionsValueList[i] = element;
+            }
+            else
+            {
+                layerCollisionsValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(layerCollisionsValueList, layerCollisionsValueCount);
+        value.LayerCollisions = layerCollisionsValueList;
+        int layerCollisions2DValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var layerCollisions2DValueList = ArrayField.Reuse(value.LayerCollisions2D, layerCollisions2DValueCount);
+        for (int i = 0; i < layerCollisions2DValueCount; i++)
+        {
+            var element = reader.ReadU32();
+            if (i < layerCollisions2DValueList.Count)
+            {
+                layerCollisions2DValueList[i] = element;
+            }
+            else
+            {
+                layerCollisions2DValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(layerCollisions2DValueList, layerCollisions2DValueCount);
+        value.LayerCollisions2D = layerCollisions2DValueList;
     }
 }
 
