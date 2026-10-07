@@ -1,6 +1,6 @@
 # Fomoxa for Unity
 
-`com.fomoxa.unity` is a server-authoritative networking package for Unity, built on the Fomoxa protocol and its C# runtime, Fomoxa.Net. You declare network messages as plain C# classes, the package generates their codecs, and components such as `NetworkManager`, `NetworkObject` and `NetworkBehaviour` handle connections, spawning, RPCs, state, transforms and client-side prediction.
+`com.fomoxa.networking` is a server-authoritative networking package for Unity, built on the Fomoxa protocol and its C# runtime, Fomoxa.Net. You declare network messages as plain C# classes, the package generates their codecs, and components such as `NetworkManager`, `NetworkObject` and `NetworkBehaviour` handle connections, spawning, RPCs, state, transforms and client-side prediction.
 
 | | |
 |---|---|
@@ -38,7 +38,7 @@ A model:
 
 ```csharp
 using Fomoxa;
-using Fomoxa.Unity;
+using Fomoxa.Networking;
 
 [Network]
 [Codec("net")]
@@ -54,6 +54,7 @@ public class PlayerStats
 A behaviour that replicates it and accepts an RPC from its owner:
 
 ```csharp
+using Fomoxa.Networking;
 using Fomoxa.Unity;
 using Generated;
 using UnityEngine;
@@ -85,22 +86,22 @@ manager.ServerManager.StartConnection(7777);
 manager.ClientManager.StartConnection("127.0.0.1", 7777);
 ```
 
-The [tutorial](Documentation~/getting-started/first-project.md) builds this into a complete game.
+The [tutorial](../unity-docs/getting-started/first-project.md) builds this into a complete game.
 
 ## Documentation
 
-The documentation is in [`Documentation~`](Documentation~/README.md) and is published with GitBook through Git Sync; `Documentation~/gitbook-docs.yaml` describes the site.
+The documentation is in [`unity-docs`](../unity-docs/README.md) at the root of the repository and is published with GitBook through Git Sync; `unity-docs/gitbook-docs.yaml` describes the site.
 
-- [Introduction](Documentation~/getting-started/introduction.md)
-- [Installation](Documentation~/getting-started/installation.md)
-- [Concepts](Documentation~/concepts/architecture.md)
-- [Example: Red Runner offline to online](Documentation~/examples/redrunner/README.md)
-- [API reference](Documentation~/reference/api.md)
-- [Troubleshooting](Documentation~/getting-started/troubleshooting.md)
+- [Introduction](../unity-docs/getting-started/introduction.md)
+- [Installation](../unity-docs/getting-started/installation.md)
+- [Concepts](../unity-docs/concepts/architecture.md)
+- [Example: Red Runner offline to online](../unity-docs/examples/redrunner/README.md)
+- [API reference](../unity-docs/reference/api.md)
+- [Troubleshooting](../unity-docs/getting-started/troubleshooting.md)
 
 ## Not included
 
-The Rapier physics backend and a server that runs without Unity are not implemented in this version. The package has no lockstep mode, match recording, matchmaking, relay or encryption. The `fomoxac` code generator is not bundled for macOS, so code generation does not run in the macOS Editor.
+Physics prediction runs on Unity's PhysX through `RigidbodyPhysics`; the Rapier backend, with exact rollback and the same simulation on console servers, is the separate package [`com.fomoxa.networking.rapier`](https://github.com/fomoxa/networking-rapier). The console backend for a server that runs without Unity ships as source in `Standalone~`, which Unity ignores; a console project compiles it together with the Core. The package has no lockstep mode, match recording, matchmaking, relay or encryption. The `fomoxac` code generator is not bundled for macOS, so code generation does not run in the macOS Editor.
 
 ## License
 
