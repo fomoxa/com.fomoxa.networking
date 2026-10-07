@@ -1,6 +1,6 @@
 # Fomoxa for Unity
 
-`com.fomoxa.networking` is a server-authoritative networking package for Unity, built on the Fomoxa protocol and its C# runtime, Fomoxa.Net. You declare network messages as plain C# classes, the package generates their codecs, and components such as `NetworkManager`, `NetworkObject` and `NetworkBehaviour` handle connections, spawning, RPCs, state, transforms and client-side prediction.
+`com.fomoxa.networking` is a server-authoritative networking package for Unity, built on the Fomoxa protocol and its C# runtime, Fomoxa.Net. You declare network messages as plain C# classes and the package generates their codecs. Components such as `NetworkManager`, `NetworkObject` and `NetworkBehaviour` handle connections, spawning, RPCs, state, transforms and client-side prediction.
 
 | | |
 |---|---|
@@ -99,9 +99,15 @@ The documentation is in [fomoxa/unity-docs](https://github.com/fomoxa/unity-docs
 - [API reference](https://github.com/fomoxa/unity-docs/blob/main/reference/api.md)
 - [Troubleshooting](https://github.com/fomoxa/unity-docs/blob/main/getting-started/troubleshooting.md)
 
+## Physics and console servers
+
+Prediction uses Unity's PhysX through `RigidbodyPhysics`. Exact rollback, and the same physics on a server that runs without Unity, come from the Rapier backend in the separate package [`com.fomoxa.networking.rapier`](https://github.com/fomoxa/networking-rapier).
+
+The console backend for a server without Unity ships as source in `Standalone~`, a folder Unity ignores. A console project compiles it together with the Core.
+
 ## Not included
 
-Physics prediction runs on Unity's PhysX through `RigidbodyPhysics`; the Rapier backend, with exact rollback and the same simulation on console servers, is the separate package [`com.fomoxa.networking.rapier`](https://github.com/fomoxa/networking-rapier). The console backend for a server that runs without Unity ships as source in `Standalone~`, which Unity ignores; a console project compiles it together with the Core. The package has no lockstep mode, match recording, matchmaking, relay or encryption. The `fomoxac` code generator is not bundled for macOS, so code generation does not run in the macOS Editor.
+The package has no lockstep mode, match recording, matchmaking, relay or encryption. The bundled `fomoxac` code generator has no macOS build, so code generation does not run in the macOS Editor.
 
 ## License
 
