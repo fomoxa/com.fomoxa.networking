@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Objects;
 using Fomoxa.Networking.Prediction;
 using Fomoxa.Networking.Simulation;
@@ -12,9 +13,12 @@ namespace Fomoxa.Networking.Standalone
         private readonly Dictionary<ulong, StandaloneEntity> sceneObjects = new Dictionary<ulong, StandaloneEntity>();
         private readonly Dictionary<uint, List<StandaloneEntity>> scenes = new Dictionary<uint, List<StandaloneEntity>>();
 
-        public StandaloneClientEntityBackend(StandalonePrefabs prefabs)
+        private readonly IPhysicsScenes physics;
+
+        public StandaloneClientEntityBackend(StandalonePrefabs prefabs, IPhysicsScenes physics)
         {
             this.prefabs = prefabs;
+            this.physics = physics;
         }
 
         public SpawnResult CheckPrefab(in SpawnedObject spawned)
@@ -39,6 +43,7 @@ namespace Fomoxa.Networking.Standalone
 
             instance.SceneId = spawned.SceneId;
             Place(instance, spawned);
+            Attach(instance);
             return instance;
         }
 
@@ -57,11 +62,16 @@ namespace Fomoxa.Networking.Standalone
             }
 
             Place(instance, spawned);
+            Attach(instance);
             return SpawnResult.Spawned;
         }
 
         public void End(INetworkEntity entity)
         {
+            if (physics != null)
+            {
+                ((StandaloneEntity)entity).DetachBodies(physics);
+            }
         }
 
         public void HideOnHost(INetworkEntity entity)
@@ -103,6 +113,14 @@ namespace Fomoxa.Networking.Standalone
             }
         }
 
+        private void Attach(StandaloneEntity instance)
+        {
+            if (physics != null)
+            {
+                instance.AttachBodies(physics);
+            }
+        }
+
         private static void Place(StandaloneEntity instance, in SpawnedObject spawned)
         {
             instance.Position = spawned.Position;
@@ -119,8 +137,11 @@ namespace Fomoxa.Networking.Standalone
         private readonly StandaloneClientEntityBackend entities;
         private readonly NetworkLog log;
 
-        public StandaloneClientSceneHost(FomoxaRegistry registry, ISceneFiles files, StandaloneBehaviours behaviours, StandaloneClientEntityBackend entities, NetworkLog log)
+        private readonly IPhysicsScenes physics;
+
+        public StandaloneClientSceneHost(FomoxaRegistry registry, ISceneFiles files, StandaloneBehaviours behaviours, StandaloneClientEntityBackend entities, NetworkLog log, IPhysicsScenes physics)
         {
+            this.physics = physics;
             this.registry = registry;
             this.files = files;
             this.behaviours = behaviours;
@@ -135,10 +156,12 @@ namespace Fomoxa.Networking.Standalone
                 return false;
             }
 
+            SceneFile file;
             List<StandaloneEntity> sceneObjects;
             try
             {
-                sceneObjects = StandaloneSceneObjects.Build(registry, files, behaviours, sceneId);
+                file = StandaloneSceneObjects.Read(registry, files, sceneId);
+                sceneObjects = StandaloneSceneObjects.Build(file, behaviours);
             }
             catch (Exception exception)
             {
@@ -148,6 +171,7 @@ namespace Fomoxa.Networking.Standalone
             }
 
             entities.AddScene(sceneId, sceneObjects);
+            physics?.LoadScene(file);
             loaded();
             return true;
         }
@@ -155,26 +179,28 @@ namespace Fomoxa.Networking.Standalone
         public void Unload(uint sceneId, Action unloaded)
         {
             entities.RemoveScene(sceneId);
+            physics?.UnloadScene(sceneId);
             unloaded();
         }
     }
 
     internal sealed class StandalonePredictionBackend : IClientPredictionBackend
     {
-        public void WorldsOf(INetworkEntity entity, List<IPhysicsSimulation> worlds)
+        private readonly IPhysicsScenes physics;
+
+        public StandalonePredictionBackend(IPhysicsScenes physics)
         {
+            this.physics = physics;
         }
+
+        public void WorldsOf(INetworkEntity entity, List<IPhysicsSimulation> worlds) => physics?.WorldsOf(entity, worlds);
 
         public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) =>
-            throw new NotSupportedException("the standalone backend has no physics worlds");
+            physics != null ? physics.HistoryOf(world, capacity) : throw new NotSupportedException("the standalone backend has no physics worlds");
 
-        public void PlaceProxy(INetworkEntity entity)
-        {
-        }
+        public void PlaceProxy(INetworkEntity entity) => physics?.PlaceProxy(entity);
 
-        public void EndProxy(INetworkEntity entity)
-        {
-        }
+        public void EndProxy(INetworkEntity entity) => physics?.EndProxy(entity);
 
         public void ForgetDestroyedProxies()
         {

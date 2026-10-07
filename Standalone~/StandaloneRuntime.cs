@@ -1,11 +1,12 @@
 using System;
+using Fomoxa.Networking.Simulation;
 using Fomoxa.Networking.Transports;
 
 namespace Fomoxa.Networking.Standalone
 {
     public static class StandaloneRuntime
     {
-        public static NetworkRuntime Create(FomoxaRegistry registry, NetworkSettings settings, ITransportFactory transport, StandalonePrefabs prefabs, StandaloneBehaviours behaviours, ISceneFiles scenes, Func<TimeSpan> clock, NetworkLog log)
+        public static NetworkRuntime Create(FomoxaRegistry registry, NetworkSettings settings, ITransportFactory transport, StandalonePrefabs prefabs, StandaloneBehaviours behaviours, ISceneFiles scenes, Func<TimeSpan> clock, NetworkLog log, IPhysicsScenes physics = null)
         {
             if (prefabs == null)
             {
@@ -27,14 +28,20 @@ namespace Fomoxa.Networking.Standalone
                 throw new ArgumentNullException(nameof(log));
             }
 
-            var clientEntities = new StandaloneClientEntityBackend(prefabs);
+            var clientEntities = new StandaloneClientEntityBackend(prefabs, physics);
             var backends = new NetworkBackends(
-                new StandaloneServerEntityBackend(prefabs),
-                new StandaloneServerSceneHost(registry, scenes, behaviours),
+                new StandaloneServerEntityBackend(prefabs, physics),
+                new StandaloneServerSceneHost(registry, scenes, behaviours, physics),
                 clientEntities,
-                new StandaloneClientSceneHost(registry, scenes, behaviours, clientEntities, log),
-                new StandalonePredictionBackend());
-            return new NetworkRuntime(registry, settings, transport, backends, clock, log);
+                new StandaloneClientSceneHost(registry, scenes, behaviours, clientEntities, log, physics),
+                new StandalonePredictionBackend(physics));
+            var runtime = new NetworkRuntime(registry, settings, transport, backends, clock, log);
+            if (physics != null)
+            {
+                runtime.Physics = physics;
+            }
+
+            return runtime;
         }
     }
 }

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Objects;
+using Fomoxa.Networking.Simulation;
 
 namespace Fomoxa.Networking.Standalone
 {
@@ -8,8 +10,11 @@ namespace Fomoxa.Networking.Standalone
     {
         private readonly StandalonePrefabs prefabs;
 
-        public StandaloneServerEntityBackend(StandalonePrefabs prefabs)
+        private readonly IPhysicsScenes physics;
+
+        public StandaloneServerEntityBackend(StandalonePrefabs prefabs, IPhysicsScenes physics)
         {
+            this.physics = physics;
             this.prefabs = prefabs;
         }
 
@@ -43,6 +48,10 @@ namespace Fomoxa.Networking.Standalone
 
         public void PrepareSpawn(INetworkEntity entity)
         {
+            if (physics != null)
+            {
+                ((StandaloneEntity)entity).AttachBodies(physics);
+            }
         }
 
         public void Activate(INetworkEntity entity)
@@ -51,6 +60,10 @@ namespace Fomoxa.Networking.Standalone
 
         public void End(INetworkEntity entity, bool isSceneObject)
         {
+            if (physics != null)
+            {
+                ((StandaloneEntity)entity).DetachBodies(physics);
+            }
         }
     }
 
@@ -61,8 +74,11 @@ namespace Fomoxa.Networking.Standalone
         private readonly StandaloneBehaviours behaviours;
         private readonly Dictionary<uint, List<StandaloneEntity>> scenes = new Dictionary<uint, List<StandaloneEntity>>();
 
-        public StandaloneServerSceneHost(FomoxaRegistry registry, ISceneFiles files, StandaloneBehaviours behaviours)
+        private readonly IPhysicsScenes physics;
+
+        public StandaloneServerSceneHost(FomoxaRegistry registry, ISceneFiles files, StandaloneBehaviours behaviours, IPhysicsScenes physics)
         {
+            this.physics = physics;
             this.registry = registry;
             this.files = files;
             this.behaviours = behaviours;
@@ -81,10 +97,12 @@ namespace Fomoxa.Networking.Standalone
                 return false;
             }
 
+            SceneFile file;
             List<StandaloneEntity> sceneObjects;
             try
             {
-                sceneObjects = StandaloneSceneObjects.Build(registry, files, behaviours, sceneId);
+                file = StandaloneSceneObjects.Read(registry, files, sceneId);
+                sceneObjects = StandaloneSceneObjects.Build(file, behaviours);
             }
             catch (Exception exception)
             {
@@ -98,6 +116,7 @@ namespace Fomoxa.Networking.Standalone
             }
 
             scenes.Add(sceneId, sceneObjects);
+            physics?.LoadScene(file);
             loaded();
             return true;
         }
@@ -105,6 +124,7 @@ namespace Fomoxa.Networking.Standalone
         public void Unload(uint sceneId, Action unloaded)
         {
             scenes.Remove(sceneId);
+            physics?.UnloadScene(sceneId);
             unloaded();
         }
 
