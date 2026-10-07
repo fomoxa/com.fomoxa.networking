@@ -126,11 +126,17 @@ namespace Fomoxa.Unity.Tests
             crate.Velocity = new System.Numerics.Vector3(2f, 0f, 0f);
             NetworkTransform onClient = Remote<NetworkTransform>(client, onServer);
             Rigidbody proxy = onClient.GetComponent<Rigidbody>();
-            RunFrames(30);
+            float start = onClient.transform.position.x;
+            for (int frame = 0; frame < 30; frame++)
+            {
+                RunFrames(1);
+                onClient.Advance(FrameSeconds);
+            }
 
             Assert.IsTrue(proxy.isKinematic);
             Assert.IsFalse(onServer.GetComponent<Rigidbody>().isKinematic);
-            Assert.Greater(onClient.transform.position.x, 0.3f);
+            Assert.Greater(onClient.transform.position.x, start + 0.5f);
+            Assert.Less(onClient.transform.position.x, onServer.transform.position.x + 1e-3f);
             Assert.AreEqual(onClient.transform.position.x, proxy.position.x, 0.1f);
             UnityPhysicsWorld world = ((RigidbodyPhysics)client.Physics).Worlds.Of(clientScene);
             PhysicsSnapshot snapshot = world.CreateSnapshot();
