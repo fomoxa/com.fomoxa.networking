@@ -92,6 +92,33 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void StaticCollidersAreWrittenInTheOrderOfBodyDescriptions()
+        {
+            Create("Left").AddComponent<BoxCollider>().center = new Vector3(-1f, 0f, 0f);
+            Create("Right").AddComponent<SphereCollider>().center = new Vector3(1f, 0f, 0f);
+            var ground = Create("Ground").AddComponent<PolygonCollider2D>();
+            ground.pathCount = 2;
+            ground.SetPath(0, new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f) });
+            ground.SetPath(1, new[] { new Vector2(5f, 0f), new Vector2(6f, 0f), new Vector2(6f, 1f), new Vector2(5f, 1f) });
+            Create("Coin").AddComponent<CircleCollider2D>();
+            var sources = new List<Collider>();
+            var sources2D = new List<Collider2D>();
+            var errors = new List<string>();
+
+            SceneFile file = FomoxaSceneFileStep.Describe(scene, 0x99, errors);
+            BodyDescriptions.StaticColliders(scene, sources);
+            BodyDescriptions.StaticColliders2D(scene, sources2D);
+
+            CollectionAssert.IsEmpty(errors);
+            Assert.AreEqual(sources.Count, file.Colliders.Count);
+            Assert.AreEqual((ShapeKind.Box, ShapeKind.Sphere), (SceneFileGeometry.ToDesc(file.Colliders[0]).Shape.Kind, SceneFileGeometry.ToDesc(file.Colliders[1]).Shape.Kind));
+            Assert.AreEqual(sources2D.Count, file.Colliders2D.Count);
+            Assert.AreEqual(4, SceneFileGeometry.ToDesc(file.Colliders2D[0]).Shape.Points.Count);
+            Assert.AreEqual(5, SceneFileGeometry.ToDesc(file.Colliders2D[1]).Shape.Points.Count);
+            Assert.AreEqual(ShapeKind2D.Circle, SceneFileGeometry.ToDesc(file.Colliders2D[2]).Shape.Kind);
+        }
+
+        [Test]
         public void ATerrainBecomesATriangleMeshWithoutItsHoles()
         {
             var data = new TerrainData { heightmapResolution = 33, size = new Vector3(32f, 10f, 32f) };

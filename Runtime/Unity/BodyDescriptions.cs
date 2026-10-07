@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Fomoxa.Networking.Simulation;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Fomoxa.Unity
 {
@@ -12,63 +13,84 @@ namespace Fomoxa.Unity
         private static readonly Quaternion AxisYToX = new Quaternion(0f, 0f, -HalfSqrtTwo, HalfSqrtTwo);
         private static readonly Quaternion AxisYToZ = new Quaternion(HalfSqrtTwo, 0f, 0f, HalfSqrtTwo);
 
-        public static bool TryDescribe(GameObject root, out BodyDesc desc)
+        public static bool TryDescribe(GameObject root, out BodyDesc desc) => Describe(root, out desc, null);
+
+        public static bool TryDescribe(GameObject root, out BodyDesc desc, List<Collider> sources)
         {
-            if (root == null)
+            if (sources == null)
             {
-                throw new ArgumentNullException(nameof(root));
+                throw new ArgumentNullException(nameof(sources));
             }
 
-            root.TryGetComponent(out Rigidbody rigidbody);
-            BodyKind kind = rigidbody == null ? BodyKind.Static : rigidbody.isKinematic ? BodyKind.Kinematic : BodyKind.Dynamic;
-            Transform space = root.transform;
-            var colliders = new List<ColliderDesc>();
-            foreach (Collider collider in root.GetComponentsInChildren<Collider>())
-            {
-                if (collider.enabled && collider.attachedRigidbody == rigidbody)
-                {
-                    Append(collider, space.position, Quaternion.Inverse(space.rotation), kind == BodyKind.Static, colliders);
-                }
-            }
-
-            if (colliders.Count == 0)
-            {
-                desc = default;
-                return false;
-            }
-
-            desc = new BodyDesc(kind, colliders, space.position.ToNumerics(), space.rotation.ToNumerics(), rigidbody == null ? 0f : rigidbody.mass);
-            return true;
+            return Describe(root, out desc, sources);
         }
 
-        public static bool TryDescribe2D(GameObject root, out BodyDesc2D desc)
+        public static bool TryDescribe2D(GameObject root, out BodyDesc2D desc) => Describe2D(root, out desc, null);
+
+        public static bool TryDescribe2D(GameObject root, out BodyDesc2D desc, List<Collider2D> sources)
         {
-            if (root == null)
+            if (sources == null)
             {
-                throw new ArgumentNullException(nameof(root));
+                throw new ArgumentNullException(nameof(sources));
             }
 
-            root.TryGetComponent(out Rigidbody2D rigidbody);
-            BodyKind kind = KindOf(rigidbody);
-            Transform space = root.transform;
-            var colliders = new List<ColliderDesc2D>();
-            foreach (Collider2D collider in root.GetComponentsInChildren<Collider2D>())
+            return Describe2D(root, out desc, sources);
+        }
+
+        public static void StaticColliders(Scene scene, List<Collider> into)
+        {
+            if (into == null)
             {
-                if (collider.enabled && collider.attachedRigidbody == rigidbody)
+                throw new ArgumentNullException(nameof(into));
+            }
+
+            if (!scene.IsValid())
+            {
+                throw new ArgumentException("the scene is not valid", nameof(scene));
+            }
+
+            into.Clear();
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                foreach (Collider collider in root.GetComponentsInChildren<Collider>())
                 {
-                    Append2D(collider, space.position, Quaternion.Inverse(space.rotation), kind == BodyKind.Static, colliders);
+                    if (IsStatic(collider, collider.enabled, collider.attachedRigidbody != null))
+                    {
+                        into.Add(collider);
+                    }
                 }
             }
+        }
 
-            if (colliders.Count == 0)
+        public static void StaticColliders2D(Scene scene, List<Collider2D> into)
+        {
+            if (into == null)
             {
-                desc = default;
-                return false;
+                throw new ArgumentNullException(nameof(into));
             }
 
-            Vector3 position = space.position;
-            desc = new BodyDesc2D(kind, colliders, new System.Numerics.Vector2(position.x, position.y), space.eulerAngles.z * Mathf.Deg2Rad, rigidbody == null ? 0f : rigidbody.mass);
-            return true;
+            if (!scene.IsValid())
+            {
+                throw new ArgumentException("the scene is not valid", nameof(scene));
+            }
+
+            into.Clear();
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                foreach (Collider2D collider in root.GetComponentsInChildren<Collider2D>())
+                {
+                    if (!IsStatic(collider, collider.enabled, collider.attachedRigidbody != null))
+                    {
+                        continue;
+                    }
+
+                    int pieces = collider is PolygonCollider2D polygon ? polygon.pathCount : 1;
+                    for (int piece = 0; piece < pieces; piece++)
+                    {
+                        into.Add(collider);
+                    }
+                }
+            }
         }
 
         public static void DescribeStatic(Collider collider, Transform space, List<ColliderDesc> into)
@@ -99,6 +121,80 @@ namespace Fomoxa.Unity
             }
 
             Append2D(collider, space == null ? Vector3.zero : space.position, space == null ? Quaternion.identity : Quaternion.Inverse(space.rotation), true, into);
+        }
+
+        private static bool IsStatic(Component collider, bool enabled, bool attached) =>
+            enabled && !attached && collider.gameObject.activeInHierarchy && collider.GetComponentInParent<NetworkObject>(true) == null;
+
+        private static bool Describe(GameObject root, out BodyDesc desc, List<Collider> sources)
+        {
+            if (root == null)
+            {
+                throw new ArgumentNullException(nameof(root));
+            }
+
+            sources?.Clear();
+
+            root.TryGetComponent(out Rigidbody rigidbody);
+            BodyKind kind = rigidbody == null ? BodyKind.Static : rigidbody.isKinematic ? BodyKind.Kinematic : BodyKind.Dynamic;
+            Transform space = root.transform;
+            var colliders = new List<ColliderDesc>();
+            foreach (Collider collider in root.GetComponentsInChildren<Collider>())
+            {
+                if (collider.enabled && collider.attachedRigidbody == rigidbody)
+                {
+                    Append(collider, space.position, Quaternion.Inverse(space.rotation), kind == BodyKind.Static, colliders);
+                    while (sources != null && sources.Count < colliders.Count)
+                    {
+                        sources.Add(collider);
+                    }
+                }
+            }
+
+            if (colliders.Count == 0)
+            {
+                desc = default;
+                return false;
+            }
+
+            desc = new BodyDesc(kind, colliders, space.position.ToNumerics(), space.rotation.ToNumerics(), rigidbody == null ? 0f : rigidbody.mass);
+            return true;
+        }
+
+        private static bool Describe2D(GameObject root, out BodyDesc2D desc, List<Collider2D> sources)
+        {
+            if (root == null)
+            {
+                throw new ArgumentNullException(nameof(root));
+            }
+
+            sources?.Clear();
+
+            root.TryGetComponent(out Rigidbody2D rigidbody);
+            BodyKind kind = KindOf(rigidbody);
+            Transform space = root.transform;
+            var colliders = new List<ColliderDesc2D>();
+            foreach (Collider2D collider in root.GetComponentsInChildren<Collider2D>())
+            {
+                if (collider.enabled && collider.attachedRigidbody == rigidbody)
+                {
+                    Append2D(collider, space.position, Quaternion.Inverse(space.rotation), kind == BodyKind.Static, colliders);
+                    while (sources != null && sources.Count < colliders.Count)
+                    {
+                        sources.Add(collider);
+                    }
+                }
+            }
+
+            if (colliders.Count == 0)
+            {
+                desc = default;
+                return false;
+            }
+
+            Vector3 position = space.position;
+            desc = new BodyDesc2D(kind, colliders, new System.Numerics.Vector2(position.x, position.y), space.eulerAngles.z * Mathf.Deg2Rad, rigidbody == null ? 0f : rigidbody.mass);
+            return true;
         }
 
         private static void Append(Collider collider, Vector3 origin, Quaternion inverse, bool staticBody, List<ColliderDesc> into)

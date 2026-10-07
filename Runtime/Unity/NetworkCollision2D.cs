@@ -11,6 +11,10 @@ namespace Fomoxa.Unity
         private readonly ContactSet<Collider2D> contacts = new ContactSet<Collider2D>();
         private PhysicsScene2D joined;
         private bool joinedAny;
+        private ContactTracker<Collider2D> joinedTracker;
+        private ContactTracker<Collider2D> attachedTracker;
+        private IContactQuery2D attachedQuery;
+        private bool live;
 
         public event Action<Collider2D> OnEnter;
 
@@ -18,11 +22,57 @@ namespace Fomoxa.Unity
 
         public IReadOnlyCollection<Collider2D> Touching => contacts.Published;
 
+        public bool IsAttached => attachedQuery != null;
+
+        public bool Attach(ContactTracker<Collider2D> tracker, IContactQuery2D query)
+        {
+            if (tracker == null)
+            {
+                throw new ArgumentNullException(nameof(tracker));
+            }
+
+            if (query == null)
+            {
+                throw new ArgumentNullException(nameof(query));
+            }
+
+            if (attachedQuery != null)
+            {
+                return false;
+            }
+
+            Rehome(tracker, query);
+            return true;
+        }
+
+        public void Detach(IContactQuery2D query)
+        {
+            if (query == null)
+            {
+                throw new ArgumentNullException(nameof(query));
+            }
+
+            if (attachedQuery == query)
+            {
+                Rehome(null, null);
+            }
+        }
+
         ContactSet<Collider2D> IContactSource<Collider2D>.Contacts => contacts;
 
-        bool IContactSource<Collider2D>.MovedWorld => gameObject.scene.GetPhysicsScene2D() != joined;
+        bool IContactSource<Collider2D>.MovedWorld => attachedQuery == null && gameObject.scene.GetPhysicsScene2D() != joined;
 
-        void IContactSource<Collider2D>.Collect(HashSet<Collider2D> into) => ContactQueries.Collect(colliders, false, into);
+        void IContactSource<Collider2D>.Collect(HashSet<Collider2D> into)
+        {
+            if (attachedQuery != null)
+            {
+                ContactQueries.Collect(colliders, false, attachedQuery, into);
+            }
+            else
+            {
+                ContactQueries.Collect(colliders, false, into);
+            }
+        }
 
         void IContactSource<Collider2D>.Rejoin()
         {
@@ -36,19 +86,21 @@ namespace Fomoxa.Unity
 
         private void OnEnable()
         {
+            live = true;
             GetComponents(colliders);
             Join();
         }
 
         private void OnDisable()
         {
+            live = false;
             Leave();
             contacts.Clear();
         }
 
         private void OnCollisionEnter2D(Collision2D collision)
         {
-            if (!PhysicsStepOwners.Worlds2D.Owns(gameObject.scene.GetPhysicsScene2D()))
+            if (attachedQuery == null && !PhysicsStepOwners.Worlds2D.Owns(gameObject.scene.GetPhysicsScene2D()))
             {
                 contacts.PassEnter(this, collision.collider);
             }
@@ -56,25 +108,54 @@ namespace Fomoxa.Unity
 
         private void OnCollisionExit2D(Collision2D collision)
         {
-            if (!PhysicsStepOwners.Worlds2D.Owns(gameObject.scene.GetPhysicsScene2D()))
+            if (attachedQuery == null && !PhysicsStepOwners.Worlds2D.Owns(gameObject.scene.GetPhysicsScene2D()))
             {
                 contacts.PassExit(this, collision.collider);
             }
         }
 
+        private void Rehome(ContactTracker<Collider2D> tracker, IContactQuery2D query)
+        {
+            Leave();
+            contacts.Clear();
+            attachedTracker = tracker;
+            attachedQuery = query;
+            if (live)
+            {
+                Join();
+            }
+        }
+
         private void Join()
         {
-            joined = gameObject.scene.GetPhysicsScene2D();
             joinedAny = true;
+            if (attachedTracker != null)
+            {
+                joinedTracker = attachedTracker;
+                joinedTracker.Add(this);
+                return;
+            }
+
+            joined = gameObject.scene.GetPhysicsScene2D();
             ContactTrackers.Join(joined, this);
         }
 
         private void Leave()
         {
-            if (joinedAny)
+            if (!joinedAny)
+            {
+                return;
+            }
+
+            joinedAny = false;
+            if (joinedTracker != null)
+            {
+                joinedTracker.Remove(this);
+                joinedTracker = null;
+            }
+            else
             {
                 ContactTrackers.Leave(joined, this);
-                joinedAny = false;
             }
         }
 

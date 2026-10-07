@@ -298,6 +298,64 @@ namespace Fomoxa.Unity.Tests
             Assert.Throws<ArgumentNullException>(() => BodyDescriptions.DescribeStatic(box, null, null));
         }
 
+        [Test]
+        public void SourcesRunParallelToTheCollidersAndPiecesShareTheirPolygon()
+        {
+            GameObject root = Create("Root");
+            root.AddComponent<Rigidbody>();
+            var sphere = root.AddComponent<SphereCollider>();
+            var box = Child(root, "Box", Vector3.up).AddComponent<BoxCollider>();
+            GameObject moving = Create("Moving");
+            moving.AddComponent<Rigidbody2D>();
+            var circle = moving.AddComponent<CircleCollider2D>();
+            var polygon = moving.AddComponent<PolygonCollider2D>();
+            polygon.points = new[] { new Vector2(0f, 0f), new Vector2(2f, 0f), new Vector2(2f, 1f), new Vector2(1f, 1f), new Vector2(1f, 2f), new Vector2(0f, 2f) };
+            var sources = new List<Collider> { box };
+            var sources2D = new List<Collider2D>();
+
+            Assert.IsTrue(BodyDescriptions.TryDescribe(root, out BodyDesc desc, sources));
+            Assert.IsTrue(BodyDescriptions.TryDescribe2D(moving, out BodyDesc2D desc2D, sources2D));
+
+            CollectionAssert.AreEqual(new Collider[] { sphere, box }, sources);
+            Assert.AreEqual(desc.Colliders.Count, sources.Count);
+            CollectionAssert.AreEqual(new Collider2D[] { circle, polygon, polygon }, sources2D);
+            Assert.AreEqual(desc2D.Colliders.Count, sources2D.Count);
+            Assert.Throws<ArgumentNullException>(() => BodyDescriptions.TryDescribe(root, out _, null));
+            Assert.Throws<ArgumentNullException>(() => BodyDescriptions.TryDescribe2D(moving, out _, null));
+        }
+
+        [Test]
+        public void StaticCollidersListOneEntryPerSceneFileColliderInSceneOrder()
+        {
+            var wall = Create("Wall").AddComponent<BoxCollider>();
+            GameObject moving = Create("Moving");
+            moving.AddComponent<Rigidbody>();
+            moving.AddComponent<SphereCollider>();
+            GameObject door = Create("Door");
+            door.AddComponent<NetworkObject>();
+            Child(door, "Frame", Vector3.zero).AddComponent<BoxCollider>();
+            Create("Off").AddComponent<BoxCollider>().enabled = false;
+            GameObject hidden = Create("Hidden");
+            hidden.AddComponent<BoxCollider>();
+            hidden.SetActive(false);
+            var step = Child(Create("Floor"), "Step", Vector3.zero).AddComponent<SphereCollider>();
+            var ground = Create("Ground").AddComponent<PolygonCollider2D>();
+            ground.pathCount = 2;
+            ground.SetPath(0, new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f) });
+            ground.SetPath(1, new[] { new Vector2(5f, 0f), new Vector2(6f, 0f), new Vector2(5f, 1f) });
+            var coin = Create("Coin").AddComponent<CircleCollider2D>();
+            var into = new List<Collider> { wall };
+            var into2D = new List<Collider2D>();
+
+            BodyDescriptions.StaticColliders(scene, into);
+            BodyDescriptions.StaticColliders2D(scene, into2D);
+
+            CollectionAssert.AreEqual(new Collider[] { wall, step }, into);
+            CollectionAssert.AreEqual(new Collider2D[] { ground, ground, coin }, into2D);
+            Assert.Throws<ArgumentNullException>(() => BodyDescriptions.StaticColliders(scene, null));
+            Assert.Throws<ArgumentException>(() => BodyDescriptions.StaticColliders(default, into));
+        }
+
         private GameObject Create(string name)
         {
             var gameObject = new GameObject(name);

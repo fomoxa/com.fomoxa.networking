@@ -13,6 +13,10 @@ namespace Fomoxa.Unity
         private readonly ContactSet<Collider> contacts = new ContactSet<Collider>();
         private PhysicsScene joined;
         private bool joinedAny;
+        private ContactTracker<Collider> joinedTracker;
+        private ContactTracker<Collider> attachedTracker;
+        private IContactQuery attachedQuery;
+        private bool live;
 
         public event Action<Collider> OnEnter;
 
@@ -20,17 +24,63 @@ namespace Fomoxa.Unity
 
         public IReadOnlyCollection<Collider> Touching => contacts.Published;
 
+        public bool IsAttached => attachedQuery != null;
+
         public float AdditionalSize
         {
             get => additionalSize;
             set => additionalSize = Mathf.Max(0f, value);
         }
 
+        public bool Attach(ContactTracker<Collider> tracker, IContactQuery query)
+        {
+            if (tracker == null)
+            {
+                throw new ArgumentNullException(nameof(tracker));
+            }
+
+            if (query == null)
+            {
+                throw new ArgumentNullException(nameof(query));
+            }
+
+            if (attachedQuery != null)
+            {
+                return false;
+            }
+
+            Rehome(tracker, query);
+            return true;
+        }
+
+        public void Detach(IContactQuery query)
+        {
+            if (query == null)
+            {
+                throw new ArgumentNullException(nameof(query));
+            }
+
+            if (attachedQuery == query)
+            {
+                Rehome(null, null);
+            }
+        }
+
         ContactSet<Collider> IContactSource<Collider>.Contacts => contacts;
 
-        bool IContactSource<Collider>.MovedWorld => gameObject.scene.GetPhysicsScene() != joined;
+        bool IContactSource<Collider>.MovedWorld => attachedQuery == null && gameObject.scene.GetPhysicsScene() != joined;
 
-        void IContactSource<Collider>.Collect(HashSet<Collider> into) => ContactQueries.Collect(colliders, true, additionalSize, into);
+        void IContactSource<Collider>.Collect(HashSet<Collider> into)
+        {
+            if (attachedQuery != null)
+            {
+                ContactQueries.Collect(colliders, true, attachedQuery, into);
+            }
+            else
+            {
+                ContactQueries.Collect(colliders, true, additionalSize, into);
+            }
+        }
 
         void IContactSource<Collider>.Rejoin()
         {
@@ -44,19 +94,21 @@ namespace Fomoxa.Unity
 
         private void OnEnable()
         {
+            live = true;
             GetComponents(colliders);
             Join();
         }
 
         private void OnDisable()
         {
+            live = false;
             Leave();
             contacts.Clear();
         }
 
         private void OnTriggerEnter(Collider other)
         {
-            if (!PhysicsStepOwners.Worlds.Owns(gameObject.scene.GetPhysicsScene()))
+            if (attachedQuery == null && !PhysicsStepOwners.Worlds.Owns(gameObject.scene.GetPhysicsScene()))
             {
                 contacts.PassEnter(this, other);
             }
@@ -64,25 +116,54 @@ namespace Fomoxa.Unity
 
         private void OnTriggerExit(Collider other)
         {
-            if (!PhysicsStepOwners.Worlds.Owns(gameObject.scene.GetPhysicsScene()))
+            if (attachedQuery == null && !PhysicsStepOwners.Worlds.Owns(gameObject.scene.GetPhysicsScene()))
             {
                 contacts.PassExit(this, other);
             }
         }
 
+        private void Rehome(ContactTracker<Collider> tracker, IContactQuery query)
+        {
+            Leave();
+            contacts.Clear();
+            attachedTracker = tracker;
+            attachedQuery = query;
+            if (live)
+            {
+                Join();
+            }
+        }
+
         private void Join()
         {
-            joined = gameObject.scene.GetPhysicsScene();
             joinedAny = true;
+            if (attachedTracker != null)
+            {
+                joinedTracker = attachedTracker;
+                joinedTracker.Add(this);
+                return;
+            }
+
+            joined = gameObject.scene.GetPhysicsScene();
             ContactTrackers.Join(joined, this);
         }
 
         private void Leave()
         {
-            if (joinedAny)
+            if (!joinedAny)
+            {
+                return;
+            }
+
+            joinedAny = false;
+            if (joinedTracker != null)
+            {
+                joinedTracker.Remove(this);
+                joinedTracker = null;
+            }
+            else
             {
                 ContactTrackers.Leave(joined, this);
-                joinedAny = false;
             }
         }
 

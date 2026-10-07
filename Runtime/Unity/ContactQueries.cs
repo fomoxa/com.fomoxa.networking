@@ -7,6 +7,8 @@ namespace Fomoxa.Unity
     internal static class ContactQueries
     {
         private static readonly List<Collider2D> contacts2D = new List<Collider2D>();
+        private static readonly HashSet<Collider> queried = new HashSet<Collider>();
+        private static readonly HashSet<Collider2D> queried2D = new HashSet<Collider2D>();
         private static Collider[] overlapBuffer = new Collider[32];
 
         public static void Collect(List<Collider> own, bool triggers, float additionalSize, HashSet<Collider> into)
@@ -62,6 +64,52 @@ namespace Fomoxa.Unity
             }
 
             contacts2D.Clear();
+        }
+
+        public static void Collect(List<Collider> own, bool triggers, IContactQuery query, HashSet<Collider> into)
+        {
+            foreach (Collider tracked in own)
+            {
+                if (tracked == null || !tracked.enabled || !tracked.gameObject.activeInHierarchy || tracked.isTrigger != triggers)
+                {
+                    continue;
+                }
+
+                queried.Clear();
+                query.Collect(tracked, queried);
+                foreach (Collider other in queried)
+                {
+                    if (!own.Contains(other))
+                    {
+                        into.Add(other);
+                    }
+                }
+            }
+
+            queried.Clear();
+        }
+
+        public static void Collect(List<Collider2D> own, bool triggers, IContactQuery2D query, HashSet<Collider2D> into)
+        {
+            foreach (Collider2D tracked in own)
+            {
+                if (tracked == null || !tracked.enabled || !tracked.gameObject.activeInHierarchy || tracked.isTrigger != triggers)
+                {
+                    continue;
+                }
+
+                queried2D.Clear();
+                query.Collect(tracked, queried2D);
+                foreach (Collider2D other in queried2D)
+                {
+                    if (!own.Contains(other))
+                    {
+                        into.Add(other);
+                    }
+                }
+            }
+
+            queried2D.Clear();
         }
 
         private static int Overlap(PhysicsScene physicsScene, Collider tracked, float additionalSize, int layers, QueryTriggerInteraction interaction)

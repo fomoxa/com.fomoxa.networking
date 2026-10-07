@@ -259,6 +259,106 @@ namespace Fomoxa.Unity.Tests
             Assert.IsTrue(trigger.Touching.Contains(ball.GetComponent<Collider2D>()));
         }
 
+        [Test]
+        public void AnAttachedTriggerTakesItsContactsFromItsOwnerAndIgnoresUnityCallbacks()
+        {
+            NetworkTrigger trigger = Trigger(Vector3.zero, Vector3.one);
+            Collider own = trigger.GetComponent<Collider>();
+            Collider ball = Ball(new Vector3(50f, 0f, 0f), Vector3.zero).GetComponent<Collider>();
+            var tracker = new ContactTracker<Collider>();
+            var query = new FixedQuery();
+            query.Touching.Add(ball);
+            query.Touching.Add(own);
+
+            Assert.IsTrue(trigger.Attach(tracker, query));
+
+            Assert.IsTrue(trigger.IsAttached);
+            Assert.AreEqual(1, tracker.Count);
+            Assert.IsNull(ContactTrackers.Of(scene.GetPhysicsScene()));
+            Invoke(trigger, "OnTriggerEnter", ball);
+            CollectionAssert.IsEmpty(events);
+
+            tracker.Query();
+            tracker.Publish();
+
+            CollectionAssert.AreEqual(new[] { "enter Ball" }, events);
+            CollectionAssert.AreEqual(new[] { own }, query.Asked);
+
+            query.Touching.Clear();
+            tracker.Query();
+            tracker.Publish();
+
+            CollectionAssert.AreEqual(new[] { "enter Ball", "exit Ball" }, events);
+        }
+
+        [Test]
+        public void TheFirstOwnerKeepsAComponentAndDetachingReturnsItToItsPhysicsScene()
+        {
+            GameObject crate = Created("Crate2D");
+            crate.AddComponent<BoxCollider2D>();
+            NetworkCollision2D collision = Enable(crate.AddComponent<NetworkCollision2D>());
+            Listen(collision);
+            Collider2D ball = Ball2D(new Vector2(10f, 0f), Vector2.zero).GetComponent<Collider2D>();
+            var first = new ContactTracker<Collider2D>();
+            var second = new ContactTracker<Collider2D>();
+            var query = new FixedQuery();
+            var other = new FixedQuery();
+            query.Touching2D.Add(ball);
+
+            Assert.IsTrue(collision.Attach(first, query));
+            Assert.IsFalse(collision.Attach(second, other));
+            first.Query();
+            first.Publish();
+
+            CollectionAssert.AreEqual(new[] { "enter Ball2D" }, events);
+
+            collision.Detach(other);
+
+            Assert.IsTrue(collision.IsAttached);
+            Assert.AreEqual((1, 0), (first.Count, second.Count));
+
+            collision.Detach(query);
+
+            Assert.IsFalse(collision.IsAttached);
+            Assert.AreEqual(0, first.Count);
+            Assert.AreEqual(0, collision.Touching.Count);
+            CollectionAssert.AreEqual(new[] { "enter Ball2D" }, events);
+            Assert.IsNotNull(ContactTrackers.Of(scene.GetPhysicsScene2D()));
+            Assert.Throws<System.ArgumentNullException>(() => collision.Attach(null, query));
+            Assert.Throws<System.ArgumentNullException>(() => collision.Attach(first, null));
+            Assert.Throws<System.ArgumentNullException>(() => collision.Detach(null));
+        }
+
+        [Test]
+        public void AComponentAttachedWhileDisabledJoinsItsOwnerWhenEnabled()
+        {
+            GameObject wall = Created("Wall");
+            wall.AddComponent<BoxCollider>();
+            var collision = wall.AddComponent<NetworkCollision>();
+            GameObject zone = Created("Zone2D");
+            zone.AddComponent<BoxCollider2D>().isTrigger = true;
+            var trigger = zone.AddComponent<NetworkTrigger2D>();
+            var tracker = new ContactTracker<Collider>();
+            var tracker2D = new ContactTracker<Collider2D>();
+            var query = new FixedQuery();
+
+            Assert.IsTrue(collision.Attach(tracker, query));
+            Assert.IsTrue(trigger.Attach(tracker2D, query));
+
+            Assert.AreEqual((0, 0), (tracker.Count, tracker2D.Count));
+
+            Enable(collision);
+            Enable(trigger);
+
+            Assert.AreEqual((1, 1), (tracker.Count, tracker2D.Count));
+            Assert.AreEqual(0, ContactTrackers.Count);
+
+            Disable(collision);
+            Disable(trigger);
+
+            Assert.AreEqual((0, 0), (tracker.Count, tracker2D.Count));
+        }
+
         private void Tick()
         {
             PhysicsSteps.StepAndPublish(worlds, StepSeconds, tick, false, 64);
@@ -348,5 +448,24 @@ namespace Fomoxa.Unity.Tests
 
         private static void Invoke(MonoBehaviour behaviour, string message, params object[] arguments) =>
             behaviour.GetType().GetMethod(message, BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(behaviour, arguments);
+
+        private sealed class FixedQuery : IContactQuery, IContactQuery2D
+        {
+            public readonly HashSet<Collider> Touching = new HashSet<Collider>();
+            public readonly HashSet<Collider2D> Touching2D = new HashSet<Collider2D>();
+            public readonly List<Component> Asked = new List<Component>();
+
+            public void Collect(Collider own, HashSet<Collider> into)
+            {
+                Asked.Add(own);
+                into.UnionWith(Touching);
+            }
+
+            public void Collect(Collider2D own, HashSet<Collider2D> into)
+            {
+                Asked.Add(own);
+                into.UnionWith(Touching2D);
+            }
+        }
     }
 }

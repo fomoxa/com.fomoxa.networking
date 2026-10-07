@@ -303,50 +303,54 @@ namespace Fomoxa.Unity.Editor
 
         private static void DescribeStaticColliders(Scene scene, SceneFile file, List<string> errors)
         {
+            var sources = new List<Collider>();
+            var sources2D = new List<Collider2D>();
             var colliders = new List<ColliderDesc>();
             var colliders2D = new List<ColliderDesc2D>();
-            foreach (GameObject root in scene.GetRootGameObjects())
+            int before = errors.Count;
+            BodyDescriptions.StaticColliders(scene, sources);
+            BodyDescriptions.StaticColliders2D(scene, sources2D);
+            foreach (Collider collider in sources)
             {
-                foreach (Collider collider in root.GetComponentsInChildren<Collider>())
+                try
                 {
-                    if (!collider.enabled || collider.attachedRigidbody != null || collider.GetComponentInParent<NetworkObject>(true) != null)
+                    if (collider is TerrainCollider terrain)
                     {
-                        continue;
+                        DescribeTerrain(terrain, colliders);
                     }
-
-                    try
+                    else
                     {
-                        if (collider is TerrainCollider terrain)
-                        {
-                            DescribeTerrain(terrain, colliders);
-                        }
-                        else
-                        {
-                            BodyDescriptions.DescribeStatic(collider, null, colliders);
-                        }
-                    }
-                    catch (Exception exception) when (exception is NotSupportedException || exception is ArgumentException)
-                    {
-                        errors.Add($"{scene.path}: {PathOf(collider.transform)}: {exception.Message}");
+                        BodyDescriptions.DescribeStatic(collider, null, colliders);
                     }
                 }
-
-                foreach (Collider2D collider in root.GetComponentsInChildren<Collider2D>())
+                catch (Exception exception) when (exception is NotSupportedException || exception is ArgumentException)
                 {
-                    if (!collider.enabled || collider.attachedRigidbody != null || collider.GetComponentInParent<NetworkObject>(true) != null)
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        BodyDescriptions.DescribeStatic2D(collider, null, colliders2D);
-                    }
-                    catch (Exception exception) when (exception is NotSupportedException || exception is ArgumentException)
-                    {
-                        errors.Add($"{scene.path}: {PathOf(collider.transform)}: {exception.Message}");
-                    }
+                    errors.Add($"{scene.path}: {PathOf(collider.transform)}: {exception.Message}");
                 }
+            }
+
+            Collider2D previous = null;
+            foreach (Collider2D collider in sources2D)
+            {
+                if (collider == previous)
+                {
+                    continue;
+                }
+
+                previous = collider;
+                try
+                {
+                    BodyDescriptions.DescribeStatic2D(collider, null, colliders2D);
+                }
+                catch (Exception exception) when (exception is NotSupportedException || exception is ArgumentException)
+                {
+                    errors.Add($"{scene.path}: {PathOf(collider.transform)}: {exception.Message}");
+                }
+            }
+
+            if (errors.Count == before && (colliders.Count != sources.Count || colliders2D.Count != sources2D.Count))
+            {
+                errors.Add($"{scene.path}: the static colliders describe to {colliders.Count} 3D and {colliders2D.Count} 2D shapes, but BodyDescriptions.StaticColliders lists {sources.Count} and {sources2D.Count}");
             }
 
             foreach (ColliderDesc collider in colliders)
