@@ -13,8 +13,11 @@ namespace Fomoxa.Networking
 {
     public sealed class NetworkRuntime
     {
+        public const string Version = "0.1.0";
+
         private readonly FomoxaRegistry registry;
         private readonly NetworkLog log;
+        private readonly PhysicsBackend physicsBackend;
         private readonly List<IPhysicsSimulation> stepping = new List<IPhysicsSimulation>();
         private readonly List<IContactTracker> queried = new List<IContactTracker>();
         private IPhysicsWorlds physics;
@@ -25,6 +28,7 @@ namespace Fomoxa.Networking
         {
             this.registry = registry ?? throw new ArgumentNullException(nameof(registry));
             this.log = log;
+            physicsBackend = settings.PhysicsBackend;
             Schema schema = registry.Schema
                 ?? throw new InvalidOperationException("no Fomoxa schema is registered; FomoxaAdapters.RegisterAll has not run");
             IMessageCodec<MessageBundle> bundleCodec = RequireCodec<MessageBundle>();
@@ -111,11 +115,21 @@ namespace Fomoxa.Networking
 
         public TimeManager TimeManager { get; }
 
-        internal IPhysicsWorlds Physics
+        public IPhysicsWorlds Physics
         {
             get => physics;
             set
             {
+                if (executing)
+                {
+                    throw new InvalidOperationException("Physics was attached from inside a frame of the same runtime");
+                }
+
+                if (value != null && value.Backend != physicsBackend)
+                {
+                    throw new ArgumentException($"the physics backend {value.Backend} differs from NetworkSettings.PhysicsBackend {physicsBackend}", nameof(value));
+                }
+
                 physics = value;
                 ClientManager.Prediction.Physics = value;
             }

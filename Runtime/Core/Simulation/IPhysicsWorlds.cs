@@ -2,8 +2,10 @@ using System.Collections.Generic;
 
 namespace Fomoxa.Networking.Simulation
 {
-    internal interface IPhysicsWorlds
+    public interface IPhysicsWorlds
     {
+        PhysicsBackend Backend { get; }
+
         void WorldsToStep(List<IPhysicsSimulation> worlds);
 
         IContactTracker TrackerOf(IPhysicsSimulation world);

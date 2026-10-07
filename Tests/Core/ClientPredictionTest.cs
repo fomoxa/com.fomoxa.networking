@@ -310,6 +310,8 @@ namespace Fomoxa.Networking.Tests
             public readonly Dictionary<IPhysicsSimulation, FakeTracker> Trackers = new Dictionary<IPhysicsSimulation, FakeTracker>();
             private readonly PhysicsHistories histories = new PhysicsHistories();
 
+            public PhysicsBackend Backend { get; set; } = PhysicsBackend.Rigidbody;
+
             public int HistoryRequests { get; private set; }
 
             public int WorldRequests { get; private set; }
