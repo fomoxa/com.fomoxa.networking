@@ -353,7 +353,148 @@ namespace Fomoxa.Unity.Tests
             CollectionAssert.AreEqual(new Collider[] { wall, step }, into);
             CollectionAssert.AreEqual(new Collider2D[] { ground, ground, coin }, into2D);
             Assert.Throws<ArgumentNullException>(() => BodyDescriptions.StaticColliders(scene, null));
-            Assert.Throws<ArgumentException>(() => BodyDescriptions.StaticColliders(default, into));
+            Assert.Throws<ArgumentException>(() => BodyDescriptions.StaticColliders(default(Scene), into));
+            Assert.Throws<ArgumentNullException>(() => BodyDescriptions.StaticColliders2D((GameObject)null, into2D));
+        }
+
+        [Test]
+        public void TheStaticCollidersUnderARootFollowTheOrderOfTheScene()
+        {
+            GameObject block = Create("Block");
+            var floor = Child(block, "Floor", Vector3.zero).AddComponent<BoxCollider2D>();
+            Child(block, "Crate", Vector3.up).AddComponent<Rigidbody2D>().gameObject.AddComponent<CircleCollider2D>();
+            var ledge = Child(block, "Ledge", Vector3.right).AddComponent<PolygonCollider2D>();
+            ledge.pathCount = 2;
+            var wall = Child(block, "Wall", Vector3.left).AddComponent<BoxCollider>();
+            var into2D = new List<Collider2D>();
+            var into = new List<Collider>();
+
+            BodyDescriptions.StaticColliders2D(block, into2D);
+            BodyDescriptions.StaticColliders(block, into);
+
+            CollectionAssert.AreEqual(new Collider2D[] { floor, ledge, ledge }, into2D);
+            CollectionAssert.AreEqual(new Collider[] { wall }, into);
+        }
+
+        [Test]
+        public void TheMotionOfARigidbodyIsCarriedAndAnObjectWithoutOneGetsTheDefault()
+        {
+            GameObject root = Create("Root");
+            root.AddComponent<SphereCollider>();
+            var rigidbody = root.AddComponent<Rigidbody>();
+            rigidbody.constraints = RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+            rigidbody.useGravity = false;
+            rigidbody.linearDamping = 0.5f;
+            rigidbody.angularDamping = 0.25f;
+            GameObject flat = Create("Flat");
+            flat.AddComponent<CircleCollider2D>();
+            var rigidbody2D = flat.AddComponent<Rigidbody2D>();
+            rigidbody2D.constraints = RigidbodyConstraints2D.FreezeRotation | RigidbodyConstraints2D.FreezePositionX;
+            rigidbody2D.gravityScale = 1.5f;
+            rigidbody2D.linearDamping = 0.1f;
+            rigidbody2D.angularDamping = 0.05f;
+            GameObject still = Create("Still");
+            still.AddComponent<BoxCollider2D>();
+
+            Assert.IsTrue(BodyDescriptions.TryDescribe(root, out BodyDesc body));
+            Assert.IsTrue(BodyDescriptions.TryDescribe2D(flat, out BodyDesc2D body2D));
+            Assert.IsTrue(BodyDescriptions.TryDescribe2D(still, out BodyDesc2D staticBody));
+
+            Assert.AreEqual((BodyLocks.PositionY | BodyLocks.RotationX | BodyLocks.RotationZ, false, 0.5f, 0.25f), (body.Motion.Locks, body.Motion.UseGravity, body.Motion.LinearDamping, body.Motion.AngularDamping));
+            Assert.AreEqual((BodyLocks2D.Rotation | BodyLocks2D.PositionX, 1.5f, 0.1f, 0.05f), (body2D.Motion.Locks, body2D.Motion.GravityScale, body2D.Motion.LinearDamping, body2D.Motion.AngularDamping));
+            Assert.AreEqual((BodyLocks2D.None, 1f, 0f, 0f), (staticBody.Motion.Locks, staticBody.Motion.GravityScale, staticBody.Motion.LinearDamping, staticBody.Motion.AngularDamping));
+        }
+
+        [Test]
+        public void AnAutoTiledBoxBecomesThePolygonsUnityBuiltForIt()
+        {
+            Sprite sprite = BorderedSprite();
+            foreach (SpriteDrawMode mode in new[] { SpriteDrawMode.Tiled, SpriteDrawMode.Sliced })
+            {
+                GameObject tile = Create(mode.ToString());
+                tile.transform.SetPositionAndRotation(new Vector3(2f, 1f, 0f), Quaternion.Euler(0f, 0f, 30f));
+                BoxCollider2D box = AutoTiledBox(tile, sprite, mode, new Vector2(6f, 3f));
+                var shapes = new PhysicsShapeGroup2D();
+                int count = box.GetShapes(shapes);
+                var colliders = new List<ColliderDesc2D>();
+
+                BodyDescriptions.DescribeStatic2D(box, null, colliders);
+
+                Assert.AreEqual(mode == SpriteDrawMode.Tiled ? 8 : 1, count);
+                Assert.AreEqual(count, colliders.Count);
+                Bounds covered = default;
+                for (int shapeIndex = 0; shapeIndex < count; shapeIndex++)
+                {
+                    ColliderDesc2D collider = colliders[shapeIndex];
+                    Assert.AreEqual((ShapeKind2D.ConvexPolygon, 4), (collider.Shape.Kind, collider.Shape.Points.Count));
+                    for (int vertex = 0; vertex < 4; vertex++)
+                    {
+                        System.Numerics.Vector2 point = collider.Shape.Points[vertex];
+                        AssertNear(shapes.GetShapeVertex(shapeIndex, vertex), point);
+                        var world = new Vector3(point.X, point.Y, 0f);
+                        if (shapeIndex == 0 && vertex == 0)
+                        {
+                            covered = new Bounds(world, Vector3.zero);
+                        }
+
+                        covered.Encapsulate(world);
+                    }
+                }
+
+                Assert.AreEqual(box.bounds.min.x, covered.min.x, 1e-4f);
+                Assert.AreEqual(box.bounds.min.y, covered.min.y, 1e-4f);
+                Assert.AreEqual(box.bounds.max.x, covered.max.x, 1e-4f);
+                Assert.AreEqual(box.bounds.max.y, covered.max.y, 1e-4f);
+            }
+        }
+
+        [Test]
+        public void AnAutoTiledBoxOnARigidbodyIsDescribedInTheSpaceOfItsBody()
+        {
+            Sprite sprite = BorderedSprite();
+            GameObject root = Create("Root");
+            root.transform.SetPositionAndRotation(new Vector3(-1f, 4f, 0f), Quaternion.Euler(0f, 0f, 45f));
+            root.AddComponent<Rigidbody2D>();
+            BoxCollider2D box = AutoTiledBox(root, sprite, SpriteDrawMode.Sliced, new Vector2(4f, 2f));
+
+            Assert.IsTrue(BodyDescriptions.TryDescribe2D(root, out BodyDesc2D body));
+
+            Assert.AreEqual(1, body.Colliders.Count);
+            Quaternion turn = Quaternion.AngleAxis(body.Rotation * Mathf.Rad2Deg, Vector3.forward);
+            var origin = new Vector3(body.Position.X, body.Position.Y, 0f);
+            var shapes = new PhysicsShapeGroup2D();
+            box.GetShapes(shapes);
+            for (int vertex = 0; vertex < 4; vertex++)
+            {
+                System.Numerics.Vector2 local = body.Colliders[0].Shape.Points[vertex];
+                Vector3 world = origin + turn * new Vector3(local.X, local.Y, 0f);
+                Vector2 expected = root.GetComponent<Rigidbody2D>().position + (Vector2)(Quaternion.AngleAxis(root.GetComponent<Rigidbody2D>().rotation, Vector3.forward) * shapes.GetShapeVertex(0, vertex));
+                Assert.AreEqual(expected.x, world.x, 1e-4f);
+                Assert.AreEqual(expected.y, world.y, 1e-4f);
+            }
+        }
+
+        private Sprite BorderedSprite()
+        {
+            var texture = new Texture2D(64, 64);
+            created.Add(texture);
+            Sprite sprite = Sprite.Create(texture, new Rect(0f, 0f, 64f, 64f), new Vector2(0.5f, 0.5f), 32f, 0, SpriteMeshType.FullRect, new Vector4(8f, 8f, 8f, 8f));
+            created.Add(sprite);
+            return sprite;
+        }
+
+        private static BoxCollider2D AutoTiledBox(GameObject holder, Sprite sprite, SpriteDrawMode mode, Vector2 rendererSize)
+        {
+            var renderer = holder.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.drawMode = mode;
+            var box = holder.AddComponent<BoxCollider2D>();
+            box.size = new Vector2(1.6f, 1.4f);
+            box.offset = new Vector2(0.1f, -0.2f);
+            box.autoTiling = true;
+            renderer.size = rendererSize;
+            Physics2D.SyncTransforms();
+            return box;
         }
 
         private GameObject Create(string name)
@@ -392,8 +533,8 @@ namespace Fomoxa.Unity.Tests
 
         private static void AssertNear(Vector2 expected, System.Numerics.Vector2 actual)
         {
-            Assert.AreEqual(expected.x, actual.X, Tolerance);
-            Assert.AreEqual(expected.y, actual.Y, Tolerance);
+            Assert.AreEqual(expected.x, actual.X, 1e-4f);
+            Assert.AreEqual(expected.y, actual.Y, 1e-4f);
         }
 
         private static void AssertNear(Quaternion expected, System.Numerics.Quaternion actual)

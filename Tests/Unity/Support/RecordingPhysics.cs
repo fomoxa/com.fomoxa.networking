@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using Fomoxa.Networking.Simulation;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace Fomoxa.Unity.Tests.Support
@@ -41,5 +43,23 @@ namespace Fomoxa.Unity.Tests.Support
         public override void WorldsToStep(List<IPhysicsSimulation> worlds) => Calls.Add("step");
 
         public override IContactTracker TrackerOf(IPhysicsSimulation world) => null;
+
+        public override StaticGroup AddStatic(Scene scene, IReadOnlyList<ColliderDesc> colliders) => throw new NotSupportedException();
+
+        public override StaticGroup AddStatic2D(Scene scene, IReadOnlyList<ColliderDesc2D> colliders) => throw new NotSupportedException();
+
+        public override StaticGroup AddStatic(GameObject root) => throw new NotSupportedException();
+
+        public override StaticGroup AddStatic2D(GameObject root) => throw new NotSupportedException();
+
+        public override void RemoveStatic(StaticGroup group) => throw new NotSupportedException();
+
+        public override PhysicsBody AddBody(Scene scene, in BodyDesc body) => throw new NotSupportedException();
+
+        public override PhysicsBody2D AddBody2D(Scene scene, in BodyDesc2D body) => throw new NotSupportedException();
+
+        public override void RemoveBody(PhysicsBody body) => throw new NotSupportedException();
+
+        public override void RemoveBody2D(PhysicsBody2D body) => throw new NotSupportedException();
     }
 }

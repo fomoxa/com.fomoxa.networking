@@ -68,11 +68,29 @@ namespace Fomoxa.Unity
             var rigidbody = body.AddComponent<Rigidbody2D>();
             rigidbody.bodyType = desc.Kind == BodyKind.Dynamic ? RigidbodyType2D.Dynamic : RigidbodyType2D.Kinematic;
             rigidbody.mass = desc.Mass > 0f ? desc.Mass : 1f;
-            rigidbody.gravityScale = desc.Kind == BodyKind.Dynamic ? 1f : 0f;
+            BodyMotion2D motion = desc.Motion;
+            rigidbody.constraints = ConstraintsOf(motion.Locks);
+            rigidbody.gravityScale = desc.Kind == BodyKind.Dynamic ? motion.GravityScale : 0f;
+            rigidbody.linearDamping = motion.LinearDamping;
+            rigidbody.angularDamping = motion.AngularDamping;
             BodyHandle handle = Register(rigidbody);
             created.Add(handle.Value);
             return handle;
         }
+
+        internal GameObject CreateStatic(Scene scene, IReadOnlyList<ColliderDesc2D> colliders)
+        {
+            var group = new GameObject("FomoxaStatic2D") { hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSaveInEditor };
+            SceneManager.MoveGameObjectToScene(group, scene);
+            foreach (ColliderDesc2D collider in colliders)
+            {
+                AddCollider(group.transform, collider);
+            }
+
+            return group;
+        }
+
+        internal GameObject ObjectOf(BodyHandle body) => Require(body).gameObject;
 
         public bool RemoveBody(BodyHandle body)
         {
@@ -346,6 +364,15 @@ namespace Fomoxa.Unity
                     edge.points = ToUnity(shape.Points);
                     return edge;
             }
+        }
+
+        private static RigidbodyConstraints2D ConstraintsOf(BodyLocks2D locks)
+        {
+            RigidbodyConstraints2D constraints = RigidbodyConstraints2D.None;
+            constraints |= (locks & BodyLocks2D.PositionX) != 0 ? RigidbodyConstraints2D.FreezePositionX : RigidbodyConstraints2D.None;
+            constraints |= (locks & BodyLocks2D.PositionY) != 0 ? RigidbodyConstraints2D.FreezePositionY : RigidbodyConstraints2D.None;
+            constraints |= (locks & BodyLocks2D.Rotation) != 0 ? RigidbodyConstraints2D.FreezeRotation : RigidbodyConstraints2D.None;
+            return constraints;
         }
 
         private static Vector2[] ToUnity(IReadOnlyList<System.Numerics.Vector2> points)

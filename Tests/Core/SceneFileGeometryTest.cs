@@ -66,8 +66,10 @@ namespace Fomoxa.Networking.Tests
         [Test]
         public void BodiesOfASceneObjectComeBackAtThePoseOfTheObject()
         {
-            var body = new BodyDesc(BodyKind.Kinematic, new[] { new ColliderDesc(BodyShape.Sphere(1f), Vector3.UnitY, Quaternion.Identity, Slippery, 2, false) }, Vector3.Zero, Quaternion.Identity, 3f);
-            var body2D = new BodyDesc2D(BodyKind.Dynamic, BodyShape2D.Circle(0.5f), Vector2.Zero, 1.25f, 2f);
+            var motion = new BodyMotion(BodyLocks.PositionY | BodyLocks.RotationX | BodyLocks.RotationZ, false, 0.1f, 0.2f);
+            var motion2D = new BodyMotion2D(BodyLocks2D.Rotation | BodyLocks2D.PositionX, 1.5f, 0.3f, 0.05f);
+            var body = new BodyDesc(BodyKind.Kinematic, new[] { new ColliderDesc(BodyShape.Sphere(1f), Vector3.UnitY, Quaternion.Identity, Slippery, 2, false) }, Vector3.Zero, Quaternion.Identity, 3f, motion);
+            var body2D = new BodyDesc2D(BodyKind.Dynamic, new[] { new ColliderDesc2D(BodyShape2D.Circle(0.5f), Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) }, Vector2.Zero, 1.25f, 2f, motion2D);
             var entry = new SceneFileObject
             {
                 SceneObjectId = 0x10,
@@ -83,6 +85,24 @@ namespace Fomoxa.Networking.Tests
             Assert.AreEqual((1, Vector3.UnitY, 2), (back.Colliders.Count, back.Colliders[0].Position, back.Colliders[0].Layer));
             Assert.AreEqual((BodyKind.Dynamic, 2f, new Vector2(1f, 2f), 1.25f), (back2D.Kind, back2D.Mass, back2D.Position, back2D.Rotation));
             Assert.AreEqual(ShapeKind2D.Circle, back2D.Colliders[0].Shape.Kind);
+            Assert.AreEqual((motion.Locks, motion.UseGravity, motion.LinearDamping, motion.AngularDamping), (back.Motion.Locks, back.Motion.UseGravity, back.Motion.LinearDamping, back.Motion.AngularDamping));
+            Assert.AreEqual((motion2D.Locks, motion2D.GravityScale, motion2D.LinearDamping, motion2D.AngularDamping), (back2D.Motion.Locks, back2D.Motion.GravityScale, back2D.Motion.LinearDamping, back2D.Motion.AngularDamping));
+        }
+
+        [Test]
+        public void ABodyWrittenBeforeMotionExistedFallsBackToTheDefaultMotion()
+        {
+            var entry = new SceneFileObject
+            {
+                Body = new SceneFileBody { Kind = (byte)(BodyKind.Dynamic + 1), Mass = 1f, Colliders = { SceneFileGeometry.ToFile(new ColliderDesc(BodyShape.Sphere(1f), Vector3.Zero, Quaternion.Identity, ColliderMaterial.Default, 0, false)) } },
+                Body2D = new SceneFileBody2D { Kind = (byte)(BodyKind.Dynamic + 1), Mass = 1f, Colliders = { SceneFileGeometry.ToFile(new ColliderDesc2D(BodyShape2D.Circle(1f), Vector2.Zero, 0f, ColliderMaterial.Default, 0, false)) } },
+            };
+
+            Assert.IsTrue(SceneFileGeometry.TryGetBody(entry, out BodyDesc body));
+            Assert.IsTrue(SceneFileGeometry.TryGetBody2D(entry, out BodyDesc2D body2D));
+
+            Assert.AreEqual((BodyLocks.None, true, 0f, 0f), (body.Motion.Locks, body.Motion.UseGravity, body.Motion.LinearDamping, body.Motion.AngularDamping));
+            Assert.AreEqual((BodyLocks2D.None, 1f, 0f, 0f), (body2D.Motion.Locks, body2D.Motion.GravityScale, body2D.Motion.LinearDamping, body2D.Motion.AngularDamping));
         }
 
         [Test]

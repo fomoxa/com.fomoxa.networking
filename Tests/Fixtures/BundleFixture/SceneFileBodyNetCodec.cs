@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/SceneFile.cs
 // model: SceneFileBody
 // codec: net
-// fingerprint: sha256:89da94a05c0de9b08a37f5b084b835b565ca1cb7d8900efa9b1437872756ae0b
+// fingerprint: sha256:eb56fb3e68044912e842d329753062fa8cda610dcdb5f02f16ef8dbfdab81023
 // fomoxac-version: 0.2.2
-// generated-at: 2026-10-07T06:13:22Z
+// generated-at: 2026-10-08T01:51:12Z
 
 namespace BundleFixture
 {
@@ -17,6 +17,10 @@ namespace BundleFixture
 /// <item><description><c>Kind</c>: <c>u8</c></description></item>
 /// <item><description><c>Mass</c>: <c>f32</c></description></item>
 /// <item><description><c>Colliders</c>: <c>Array&lt;SceneFileCollider&gt;</c></description></item>
+/// <item><description><c>Locks</c>: <c>u8</c></description></item>
+/// <item><description><c>UseGravity</c>: <c>bool</c></description></item>
+/// <item><description><c>LinearDamping</c>: <c>f32</c></description></item>
+/// <item><description><c>AngularDamping</c>: <c>f32</c></description></item>
 /// </list>
 /// </remarks>
 public static class SceneFileBodyNetCodec
@@ -29,7 +33,7 @@ public static class SceneFileBodyNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0x89DA94A05C0DE9B0;
+    public const ulong Fingerprint = 0xEB56FB3E68044912;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.SceneFileBody value)
@@ -41,6 +45,10 @@ public static class SceneFileBodyNetCodec
         {
             SceneFileColliderNetCodec.Encode(writer, element);
         }
+        writer.WriteU8(value.Locks);
+        writer.WriteBool(value.UseGravity);
+        writer.WriteF32(value.LinearDamping);
+        writer.WriteF32(value.AngularDamping);
     }
 
     /// <summary>Reads the <c>net</c> fields into <paramref name="value"/>, in declaration order.</summary>
@@ -73,6 +81,10 @@ public static class SceneFileBodyNetCodec
         }
         ArrayField.Trim(collidersValueList, collidersValueCount);
         value.Colliders = collidersValueList;
+        value.Locks = reader.FieldAbsent() ? (byte)0 : reader.ReadU8();
+        value.UseGravity = reader.FieldAbsent() ? false : reader.ReadBool();
+        value.LinearDamping = reader.FieldAbsent() ? 0f : reader.ReadF32();
+        value.AngularDamping = reader.FieldAbsent() ? 0f : reader.ReadF32();
     }
 }
 

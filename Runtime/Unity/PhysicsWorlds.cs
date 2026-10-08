@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Fomoxa.Networking.Simulation;
 using UnityEngine;
@@ -124,8 +125,96 @@ namespace Fomoxa.Unity
         private readonly List<PhysicsScene2D> emptied2D = new List<PhysicsScene2D>();
         private readonly List<Rigidbody> leaving = new List<Rigidbody>();
         private readonly List<Rigidbody2D> leaving2D = new List<Rigidbody2D>();
+        private readonly Dictionary<int, StaticObject> statics = new Dictionary<int, StaticObject>();
+        private readonly List<UnownedBody> unowned = new List<UnownedBody>();
+        private readonly List<UnownedBody2D> unowned2D = new List<UnownedBody2D>();
+        private int nextStatic = 1;
 
         public PhysicsBackend Backend => PhysicsBackend.Rigidbody;
+
+        public StaticGroup AddStatic(Scene scene, IReadOnlyList<ColliderDesc> colliders)
+        {
+            if (colliders == null)
+            {
+                throw new ArgumentNullException(nameof(colliders));
+            }
+
+            var owned = new List<Mesh>();
+            GameObject root = colliders.Count == 0 ? null : Of(scene).CreateStatic(scene, colliders, owned);
+            return Remember(root, owned, colliders.Count);
+        }
+
+        public StaticGroup AddStatic2D(Scene scene, IReadOnlyList<ColliderDesc2D> colliders)
+        {
+            if (colliders == null)
+            {
+                throw new ArgumentNullException(nameof(colliders));
+            }
+
+            GameObject root = colliders.Count == 0 ? null : Of2D(scene).CreateStatic(scene, colliders);
+            return Remember(root, null, colliders.Count);
+        }
+
+        public void RemoveStatic(StaticGroup group)
+        {
+            if (!statics.Remove(group.Id, out StaticObject found))
+            {
+                return;
+            }
+
+            if (found.Root != null)
+            {
+                UnityEngine.Object.DestroyImmediate(found.Root);
+            }
+
+            if (found.Meshes != null)
+            {
+                foreach (Mesh mesh in found.Meshes)
+                {
+                    UnityEngine.Object.DestroyImmediate(mesh);
+                }
+            }
+        }
+
+        public PhysicsBody AddBody(Scene scene, in BodyDesc body)
+        {
+            UnityPhysicsWorld world = Of(scene);
+            BodyHandle handle = world.CreateBody(body);
+            SceneManager.MoveGameObjectToScene(world.ObjectOf(handle), scene);
+            var created = new PhysicsBody(world, handle);
+            unowned.Add(new UnownedBody(created, world, handle));
+            return created;
+        }
+
+        public PhysicsBody2D AddBody2D(Scene scene, in BodyDesc2D body)
+        {
+            UnityPhysicsWorld2D world = Of2D(scene);
+            BodyHandle handle = world.CreateBody(body);
+            SceneManager.MoveGameObjectToScene(world.ObjectOf(handle), scene);
+            var created = new PhysicsBody2D(world, handle);
+            unowned2D.Add(new UnownedBody2D(created, world, handle));
+            return created;
+        }
+
+        public void RemoveBody(PhysicsBody body)
+        {
+            int index = unowned.FindIndex(entry => EqualityComparer<PhysicsBody>.Default.Equals(entry.Body, body));
+            if (index >= 0)
+            {
+                unowned[index].World.RemoveBody(unowned[index].Handle);
+                unowned.RemoveAt(index);
+            }
+        }
+
+        public void RemoveBody2D(PhysicsBody2D body)
+        {
+            int index = unowned2D.FindIndex(entry => EqualityComparer<PhysicsBody2D>.Default.Equals(entry.Body, body));
+            if (index >= 0)
+            {
+                unowned2D[index].World.RemoveBody(unowned2D[index].Handle);
+                unowned2D.RemoveAt(index);
+            }
+        }
 
         public UnityPhysicsWorld Of(Scene scene)
         {
@@ -383,6 +472,58 @@ namespace Fomoxa.Unity
         {
             rigidbody = null;
             return networkObject != null && networkObject.TryGetComponent(out rigidbody);
+        }
+
+        private StaticGroup Remember(GameObject root, List<Mesh> meshes, int count)
+        {
+            int id = nextStatic++;
+            statics.Add(id, new StaticObject(root, meshes));
+            return new StaticGroup(0, id, 0, count);
+        }
+
+        private readonly struct StaticObject
+        {
+            public StaticObject(GameObject root, List<Mesh> meshes)
+            {
+                Root = root;
+                Meshes = meshes;
+            }
+
+            public GameObject Root { get; }
+
+            public List<Mesh> Meshes { get; }
+        }
+
+        private readonly struct UnownedBody
+        {
+            public UnownedBody(PhysicsBody body, UnityPhysicsWorld world, BodyHandle handle)
+            {
+                Body = body;
+                World = world;
+                Handle = handle;
+            }
+
+            public PhysicsBody Body { get; }
+
+            public UnityPhysicsWorld World { get; }
+
+            public BodyHandle Handle { get; }
+        }
+
+        private readonly struct UnownedBody2D
+        {
+            public UnownedBody2D(PhysicsBody2D body, UnityPhysicsWorld2D world, BodyHandle handle)
+            {
+                Body = body;
+                World = world;
+                Handle = handle;
+            }
+
+            public PhysicsBody2D Body { get; }
+
+            public UnityPhysicsWorld2D World { get; }
+
+            public BodyHandle Handle { get; }
         }
     }
 }

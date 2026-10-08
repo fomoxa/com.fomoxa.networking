@@ -79,6 +79,41 @@ namespace Fomoxa.Networking.Simulation
         public CombineRule RestitutionCombine { get; }
     }
 
+    [Flags]
+    public enum BodyLocks
+    {
+        None = 0,
+        PositionX = 1,
+        PositionY = 2,
+        PositionZ = 4,
+        RotationX = 8,
+        RotationY = 16,
+        RotationZ = 32,
+    }
+
+    public readonly struct BodyMotion
+    {
+        public BodyMotion(BodyLocks locks, bool useGravity, float linearDamping, float angularDamping)
+        {
+            BodyMotionChecks.CheckDamping(linearDamping, nameof(linearDamping));
+            BodyMotionChecks.CheckDamping(angularDamping, nameof(angularDamping));
+            Locks = locks;
+            UseGravity = useGravity;
+            LinearDamping = linearDamping;
+            AngularDamping = angularDamping;
+        }
+
+        public static BodyMotion Default => new BodyMotion(BodyLocks.None, true, 0f, 0f);
+
+        public BodyLocks Locks { get; }
+
+        public bool UseGravity { get; }
+
+        public float LinearDamping { get; }
+
+        public float AngularDamping { get; }
+    }
+
     public readonly struct BodyShape
     {
         private readonly IReadOnlyList<Vector3> points;
@@ -180,6 +215,8 @@ namespace Fomoxa.Networking.Simulation
     public readonly struct BodyDesc
     {
         private readonly IReadOnlyList<ColliderDesc> colliders;
+        private readonly BodyMotion motion;
+        private readonly bool hasMotion;
 
         public BodyDesc(BodyKind kind, BodyShape shape, Vector3 position, Quaternion rotation, float mass)
             : this(kind, new[] { new ColliderDesc(shape, Vector3.Zero, Quaternion.Identity, ColliderMaterial.Default, 0, false) }, position, rotation, mass)
@@ -187,6 +224,11 @@ namespace Fomoxa.Networking.Simulation
         }
 
         public BodyDesc(BodyKind kind, IReadOnlyList<ColliderDesc> colliders, Vector3 position, Quaternion rotation, float mass)
+            : this(kind, colliders, position, rotation, mass, BodyMotion.Default)
+        {
+        }
+
+        public BodyDesc(BodyKind kind, IReadOnlyList<ColliderDesc> colliders, Vector3 position, Quaternion rotation, float mass, in BodyMotion motion)
         {
             ReadOnlyCollection<ColliderDesc> copied = ShapeData.Copy(colliders, nameof(colliders));
             if (copied.Count == 0)
@@ -207,17 +249,40 @@ namespace Fomoxa.Networking.Simulation
             Position = position;
             Rotation = rotation;
             Mass = mass;
+            this.motion = motion;
+            hasMotion = true;
         }
 
         public BodyKind Kind { get; }
 
         public IReadOnlyList<ColliderDesc> Colliders => colliders ?? Array.Empty<ColliderDesc>();
 
+        public BodyMotion Motion => hasMotion ? motion : BodyMotion.Default;
+
         public Vector3 Position { get; }
 
         public Quaternion Rotation { get; }
 
         public float Mass { get; }
+    }
+
+    internal static class BodyMotionChecks
+    {
+        public static void CheckDamping(float damping, string name)
+        {
+            if (damping < 0f || float.IsNaN(damping))
+            {
+                throw new ArgumentException("damping must not be negative", name);
+            }
+        }
+
+        public static void CheckGravityScale(float gravityScale, string name)
+        {
+            if (float.IsNaN(gravityScale) || float.IsInfinity(gravityScale))
+            {
+                throw new ArgumentException("the gravity scale must be a finite number", name);
+            }
+        }
     }
 
     internal static class ShapeData

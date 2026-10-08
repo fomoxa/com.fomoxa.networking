@@ -52,14 +52,24 @@ namespace Fomoxa.Unity
             into.Clear();
             foreach (GameObject root in scene.GetRootGameObjects())
             {
-                foreach (Collider collider in root.GetComponentsInChildren<Collider>())
-                {
-                    if (IsStatic(collider, collider.enabled, collider.attachedRigidbody != null))
-                    {
-                        into.Add(collider);
-                    }
-                }
+                AppendStatics(root, into);
             }
+        }
+
+        public static void StaticColliders(GameObject root, List<Collider> into)
+        {
+            if (root == null)
+            {
+                throw new ArgumentNullException(nameof(root));
+            }
+
+            if (into == null)
+            {
+                throw new ArgumentNullException(nameof(into));
+            }
+
+            into.Clear();
+            AppendStatics(root, into);
         }
 
         public static void StaticColliders2D(Scene scene, List<Collider2D> into)
@@ -77,20 +87,24 @@ namespace Fomoxa.Unity
             into.Clear();
             foreach (GameObject root in scene.GetRootGameObjects())
             {
-                foreach (Collider2D collider in root.GetComponentsInChildren<Collider2D>())
-                {
-                    if (!IsStatic(collider, collider.enabled, collider.attachedRigidbody != null))
-                    {
-                        continue;
-                    }
-
-                    int pieces = collider is PolygonCollider2D polygon ? polygon.pathCount : 1;
-                    for (int piece = 0; piece < pieces; piece++)
-                    {
-                        into.Add(collider);
-                    }
-                }
+                AppendStatics2D(root, into);
             }
+        }
+
+        public static void StaticColliders2D(GameObject root, List<Collider2D> into)
+        {
+            if (root == null)
+            {
+                throw new ArgumentNullException(nameof(root));
+            }
+
+            if (into == null)
+            {
+                throw new ArgumentNullException(nameof(into));
+            }
+
+            into.Clear();
+            AppendStatics2D(root, into);
         }
 
         public static void DescribeStatic(Collider collider, Transform space, List<ColliderDesc> into)
@@ -121,6 +135,34 @@ namespace Fomoxa.Unity
             }
 
             Append2D(collider, space == null ? Vector3.zero : space.position, space == null ? Quaternion.identity : Quaternion.Inverse(space.rotation), true, into);
+        }
+
+        private static void AppendStatics(GameObject root, List<Collider> into)
+        {
+            foreach (Collider collider in root.GetComponentsInChildren<Collider>())
+            {
+                if (IsStatic(collider, collider.enabled, collider.attachedRigidbody != null))
+                {
+                    into.Add(collider);
+                }
+            }
+        }
+
+        private static void AppendStatics2D(GameObject root, List<Collider2D> into)
+        {
+            foreach (Collider2D collider in root.GetComponentsInChildren<Collider2D>())
+            {
+                if (!IsStatic(collider, collider.enabled, collider.attachedRigidbody != null))
+                {
+                    continue;
+                }
+
+                int pieces = collider is PolygonCollider2D polygon ? polygon.pathCount : collider is BoxCollider2D box && IsAutoTiled(box) ? box.shapeCount : 1;
+                for (int piece = 0; piece < pieces; piece++)
+                {
+                    into.Add(collider);
+                }
+            }
         }
 
         private static bool IsStatic(Component collider, bool enabled, bool attached) =>
@@ -157,7 +199,7 @@ namespace Fomoxa.Unity
                 return false;
             }
 
-            desc = new BodyDesc(kind, colliders, space.position.ToNumerics(), space.rotation.ToNumerics(), rigidbody == null ? 0f : rigidbody.mass);
+            desc = new BodyDesc(kind, colliders, space.position.ToNumerics(), space.rotation.ToNumerics(), rigidbody == null ? 0f : rigidbody.mass, MotionOf(rigidbody));
             return true;
         }
 
@@ -193,7 +235,7 @@ namespace Fomoxa.Unity
             }
 
             Vector3 position = space.position;
-            desc = new BodyDesc2D(kind, colliders, new System.Numerics.Vector2(position.x, position.y), space.eulerAngles.z * Mathf.Deg2Rad, rigidbody == null ? 0f : rigidbody.mass);
+            desc = new BodyDesc2D(kind, colliders, new System.Numerics.Vector2(position.x, position.y), space.eulerAngles.z * Mathf.Deg2Rad, rigidbody == null ? 0f : rigidbody.mass, MotionOf(rigidbody));
             return true;
         }
 
@@ -274,6 +316,12 @@ namespace Fomoxa.Unity
                         throw Unsupported(collider, "edgeRadius");
                     }
 
+                    if (IsAutoTiled(box))
+                    {
+                        AppendBuiltShapes(box, origin, inverse, material, layer, into);
+                        break;
+                    }
+
                     into.Add(Describe2D(BodyShape2D.Box((Vector2.Scale(box.size, scale) * 0.5f).ToNumerics()), Local2D(transform.TransformPoint(box.offset), origin, inverse), angle, material, layer, collider.isTrigger));
                     break;
                 case CircleCollider2D circle:
@@ -322,6 +370,73 @@ namespace Fomoxa.Unity
                 default:
                     throw Unsupported(collider, collider.GetType().Name);
             }
+        }
+
+        private static bool IsAutoTiled(BoxCollider2D box) =>
+            box.autoTiling && box.TryGetComponent(out SpriteRenderer renderer) && renderer.drawMode != SpriteDrawMode.Simple;
+
+        private static void AppendBuiltShapes(Collider2D collider, Vector3 origin, Quaternion inverse, ColliderMaterial material, int layer, List<ColliderDesc2D> into)
+        {
+            Physics2D.SyncTransforms();
+            var shapes = new PhysicsShapeGroup2D();
+            int count = collider.GetShapes(shapes);
+            if (count == 0)
+            {
+                throw Unsupported(collider, "auto tiling while Unity has built no physics shape for it (inactive or disabled)");
+            }
+
+            Rigidbody2D rigidbody = collider.attachedRigidbody;
+            for (int shapeIndex = 0; shapeIndex < count; shapeIndex++)
+            {
+                PhysicsShape2D shape = shapes.GetShape(shapeIndex);
+                if (shape.shapeType != PhysicsShapeType2D.Polygon)
+                {
+                    throw Unsupported(collider, $"auto tiling that built a {shape.shapeType} shape");
+                }
+
+                var points = new System.Numerics.Vector2[shape.vertexCount];
+                for (int vertex = 0; vertex < points.Length; vertex++)
+                {
+                    Vector2 point = shapes.GetShapeVertex(shapeIndex, vertex);
+                    Vector3 world = rigidbody == null ? (Vector3)point : (Vector3)rigidbody.position + Quaternion.AngleAxis(rigidbody.rotation, Vector3.forward) * point;
+                    points[vertex] = Local2D(world, origin, inverse);
+                }
+
+                into.Add(Describe2D(BodyShape2D.ConvexPolygon(points), System.Numerics.Vector2.Zero, 0f, material, layer, collider.isTrigger));
+            }
+        }
+
+        private static BodyMotion MotionOf(Rigidbody rigidbody)
+        {
+            if (rigidbody == null)
+            {
+                return BodyMotion.Default;
+            }
+
+            RigidbodyConstraints constraints = rigidbody.constraints;
+            BodyLocks locks = BodyLocks.None;
+            locks |= (constraints & RigidbodyConstraints.FreezePositionX) != 0 ? BodyLocks.PositionX : BodyLocks.None;
+            locks |= (constraints & RigidbodyConstraints.FreezePositionY) != 0 ? BodyLocks.PositionY : BodyLocks.None;
+            locks |= (constraints & RigidbodyConstraints.FreezePositionZ) != 0 ? BodyLocks.PositionZ : BodyLocks.None;
+            locks |= (constraints & RigidbodyConstraints.FreezeRotationX) != 0 ? BodyLocks.RotationX : BodyLocks.None;
+            locks |= (constraints & RigidbodyConstraints.FreezeRotationY) != 0 ? BodyLocks.RotationY : BodyLocks.None;
+            locks |= (constraints & RigidbodyConstraints.FreezeRotationZ) != 0 ? BodyLocks.RotationZ : BodyLocks.None;
+            return new BodyMotion(locks, rigidbody.useGravity, rigidbody.linearDamping, rigidbody.angularDamping);
+        }
+
+        private static BodyMotion2D MotionOf(Rigidbody2D rigidbody)
+        {
+            if (rigidbody == null)
+            {
+                return BodyMotion2D.Default;
+            }
+
+            RigidbodyConstraints2D constraints = rigidbody.constraints;
+            BodyLocks2D locks = BodyLocks2D.None;
+            locks |= (constraints & RigidbodyConstraints2D.FreezePositionX) != 0 ? BodyLocks2D.PositionX : BodyLocks2D.None;
+            locks |= (constraints & RigidbodyConstraints2D.FreezePositionY) != 0 ? BodyLocks2D.PositionY : BodyLocks2D.None;
+            locks |= (constraints & RigidbodyConstraints2D.FreezeRotation) != 0 ? BodyLocks2D.Rotation : BodyLocks2D.None;
+            return new BodyMotion2D(locks, rigidbody.gravityScale, rigidbody.linearDamping, rigidbody.angularDamping);
         }
 
         private static ColliderDesc Describe(BodyShape shape, Vector3 position, Quaternion rotation, ColliderMaterial material, int layer, bool isTrigger) =>

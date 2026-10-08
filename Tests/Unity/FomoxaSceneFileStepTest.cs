@@ -58,7 +58,11 @@ namespace Fomoxa.Unity.Tests
             var networkObject = door.AddComponent<NetworkObject>();
             networkObject.SetSceneObjectId(0x0000_0001_0000_0002);
             door.AddComponent<RpcBehaviour>();
-            door.AddComponent<Rigidbody2D>().mass = 2f;
+            var doorBody = door.AddComponent<Rigidbody2D>();
+            doorBody.mass = 2f;
+            doorBody.constraints = RigidbodyConstraints2D.FreezeRotation;
+            doorBody.gravityScale = 0.5f;
+            doorBody.linearDamping = 0.2f;
             door.AddComponent<CircleCollider2D>().radius = 0.5f;
             var errors = new List<string>();
 
@@ -74,6 +78,7 @@ namespace Fomoxa.Unity.Tests
             Assert.IsFalse(SceneFileGeometry.TryGetBody(entry, out _));
             Assert.IsTrue(SceneFileGeometry.TryGetBody2D(entry, out BodyDesc2D body));
             Assert.AreEqual((BodyKind.Dynamic, 2f, ShapeKind2D.Circle), (body.Kind, body.Mass, body.Colliders[0].Shape.Kind));
+            Assert.AreEqual((BodyLocks2D.Rotation, 0.5f, 0.2f), (body.Motion.Locks, body.Motion.GravityScale, body.Motion.LinearDamping));
             Assert.AreEqual(1, file.Colliders.Count);
             ColliderDesc box = SceneFileGeometry.ToDesc(file.Colliders[0]);
             Assert.AreEqual((ShapeKind.Box, new System.Numerics.Vector3(1f, 1f, 1f), new System.Numerics.Vector3(0f, 1f, 0f), 4), (box.Shape.Kind, box.Shape.HalfExtents, box.Position, box.Layer));

@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/SceneFile.cs
 // model: SceneFile
 // codec: net
-// fingerprint: sha256:d9c44c7e4a9b807fe51ec4e5a265c3d90cc742f77a3c8dedfe41db8d0a55f81b
+// fingerprint: sha256:294725bdf6a3064559d54047ed9f5ec2d1ae2ed89ad1a5316259484026600e7d
 // fomoxac-version: 0.2.2
-// generated-at: 2026-10-07T06:14:32Z
+// generated-at: 2026-10-08T01:51:12Z
 
 namespace BundleFixture
 {
@@ -32,7 +32,7 @@ public static class SceneFileNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0xD9C44C7E4A9B807F;
+    public const ulong Fingerprint = 0x294725BDF6A30645;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.SceneFile value)

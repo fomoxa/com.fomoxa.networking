@@ -75,7 +75,11 @@ namespace Fomoxa.Unity
             var rigidbody = body.AddComponent<Rigidbody>();
             rigidbody.mass = desc.Mass > 0f ? desc.Mass : 1f;
             rigidbody.isKinematic = desc.Kind != BodyKind.Dynamic;
-            rigidbody.useGravity = desc.Kind == BodyKind.Dynamic;
+            BodyMotion motion = desc.Motion;
+            rigidbody.useGravity = desc.Kind == BodyKind.Dynamic && motion.UseGravity;
+            rigidbody.constraints = ConstraintsOf(motion.Locks);
+            rigidbody.linearDamping = motion.LinearDamping;
+            rigidbody.angularDamping = motion.AngularDamping;
             BodyHandle handle = Register(rigidbody);
             created.Add(handle.Value);
             if (owned.Count > 0)
@@ -85,6 +89,25 @@ namespace Fomoxa.Unity
 
             return handle;
         }
+
+        internal GameObject CreateStatic(Scene scene, IReadOnlyList<ColliderDesc> colliders, List<Mesh> owned)
+        {
+            foreach (ColliderDesc collider in colliders)
+            {
+                ColliderMaterials.Check(collider.Material);
+            }
+
+            var group = new GameObject("FomoxaStatic") { hideFlags = HideFlags.HideInHierarchy | HideFlags.DontSaveInEditor };
+            SceneManager.MoveGameObjectToScene(group, scene);
+            foreach (ColliderDesc collider in colliders)
+            {
+                AddCollider(group.transform, collider, owned);
+            }
+
+            return group;
+        }
+
+        internal GameObject ObjectOf(BodyHandle body) => Require(body).gameObject;
 
         public bool RemoveBody(BodyHandle body)
         {
@@ -349,6 +372,18 @@ namespace Fomoxa.Unity
                     mesh.sharedMesh = CreateMesh(shape.Points, shape.Triangles, owned);
                     return mesh;
             }
+        }
+
+        private static RigidbodyConstraints ConstraintsOf(BodyLocks locks)
+        {
+            RigidbodyConstraints constraints = RigidbodyConstraints.None;
+            constraints |= (locks & BodyLocks.PositionX) != 0 ? RigidbodyConstraints.FreezePositionX : RigidbodyConstraints.None;
+            constraints |= (locks & BodyLocks.PositionY) != 0 ? RigidbodyConstraints.FreezePositionY : RigidbodyConstraints.None;
+            constraints |= (locks & BodyLocks.PositionZ) != 0 ? RigidbodyConstraints.FreezePositionZ : RigidbodyConstraints.None;
+            constraints |= (locks & BodyLocks.RotationX) != 0 ? RigidbodyConstraints.FreezeRotationX : RigidbodyConstraints.None;
+            constraints |= (locks & BodyLocks.RotationY) != 0 ? RigidbodyConstraints.FreezeRotationY : RigidbodyConstraints.None;
+            constraints |= (locks & BodyLocks.RotationZ) != 0 ? RigidbodyConstraints.FreezeRotationZ : RigidbodyConstraints.None;
+            return constraints;
         }
 
         private static Mesh CreateMesh(IReadOnlyList<System.Numerics.Vector3> points, IReadOnlyList<int> triangles, List<Mesh> owned)

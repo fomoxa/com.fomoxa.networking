@@ -159,12 +159,12 @@ namespace Fomoxa.Networking.Standalone
             Quaternion facing = Rotation;
             if (TryGetBody(out BodyDesc body))
             {
-                Body = physics.AddBody(this, SceneId, new BodyDesc(body.Kind, body.Colliders, at, facing, body.Mass));
+                Body = physics.AddBody(this, SceneId, new BodyDesc(body.Kind, body.Colliders, at, facing, body.Mass, body.Motion));
             }
 
             if (TryGetBody2D(out BodyDesc2D body2D))
             {
-                Body2D = physics.AddBody2D(this, SceneId, new BodyDesc2D(body2D.Kind, body2D.Colliders, new Vector2(at.X, at.Y), fileAngle ?? AngleOf(facing), body2D.Mass));
+                Body2D = physics.AddBody2D(this, SceneId, new BodyDesc2D(body2D.Kind, body2D.Colliders, new Vector2(at.X, at.Y), fileAngle ?? AngleOf(facing), body2D.Mass, body2D.Motion));
             }
 
             attached = true;

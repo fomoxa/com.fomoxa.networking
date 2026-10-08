@@ -19,6 +19,7 @@ namespace Fomoxa.Networking.Standalone.Tests
         private const uint BallFingerprint = 0x0000_0BA1;
         private const uint ArenaSceneId = 0x00A1_E7A0;
         private const double FrameSeconds = 1.0 / 30;
+        private static readonly BodyMotion2D CrateMotion = new BodyMotion2D(BodyLocks2D.Rotation, 1.5f, 0.25f, 0.5f);
 
         private FomoxaRegistry registry;
         private SceneFiles files;
@@ -68,6 +69,8 @@ namespace Fomoxa.Networking.Standalone.Tests
             Assert.IsTrue(onServer.Body2D.IsValid);
             Assert.IsTrue(onClient.Body2D.IsValid);
             Assert.AreEqual(0.5f, serverPhysics.Created2D[0].Rotation);
+            BodyMotion2D motion = serverPhysics.Created2D[0].Motion;
+            Assert.AreEqual((BodyLocks2D.Rotation, 1.5f, 0.25f, 0.5f), (motion.Locks, motion.GravityScale, motion.LinearDamping, motion.AngularDamping));
             Assert.AreEqual(new Vector3(4f, 0f, 0f), onServer.Position);
             CollectionAssert.Contains(serverPhysics.Calls, $"body2D 0x{ArenaSceneId:X8}");
         }
@@ -165,7 +168,7 @@ namespace Fomoxa.Networking.Standalone.Tests
                 SceneObjectId = sceneObjectId,
                 Fingerprint = 0xC0,
                 Pose = new SceneFilePose { PositionX = position.X, PositionY = position.Y, RotationX = rotation.X, RotationY = rotation.Y, RotationZ = rotation.Z, RotationW = rotation.W, ScaleX = 1f, ScaleY = 1f, ScaleZ = 1f },
-                Body2D = SceneFileGeometry.ToFile(new BodyDesc2D(BodyKind.Dynamic, BodyShape2D.Circle(0.5f), position, angle, 1f)),
+                Body2D = SceneFileGeometry.ToFile(new BodyDesc2D(BodyKind.Dynamic, new[] { new ColliderDesc2D(BodyShape2D.Circle(0.5f), Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) }, position, angle, 1f, CrateMotion)),
             };
         }
 
@@ -273,6 +276,20 @@ namespace Fomoxa.Networking.Standalone.Tests
                     handles2D.ForEach(handle => World2D.RemoveBody(handle));
                 }
             }
+
+            public StaticGroup AddStatic(uint sceneId, IReadOnlyList<ColliderDesc> colliders) => throw new NotSupportedException();
+
+            public StaticGroup AddStatic2D(uint sceneId, IReadOnlyList<ColliderDesc2D> colliders) => throw new NotSupportedException();
+
+            public void RemoveStatic(StaticGroup group) => throw new NotSupportedException();
+
+            public PhysicsBody AddBody(uint sceneId, in BodyDesc body) => throw new NotSupportedException();
+
+            public PhysicsBody2D AddBody2D(uint sceneId, in BodyDesc2D body) => throw new NotSupportedException();
+
+            public void RemoveBody(PhysicsBody body) => throw new NotSupportedException();
+
+            public void RemoveBody2D(PhysicsBody2D body) => throw new NotSupportedException();
 
             public void WorldsOf(INetworkEntity entity, List<IPhysicsSimulation> worlds)
             {

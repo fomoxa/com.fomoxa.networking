@@ -94,9 +94,44 @@ namespace Fomoxa.Networking.Simulation
         public bool IsTrigger { get; }
     }
 
+    [Flags]
+    public enum BodyLocks2D
+    {
+        None = 0,
+        PositionX = 1,
+        PositionY = 2,
+        Rotation = 4,
+    }
+
+    public readonly struct BodyMotion2D
+    {
+        public BodyMotion2D(BodyLocks2D locks, float gravityScale, float linearDamping, float angularDamping)
+        {
+            BodyMotionChecks.CheckGravityScale(gravityScale, nameof(gravityScale));
+            BodyMotionChecks.CheckDamping(linearDamping, nameof(linearDamping));
+            BodyMotionChecks.CheckDamping(angularDamping, nameof(angularDamping));
+            Locks = locks;
+            GravityScale = gravityScale;
+            LinearDamping = linearDamping;
+            AngularDamping = angularDamping;
+        }
+
+        public static BodyMotion2D Default => new BodyMotion2D(BodyLocks2D.None, 1f, 0f, 0f);
+
+        public BodyLocks2D Locks { get; }
+
+        public float GravityScale { get; }
+
+        public float LinearDamping { get; }
+
+        public float AngularDamping { get; }
+    }
+
     public readonly struct BodyDesc2D
     {
         private readonly IReadOnlyList<ColliderDesc2D> colliders;
+        private readonly BodyMotion2D motion;
+        private readonly bool hasMotion;
 
         public BodyDesc2D(BodyKind kind, BodyShape2D shape, Vector2 position, float rotation, float mass)
             : this(kind, new[] { new ColliderDesc2D(shape, Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) }, position, rotation, mass)
@@ -104,6 +139,11 @@ namespace Fomoxa.Networking.Simulation
         }
 
         public BodyDesc2D(BodyKind kind, IReadOnlyList<ColliderDesc2D> colliders, Vector2 position, float rotation, float mass)
+            : this(kind, colliders, position, rotation, mass, BodyMotion2D.Default)
+        {
+        }
+
+        public BodyDesc2D(BodyKind kind, IReadOnlyList<ColliderDesc2D> colliders, Vector2 position, float rotation, float mass, in BodyMotion2D motion)
         {
             ReadOnlyCollection<ColliderDesc2D> copied = ShapeData.Copy(colliders, nameof(colliders));
             if (copied.Count == 0)
@@ -124,11 +164,15 @@ namespace Fomoxa.Networking.Simulation
             Position = position;
             Rotation = rotation;
             Mass = mass;
+            this.motion = motion;
+            hasMotion = true;
         }
 
         public BodyKind Kind { get; }
 
         public IReadOnlyList<ColliderDesc2D> Colliders => colliders ?? Array.Empty<ColliderDesc2D>();
+
+        public BodyMotion2D Motion => hasMotion ? motion : BodyMotion2D.Default;
 
         public Vector2 Position { get; }
 

@@ -74,7 +74,16 @@ namespace Fomoxa.Networking.Objects
 
         public static SceneFileBody ToFile(in BodyDesc body)
         {
-            var file = new SceneFileBody { Kind = (byte)(body.Kind + 1), Mass = body.Mass };
+            BodyMotion motion = body.Motion;
+            var file = new SceneFileBody
+            {
+                Kind = (byte)(body.Kind + 1),
+                Mass = body.Mass,
+                Locks = (byte)motion.Locks,
+                UseGravity = motion.UseGravity,
+                LinearDamping = motion.LinearDamping,
+                AngularDamping = motion.AngularDamping,
+            };
             foreach (ColliderDesc collider in body.Colliders)
             {
                 file.Colliders.Add(ToFile(collider));
@@ -85,7 +94,17 @@ namespace Fomoxa.Networking.Objects
 
         public static SceneFileBody2D ToFile(in BodyDesc2D body)
         {
-            var file = new SceneFileBody2D { Kind = (byte)(body.Kind + 1), Mass = body.Mass, Rotation = body.Rotation };
+            BodyMotion2D motion = body.Motion;
+            var file = new SceneFileBody2D
+            {
+                Kind = (byte)(body.Kind + 1),
+                Mass = body.Mass,
+                Rotation = body.Rotation,
+                Locks = (byte)motion.Locks,
+                GravityScale = motion.GravityScale,
+                LinearDamping = motion.LinearDamping,
+                AngularDamping = motion.AngularDamping,
+            };
             foreach (ColliderDesc2D collider in body.Colliders)
             {
                 file.Colliders.Add(ToFile(collider));
@@ -168,7 +187,8 @@ namespace Fomoxa.Networking.Objects
                     colliders,
                     new Vector3(pose.PositionX, pose.PositionY, pose.PositionZ),
                     new Quaternion(pose.RotationX, pose.RotationY, pose.RotationZ, pose.RotationW),
-                    file.Mass);
+                    file.Mass,
+                    new BodyMotion((BodyLocks)file.Locks, file.UseGravity, file.LinearDamping, file.AngularDamping));
             }
             catch (ArgumentException exception)
             {
@@ -201,7 +221,13 @@ namespace Fomoxa.Networking.Objects
             SceneFilePose pose = entry.Pose ?? new SceneFilePose();
             try
             {
-                body = new BodyDesc2D(KindOf(file.Kind), colliders, new Vector2(pose.PositionX, pose.PositionY), file.Rotation, file.Mass);
+                body = new BodyDesc2D(
+                    KindOf(file.Kind),
+                    colliders,
+                    new Vector2(pose.PositionX, pose.PositionY),
+                    file.Rotation,
+                    file.Mass,
+                    new BodyMotion2D((BodyLocks2D)file.Locks, file.GravityScale, file.LinearDamping, file.AngularDamping));
             }
             catch (ArgumentException exception)
             {

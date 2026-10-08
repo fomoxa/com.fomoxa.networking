@@ -108,6 +108,21 @@ namespace Fomoxa.Unity.Tests
             Assert.AreEqual(3, bodies[1].GetComponentInChildren<EdgeCollider2D>().pointCount);
         }
 
+        [Test]
+        public void ACreatedBodyTakesTheMotionOfItsDescription()
+        {
+            ColliderDesc[] sphere = { new ColliderDesc(BodyShape.Sphere(0.5f), System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity, ColliderMaterial.Default, 0, false) };
+            ColliderDesc2D[] circle = { new ColliderDesc2D(BodyShape2D.Circle(0.5f), System.Numerics.Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) };
+
+            world.CreateBody(new BodyDesc(BodyKind.Dynamic, sphere, System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity, 1f, new BodyMotion(BodyLocks.PositionY | BodyLocks.RotationZ, false, 0.5f, 0.25f)));
+            world2D.CreateBody(new BodyDesc2D(BodyKind.Dynamic, circle, System.Numerics.Vector2.Zero, 0f, 1f, new BodyMotion2D(BodyLocks2D.Rotation, 1.5f, 0.1f, 0.05f)));
+
+            var rigidbody = CreatedBody("FomoxaBody").GetComponent<Rigidbody>();
+            var rigidbody2D = CreatedBody("FomoxaBody2D").GetComponent<Rigidbody2D>();
+            Assert.AreEqual((RigidbodyConstraints.FreezePositionY | RigidbodyConstraints.FreezeRotationZ, false, 0.5f, 0.25f), (rigidbody.constraints, rigidbody.useGravity, rigidbody.linearDamping, rigidbody.angularDamping));
+            Assert.AreEqual((RigidbodyConstraints2D.FreezeRotation, 1.5f, 0.1f, 0.05f), (rigidbody2D.constraints, rigidbody2D.gravityScale, rigidbody2D.linearDamping, rigidbody2D.angularDamping));
+        }
+
         private GameObject CreatedBody(string name)
         {
             foreach (GameObject root in scene.GetRootGameObjects())

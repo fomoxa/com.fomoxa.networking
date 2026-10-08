@@ -121,6 +121,22 @@ namespace Fomoxa.Networking.Messaging
         [Network("Array<SceneFileCollider>")]
         [Codec("net")]
         public List<SceneFileCollider> Colliders { get; set; } = new List<SceneFileCollider>();
+
+        [Network("u8")]
+        [Codec("net")]
+        public byte Locks { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool UseGravity { get; set; } = true;
+
+        [Network("f32")]
+        [Codec("net")]
+        public float LinearDamping { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float AngularDamping { get; set; }
     }
 
     [Network]
@@ -142,6 +158,22 @@ namespace Fomoxa.Networking.Messaging
         [Network("Array<SceneFileCollider2D>")]
         [Codec("net")]
         public List<SceneFileCollider2D> Colliders { get; set; } = new List<SceneFileCollider2D>();
+
+        [Network("u8")]
+        [Codec("net")]
+        public byte Locks { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float GravityScale { get; set; } = 1f;
+
+        [Network("f32")]
+        [Codec("net")]
+        public float LinearDamping { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float AngularDamping { get; set; }
     }
 
     [Network]

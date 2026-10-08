@@ -119,5 +119,57 @@ namespace Fomoxa.Networking.Tests
             Assert.Throws<ArgumentException>(() => new ColliderMaterial(0f, float.NaN, CombineRule.Average, CombineRule.Average));
             Assert.AreEqual((0.6f, 0f, CombineRule.Average, CombineRule.Average), (ColliderMaterial.Default.Friction, ColliderMaterial.Default.Restitution, ColliderMaterial.Default.FrictionCombine, ColliderMaterial.Default.RestitutionCombine));
         }
+
+        [Test]
+        public void ABodyWithoutAMotionMovesFreelyUnderFullGravity()
+        {
+            var body = new BodyDesc(BodyKind.Dynamic, BodyShape.Sphere(0.5f), Vector3.Zero, Quaternion.Identity, 1f);
+            var body2D = new BodyDesc2D(BodyKind.Dynamic, BodyShape2D.Circle(0.5f), Vector2.Zero, 0f, 1f);
+
+            foreach (BodyMotion motion in new[] { body.Motion, default(BodyDesc).Motion })
+            {
+                Assert.AreEqual((BodyLocks.None, true, 0f, 0f), (motion.Locks, motion.UseGravity, motion.LinearDamping, motion.AngularDamping));
+            }
+
+            foreach (BodyMotion2D motion in new[] { body2D.Motion, default(BodyDesc2D).Motion })
+            {
+                Assert.AreEqual((BodyLocks2D.None, 1f, 0f, 0f), (motion.Locks, motion.GravityScale, motion.LinearDamping, motion.AngularDamping));
+            }
+        }
+
+        [Test]
+        public void ABodyKeepsTheMotionItIsGiven()
+        {
+            var motion = new BodyMotion(BodyLocks.RotationX | BodyLocks.RotationZ, false, 0.5f, 1f);
+            var motion2D = new BodyMotion2D(BodyLocks2D.Rotation, 1.5f, 0f, 0.05f);
+
+            var body = new BodyDesc(BodyKind.Dynamic, new[] { new ColliderDesc(BodyShape.Sphere(0.5f), Vector3.Zero, Quaternion.Identity, ColliderMaterial.Default, 0, false) }, Vector3.Zero, Quaternion.Identity, 1f, motion);
+            var body2D = new BodyDesc2D(BodyKind.Dynamic, new[] { new ColliderDesc2D(BodyShape2D.Circle(0.5f), Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) }, Vector2.Zero, 0f, 1f, motion2D);
+
+            Assert.AreEqual((BodyLocks.RotationX | BodyLocks.RotationZ, false, 0.5f, 1f), (body.Motion.Locks, body.Motion.UseGravity, body.Motion.LinearDamping, body.Motion.AngularDamping));
+            Assert.AreEqual((BodyLocks2D.Rotation, 1.5f, 0f, 0.05f), (body2D.Motion.Locks, body2D.Motion.GravityScale, body2D.Motion.LinearDamping, body2D.Motion.AngularDamping));
+        }
+
+        [Test]
+        public void AMotionRefusesNegativeDampingAndANonFiniteGravityScale()
+        {
+            Assert.Throws<ArgumentException>(() => new BodyMotion(BodyLocks.None, true, -0.1f, 0f));
+            Assert.Throws<ArgumentException>(() => new BodyMotion(BodyLocks.None, true, 0f, float.NaN));
+            Assert.Throws<ArgumentException>(() => new BodyMotion2D(BodyLocks2D.None, float.PositiveInfinity, 0f, 0f));
+            Assert.Throws<ArgumentException>(() => new BodyMotion2D(BodyLocks2D.None, float.NaN, 0f, 0f));
+            Assert.Throws<ArgumentException>(() => new BodyMotion2D(BodyLocks2D.None, 1f, 0f, -1f));
+            Assert.DoesNotThrow(() => new BodyMotion2D(BodyLocks2D.None, -2f, 0f, 0f));
+        }
+
+        [Test]
+        public void AStaticGroupIsValidOnceABackendGaveItAnId()
+        {
+            var group = new StaticGroup(0x10, 3, 12, 4);
+
+            Assert.IsTrue(group.IsValid);
+            Assert.IsFalse(default(StaticGroup).IsValid);
+            Assert.AreEqual(new StaticGroup(0x10, 3, 12, 4), group);
+            Assert.AreNotEqual(new StaticGroup(0x10, 4, 12, 4), group);
+        }
     }
 }
