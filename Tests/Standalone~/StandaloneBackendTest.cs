@@ -170,6 +170,36 @@ namespace Fomoxa.Networking.Standalone.Tests
         }
 
         [Test]
+        public void ABootSceneSpawnsTheObjectsOfItsFileWithoutLoadingTheScene()
+        {
+            files.Add(ArenaSceneId, Door(11, new Vector3(4, 0, 0)));
+            var loaded = new List<uint>();
+
+            Connect(ArenaSceneId);
+            server.ServerManager.Scenes.OnLoaded += loaded.Add;
+            Run(10);
+
+            var door = (StandaloneEntity)server.ServerManager.Spawned.Values.Single();
+            Assert.AreEqual((11UL, ArenaSceneId), (door.SceneObjectId, door.SceneId));
+            var onClient = (StandaloneEntity)client.ClientManager.Spawned[door.Record.ObjectId];
+            Assert.AreNotSame(door, onClient);
+            Assert.AreEqual((11UL, new Vector3(4, 0, 0)), (onClient.SceneObjectId, onClient.Position));
+            Assert.IsInstanceOf<CounterBehaviour>(onClient.EntityBehaviours.Single());
+            Assert.IsEmpty(loaded);
+            Assert.IsEmpty(mismatches);
+        }
+
+        [Test]
+        public void ABootSceneWithoutAFileIsRefused()
+        {
+            var log = new NetworkLog(logged.Add, message => { });
+
+            ArgumentException refused = Assert.Throws<ArgumentException>(() => StandaloneRuntime.Create(registry, new NetworkSettings(), new LoopbackFactory(), serverPrefabs, behaviours, files, () => now, log, bootScenes: new[] { ArenaSceneId }));
+
+            StringAssert.Contains("no scene file", refused.Message);
+        }
+
+        [Test]
         public void UnloadingTheSceneDespawnsItsObjectsOnBothSides()
         {
             files.Add(ArenaSceneId, Door(11, Vector3.Zero));
@@ -250,12 +280,12 @@ namespace Fomoxa.Networking.Standalone.Tests
             return door;
         }
 
-        private void Connect()
+        private void Connect(params uint[] bootScenes)
         {
             var factory = new LoopbackFactory();
             var log = new NetworkLog(logged.Add, message => { });
-            server = StandaloneRuntime.Create(registry, new NetworkSettings(), factory, serverPrefabs, behaviours, files, () => now, log);
-            client = StandaloneRuntime.Create(registry, new NetworkSettings(), factory, clientPrefabs, behaviours, files, () => now, log);
+            server = StandaloneRuntime.Create(registry, new NetworkSettings(), factory, serverPrefabs, behaviours, files, () => now, log, bootScenes: bootScenes);
+            client = StandaloneRuntime.Create(registry, new NetworkSettings(), factory, clientPrefabs, behaviours, files, () => now, log, bootScenes: bootScenes);
             client.ClientManager.OnObjectMismatch += mismatches.Add;
             server.ServerManager.StartConnection(7777);
             client.ClientManager.StartConnection("127.0.0.1", 7777);

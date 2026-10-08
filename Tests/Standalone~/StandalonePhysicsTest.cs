@@ -76,6 +76,22 @@ namespace Fomoxa.Networking.Standalone.Tests
         }
 
         [Test]
+        public void ABootSceneLoadsItsGeometryIntoThePhysicsOfBothSidesAtOnce()
+        {
+            var file = new SceneFile { SceneId = ArenaSceneId };
+            file.Colliders.Add(SceneFileGeometry.ToFile(new ColliderDesc(BodyShape.Box(Vector3.One), Vector3.Zero, Quaternion.Identity, ColliderMaterial.Default, 0, false)));
+            files.Add(file);
+            var factory = new LoopbackFactory();
+            var log = new NetworkLog(logged.Add, message => { });
+
+            server = StandaloneRuntime.Create(registry, new NetworkSettings { PhysicsBackend = PhysicsBackend.Rapier }, factory, prefabs, new StandaloneBehaviours(), files, () => now, log, serverPhysics, new[] { ArenaSceneId });
+            client = StandaloneRuntime.Create(registry, new NetworkSettings { PhysicsBackend = PhysicsBackend.Rapier }, factory, prefabs, new StandaloneBehaviours(), files, () => now, log, clientPhysics, new[] { ArenaSceneId });
+
+            CollectionAssert.AreEqual(new[] { $"load 0x{ArenaSceneId:X8}" }, serverPhysics.Calls);
+            CollectionAssert.AreEqual(new[] { $"load 0x{ArenaSceneId:X8}" }, clientPhysics.Calls);
+        }
+
+        [Test]
         public void ThePoseOfAnEntityWithABodyIsThePoseOfTheBody()
         {
             Connect();

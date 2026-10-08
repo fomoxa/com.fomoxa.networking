@@ -11,11 +11,16 @@ namespace Fomoxa.Networking.Standalone
         private readonly StandalonePrefabs prefabs;
 
         private readonly IPhysicsScenes physics;
+        private readonly HashSet<uint> bootScenes = new HashSet<uint>();
 
-        public StandaloneServerEntityBackend(StandalonePrefabs prefabs, IPhysicsScenes physics)
+        public StandaloneServerEntityBackend(StandalonePrefabs prefabs, IPhysicsScenes physics, IReadOnlyList<SceneFile> bootScenes)
         {
             this.physics = physics;
             this.prefabs = prefabs;
+            foreach (SceneFile file in bootScenes)
+            {
+                this.bootScenes.Add(file.SceneId);
+            }
         }
 
         public string NameOf(INetworkEntity entity) =>
@@ -44,7 +49,11 @@ namespace Fomoxa.Networking.Standalone
             throw new ArgumentException($"prefab id 0x{entity.PrefabId:X8} is not registered with StandalonePrefabs", nameof(entity));
         }
 
-        public uint SceneIdOf(INetworkEntity entity) => ((StandaloneEntity)entity).SceneId;
+        public uint SceneIdOf(INetworkEntity entity)
+        {
+            uint sceneId = ((StandaloneEntity)entity).SceneId;
+            return bootScenes.Contains(sceneId) ? 0 : sceneId;
+        }
 
         public void PrepareSpawn(INetworkEntity entity)
         {
@@ -73,21 +82,31 @@ namespace Fomoxa.Networking.Standalone
         private readonly ISceneFiles files;
         private readonly StandaloneBehaviours behaviours;
         private readonly Dictionary<uint, List<StandaloneEntity>> scenes = new Dictionary<uint, List<StandaloneEntity>>();
+        private readonly List<SceneFile> bootFiles = new List<SceneFile>();
+        private readonly Dictionary<uint, List<StandaloneEntity>> bootObjects = new Dictionary<uint, List<StandaloneEntity>>();
 
         private readonly IPhysicsScenes physics;
 
-        public StandaloneServerSceneHost(FomoxaRegistry registry, ISceneFiles files, StandaloneBehaviours behaviours, IPhysicsScenes physics)
+        public StandaloneServerSceneHost(FomoxaRegistry registry, ISceneFiles files, StandaloneBehaviours behaviours, IPhysicsScenes physics, IReadOnlyList<SceneFile> bootScenes)
         {
             this.physics = physics;
             this.registry = registry;
             this.files = files;
             this.behaviours = behaviours;
+            bootFiles.AddRange(bootScenes);
         }
 
         public bool Knows(uint sceneId) => files.Knows(sceneId);
 
         public void PresentSceneObjects(List<INetworkEntity> found)
         {
+            bootObjects.Clear();
+            foreach (SceneFile file in bootFiles)
+            {
+                List<StandaloneEntity> sceneObjects = StandaloneSceneObjects.Build(file, behaviours);
+                bootObjects.Add(file.SceneId, sceneObjects);
+                found.AddRange(sceneObjects);
+            }
         }
 
         public bool TryLoad(uint sceneId, Func<bool> accept, Action loaded, Action<Exception> failed)
@@ -130,13 +149,15 @@ namespace Fomoxa.Networking.Standalone
 
         public void SceneObjectsOf(uint sceneId, List<INetworkEntity> found)
         {
-            if (scenes.TryGetValue(sceneId, out List<StandaloneEntity> sceneObjects))
+            if (scenes.TryGetValue(sceneId, out List<StandaloneEntity> sceneObjects) || bootObjects.TryGetValue(sceneId, out sceneObjects))
             {
                 found.AddRange(sceneObjects);
             }
         }
 
         public bool Holds(uint sceneId, INetworkEntity entity) =>
-            scenes.TryGetValue(sceneId, out List<StandaloneEntity> sceneObjects) && entity is StandaloneEntity standalone && sceneObjects.Contains(standalone);
+            entity is StandaloneEntity standalone
+            && ((scenes.TryGetValue(sceneId, out List<StandaloneEntity> sceneObjects) && sceneObjects.Contains(standalone))
+                || (bootObjects.TryGetValue(sceneId, out List<StandaloneEntity> bootSceneObjects) && bootSceneObjects.Contains(standalone)));
     }
 }

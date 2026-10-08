@@ -139,7 +139,7 @@ namespace Fomoxa.Networking.Standalone
 
         private readonly IPhysicsScenes physics;
 
-        public StandaloneClientSceneHost(FomoxaRegistry registry, ISceneFiles files, StandaloneBehaviours behaviours, StandaloneClientEntityBackend entities, NetworkLog log, IPhysicsScenes physics)
+        public StandaloneClientSceneHost(FomoxaRegistry registry, ISceneFiles files, StandaloneBehaviours behaviours, StandaloneClientEntityBackend entities, NetworkLog log, IPhysicsScenes physics, IReadOnlyList<SceneFile> bootScenes)
         {
             this.physics = physics;
             this.registry = registry;
@@ -147,6 +147,10 @@ namespace Fomoxa.Networking.Standalone
             this.behaviours = behaviours;
             this.entities = entities;
             this.log = log;
+            foreach (SceneFile file in bootScenes)
+            {
+                entities.AddScene(file.SceneId, StandaloneSceneObjects.Build(file, behaviours));
+            }
         }
 
         public bool TryLoad(uint sceneId, Action loaded, Action failed)
