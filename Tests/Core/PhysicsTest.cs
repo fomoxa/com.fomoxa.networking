@@ -143,6 +143,17 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void APhysicsBodyTellsTheHandleOfItsBody()
+        {
+            var world = new PointWorld();
+            BodyHandle handle = world.CreateBody(new BodyDesc(BodyKind.Dynamic, BodyShape.Sphere(1f), Vector3.Zero, Quaternion.Identity, 1f));
+
+            Assert.AreEqual(handle, new PhysicsBody(world, handle).Handle);
+            Assert.AreEqual(new BodyHandle(7), new PhysicsBody2D(null, new BodyHandle(7)).Handle);
+            Assert.IsFalse(default(PhysicsBody).Handle.IsValid);
+        }
+
+        [Test]
         public void TwoDimensionalShapesKeepTheirMeasures()
         {
             BodyShape2D box = BodyShape2D.Box(new Vector2(1f, 2f));

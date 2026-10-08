@@ -13,6 +13,8 @@ namespace Fomoxa.Networking.Simulation
             this.handle = handle;
         }
 
+        public BodyHandle Handle => handle;
+
         public bool IsValid => world != null && handle.IsValid && world.Contains(handle);
 
         public Vector3 Position
