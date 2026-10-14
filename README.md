@@ -86,7 +86,7 @@ manager.ServerManager.StartConnection(7777);
 manager.ClientManager.StartConnection("127.0.0.1", 7777);
 ```
 
-The [tutorial](https://github.com/fomoxa/unity-docs/blob/main/getting-started/first-project.md) builds this into a complete game.
+The [tutorial](https://github.com/fomoxa/unity-docs/blob/main/getting-started/tutorial/README.md) builds this into a complete game.
 
 ## Documentation
 
