@@ -113,6 +113,33 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void AReliableMessageOf200KilobytesCrossesUdpInFragmentsAndKeepsItsOrder()
+        {
+            var channels = new MessageChannels();
+            channels.Set(GreetingId, Channel.ReliableOrdered);
+            var factory = new UdpTransportFactory();
+            var received = new List<byte[]>();
+            var serverDispatcher = new MessageDispatcher(TestSchema());
+            serverDispatcher.Register(GreetingId, (peerId, payload) => received.Add(payload.ToArray()));
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol(channels, factory.FrameBudget));
+            server.Start(factory.CreateListener(0, out ushort port));
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol(channels, factory.FrameBudget));
+            client.Start(factory.CreateConnector("127.0.0.1", port));
+            var large = new byte[200 * 1024];
+            new Random(171).NextBytes(large);
+
+            Assert.AreEqual(SendResult.Queued, client.Send(GreetingId, large));
+            Assert.AreEqual(SendResult.Queued, client.Send(GreetingId, new byte[] { 9 }));
+            RunUntil(() => received.Count == 2, server.Tick, client.Tick, now => server.Flush(), now => client.Flush());
+
+            Assert.AreEqual(2, received.Count);
+            Assert.AreEqual(large, received[0]);
+            Assert.AreEqual(new byte[] { 9 }, received[1]);
+            client.Stop();
+            server.Stop();
+        }
+
+        [Test]
         public void FailedConnectStopsTheClientWithTransportErrorAndDiscardsItsQueue()
         {
             int closedPort;
