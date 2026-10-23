@@ -11,6 +11,7 @@ namespace Fomoxa.Networking.Sessions
         TooLarge,
         NotConnected,
         NotObserver,
+        TooLargeForReassembly,
     }
 
     public static class SendResults
@@ -27,6 +28,8 @@ namespace Fomoxa.Networking.Sessions
                     return SendResult.BytesFull;
                 case EnqueueResult.TooLargeForQueue:
                     return SendResult.TooLargeForQueue;
+                case EnqueueResult.TooLargeForReassembly:
+                    return SendResult.TooLargeForReassembly;
                 default:
                     return SendResult.TooLarge;
             }

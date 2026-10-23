@@ -30,6 +30,7 @@ namespace Fomoxa.Networking.Sessions
         PrefabMismatch,
         ObjectMismatch,
         PhysicsBackendMismatch,
+        InvalidFragment,
     }
 
     public readonly struct ServerConnectionStateArgs

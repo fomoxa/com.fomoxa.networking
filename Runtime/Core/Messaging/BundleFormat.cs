@@ -8,11 +8,12 @@ namespace Fomoxa.Networking.Messaging
         public const int BundleOverhead = 4;
         public const int EntryOverhead = 8;
         public const int MaxEntryPayload = FomoxaWire.MaxMessagePayload - BundleOverhead - EntryOverhead;
+        public const int MinFrameBudget = FomoxaWire.DataFrameHeaderSize + BundleOverhead + EntryOverhead + SeqHeader.Length + Fragments.StartOverhead + 1;
 
         public BundleFormat(IMessageCodec<MessageBundle> codec, int frameBudget)
         {
             Codec = codec ?? throw new ArgumentNullException(nameof(codec));
-            if (frameBudget <= FomoxaWire.DataFrameHeaderSize + BundleOverhead + EntryOverhead)
+            if (frameBudget < MinFrameBudget)
             {
                 throw new ArgumentOutOfRangeException(nameof(frameBudget));
             }

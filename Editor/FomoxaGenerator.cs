@@ -74,6 +74,8 @@ namespace Fomoxa.Unity.Editor
             "InputFrames",
             "ReconcileState",
             "PeerLeave",
+            "FragmentStart",
+            "FragmentPart",
             "SceneFile",
         };
 

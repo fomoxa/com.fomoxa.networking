@@ -34,6 +34,8 @@ namespace Fomoxa.Networking
             IMessageCodec<MessageBundle> bundleCodec = RequireCodec<MessageBundle>();
             IMessageCodec<ReliableAck> ackCodec = RequireCodec<ReliableAck>();
             IMessageCodec<PeerLeave> leaveCodec = RequireCodec<PeerLeave>();
+            IMessageCodec<FragmentStart> fragmentStartCodec = RequireCodec<FragmentStart>();
+            IMessageCodec<FragmentPart> fragmentPartCodec = RequireCodec<FragmentPart>();
             var objectProtocol = new ObjectProtocol(
                 RequireCodec<LocalPeer>(),
                 RequireCodec<ObjectSpawn>(),
@@ -71,6 +73,8 @@ namespace Fomoxa.Networking
                 new BundleFormat(bundleCodec, transport.FrameBudget),
                 ackCodec,
                 leaveCodec,
+                fragmentStartCodec,
+                fragmentPartCodec,
                 registry.Channels);
             var sessionConfig = new SessionConfig
             {

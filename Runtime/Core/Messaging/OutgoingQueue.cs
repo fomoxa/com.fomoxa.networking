@@ -13,6 +13,7 @@ namespace Fomoxa.Networking.Messaging
         BytesFull,
         TooLargeForQueue,
         TooLarge,
+        TooLargeForReassembly,
     }
 
     public readonly struct QueuedMessage

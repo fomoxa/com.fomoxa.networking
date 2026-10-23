@@ -52,11 +52,13 @@ namespace Fomoxa.Networking.Messaging
 
         public int BufferedCount => buffered.Count;
 
+        public FragmentAssembler Fragments { get; } = new FragmentAssembler();
+
         public bool AckPending { get; private set; }
 
         public bool CanSend(int tentative) => inFlight.Count + tentative < window;
 
-        public void Track(uint messageId, byte[] data, TimeSpan now)
+        public void Track(uint messageId, ReadOnlyMemory<byte> data, TimeSpan now)
         {
             inFlight.Add(new InFlight(nextSendSeq, messageId, data, now, now, false));
             nextSendSeq++;
@@ -203,7 +205,7 @@ namespace Fomoxa.Networking.Messaging
 
         private readonly struct InFlight
         {
-            public InFlight(ushort seq, uint messageId, byte[] data, TimeSpan firstSent, TimeSpan lastSent, bool resent)
+            public InFlight(ushort seq, uint messageId, ReadOnlyMemory<byte> data, TimeSpan firstSent, TimeSpan lastSent, bool resent)
             {
                 Seq = seq;
                 MessageId = messageId;
@@ -217,7 +219,7 @@ namespace Fomoxa.Networking.Messaging
 
             public uint MessageId { get; }
 
-            public byte[] Data { get; }
+            public ReadOnlyMemory<byte> Data { get; }
 
             public TimeSpan FirstSent { get; }
 

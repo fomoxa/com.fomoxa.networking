@@ -1,4 +1,5 @@
 using Fomoxa.Net;
+using Fomoxa.Networking;
 using Fomoxa.Networking.Messaging;
 
 namespace BundleFixture
@@ -8,13 +9,28 @@ namespace BundleFixture
         public static BundleFormat Format(int frameBudget = FomoxaWire.MaxDataFrameSize) =>
             new BundleFormat(MessageBundleNetAdapter.Instance, frameBudget);
 
-        public static SessionProtocol Protocol(MessageChannels channels = null, int frameBudget = FomoxaWire.MaxDataFrameSize) =>
-            new SessionProtocol(Format(frameBudget), ReliableAckNetAdapter.Instance, PeerLeaveNetAdapter.Instance, channels ?? new MessageChannels());
+        public static SessionProtocol Protocol(MessageChannels channels = null, int frameBudget = FomoxaWire.MaxDataFrameSize)
+        {
+            channels ??= new MessageChannels();
+            channels.Set(FragmentStartId, Channel.ReliableOrdered);
+            channels.Set(FragmentPartId, Channel.ReliableOrdered);
+            return new SessionProtocol(
+                Format(frameBudget),
+                ReliableAckNetAdapter.Instance,
+                PeerLeaveNetAdapter.Instance,
+                FragmentStartNetAdapter.Instance,
+                FragmentPartNetAdapter.Instance,
+                channels);
+        }
 
         public static uint MessageId => MessageBundleNetAdapter.Instance.MessageId;
 
         public static uint AckId => ReliableAckNetAdapter.Instance.MessageId;
 
         public static uint LeaveId => PeerLeaveNetAdapter.Instance.MessageId;
+
+        public static uint FragmentStartId => FragmentStartNetAdapter.Instance.MessageId;
+
+        public static uint FragmentPartId => FragmentPartNetAdapter.Instance.MessageId;
     }
 }

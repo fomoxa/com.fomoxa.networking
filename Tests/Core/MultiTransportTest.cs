@@ -15,7 +15,7 @@ namespace Fomoxa.Networking.Tests
     public sealed class MultiTransportTest
     {
         private const uint GreetingId = 0x2000_0001;
-        private const int SmallBudget = FomoxaWire.DataFrameHeaderSize + BundleFormat.BundleOverhead + BundleFormat.EntryOverhead + 1;
+        private const int SmallBudget = BundleFormat.MinFrameBudget;
 
         private static Schema HostSchema() =>
             new Schema(0xCAFE, new[] { new MessageSchema(GreetingId, 0xF00D, new ulong[] { 0xF00D }) });
@@ -75,9 +75,9 @@ namespace Fomoxa.Networking.Tests
             Assert.AreEqual(SmallBudget, server.FrameBudgetOf(smallPeer));
             foreach (ulong peerId in peers)
             {
-                for (byte value = 1; value <= 3; value++)
+                for (int greeting = 0; greeting < 3; greeting++)
                 {
-                    server.Send(peerId, GreetingId, new[] { value });
+                    server.Send(peerId, GreetingId, new byte[8]);
                 }
             }
 

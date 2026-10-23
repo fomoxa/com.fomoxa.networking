@@ -336,6 +336,13 @@ namespace Fomoxa.Networking.Sessions
             {
                 EndByHandler(peer, failedMessageId, exception);
             }
+            else if (inbox.TakeViolation())
+            {
+                if (IsServing(peer))
+                {
+                    Disconnect(peer, StopReason.InvalidFragment);
+                }
+            }
             else if (inbox.TakeLeave() && IsServing(peer))
             {
                 Disconnect(peer, StopReason.PeerClosed);

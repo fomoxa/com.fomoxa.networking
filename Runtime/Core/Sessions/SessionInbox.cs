@@ -11,7 +11,10 @@ namespace Fomoxa.Networking.Sessions
         private readonly Action<ulong, int> entryDropped;
         private ReliableAck ack = new ReliableAck();
         private PeerLeave leave = new PeerLeave();
+        private FragmentStart fragmentStart = new FragmentStart();
+        private FragmentPart fragmentPart = new FragmentPart();
         private bool leaving;
+        private bool violated;
         private uint failedMessageId;
         private Exception failure;
 
@@ -25,7 +28,7 @@ namespace Fomoxa.Networking.Sessions
 
         public int Count => reader.Count;
 
-        public bool HasFailed => failure != null;
+        public bool HasFailed => failure != null || violated;
 
         public bool TryRead(uint messageId, ReadOnlyMemory<byte> payload, ReliableChannel reliable)
         {
@@ -77,7 +80,7 @@ namespace Fomoxa.Networking.Sessions
             {
                 case ReliableVerdict.Deliver:
                     reliable.Advance();
-                    Dispatch(peerId, messageId, afterSeq);
+                    DeliverReliable(peerId, messageId, afterSeq, reliable);
                     break;
                 case ReliableVerdict.Buffer:
                     reliable.Store(seq, messageId, afterSeq.Span);
@@ -92,7 +95,7 @@ namespace Fomoxa.Networking.Sessions
                 return false;
             }
 
-            Dispatch(peerId, messageId, data);
+            DeliverReliable(peerId, messageId, data, reliable);
             return true;
         }
 
@@ -102,6 +105,13 @@ namespace Fomoxa.Networking.Sessions
             exception = failure;
             failure = null;
             return exception != null;
+        }
+
+        public bool TakeViolation()
+        {
+            bool taken = violated;
+            violated = false;
+            return taken;
         }
 
         public bool TakeLeave()
@@ -115,6 +125,62 @@ namespace Fomoxa.Networking.Sessions
         {
             reader.Release();
         }
+
+        private void DeliverReliable(ulong peerId, uint messageId, ReadOnlyMemory<byte> data, ReliableChannel reliable)
+        {
+            if (!protocol.IsFragment(messageId))
+            {
+                Dispatch(peerId, messageId, data);
+                return;
+            }
+
+            if (!Assemble(messageId, data, reliable.Fragments))
+            {
+                violated = true;
+                return;
+            }
+
+            if (!reliable.Fragments.TryTake(out uint assembledId, out byte[] assembled))
+            {
+                return;
+            }
+
+            if (!IsAssembledWellFormed(assembledId, assembled))
+            {
+                violated = true;
+                return;
+            }
+
+            Dispatch(peerId, assembledId, assembled);
+        }
+
+        private bool Assemble(uint messageId, ReadOnlyMemory<byte> data, FragmentAssembler fragments)
+        {
+            try
+            {
+                if (messageId == protocol.FragmentStartCodec.MessageId)
+                {
+                    protocol.FragmentStartCodec.Decode(data, ref fragmentStart);
+                    bool started = fragments.Start(fragmentStart.MessageId, fragmentStart.Length, fragmentStart.Data.Span);
+                    fragmentStart.Data = default;
+                    return started;
+                }
+
+                protocol.FragmentPartCodec.Decode(data, ref fragmentPart);
+                bool appended = fragments.Append(fragmentPart.Data.Span);
+                fragmentPart.Data = default;
+                return appended;
+            }
+            catch (MessageDecodeException)
+            {
+                return false;
+            }
+        }
+
+        private bool IsAssembledWellFormed(uint messageId, byte[] data) =>
+            protocol.Channels.IsReliable(messageId)
+            && !protocol.IsFragment(messageId)
+            && data.Length >= (dispatcher.IsObjectMessage(messageId) ? ObjectHeader.UnreliableLength : 0);
 
         private void Dispatch(ulong peerId, uint messageId, ReadOnlyMemory<byte> data)
         {

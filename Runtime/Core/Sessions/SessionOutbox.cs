@@ -10,9 +10,14 @@ namespace Fomoxa.Networking.Sessions
         private readonly OutgoingQueue queue;
         private readonly SessionProtocol protocol;
         private readonly ReliableChannel reliable;
+        private readonly BundleFormat bundle;
         private readonly BundleWriter writer;
         private readonly List<OutgoingEntry> entries = new List<OutgoingEntry>();
         private readonly ReliableAck ack = new ReliableAck();
+        private readonly FragmentStart fragmentStart = new FragmentStart();
+        private readonly FragmentPart fragmentPart = new FragmentPart();
+        private byte[] splitting;
+        private int splitOffset;
 
         public SessionOutbox(OutgoingQueue queue, SessionProtocol protocol, ReliableChannel reliable)
             : this(queue, protocol, reliable, protocol?.Bundle)
@@ -24,7 +29,8 @@ namespace Fomoxa.Networking.Sessions
             this.queue = queue ?? throw new ArgumentNullException(nameof(queue));
             this.protocol = protocol ?? throw new ArgumentNullException(nameof(protocol));
             this.reliable = reliable ?? throw new ArgumentNullException(nameof(reliable));
-            writer = new BundleWriter(bundle ?? throw new ArgumentNullException(nameof(bundle)));
+            this.bundle = bundle ?? throw new ArgumentNullException(nameof(bundle));
+            writer = new BundleWriter(bundle);
             FrameBudget = bundle.FrameBudget;
         }
 
@@ -36,8 +42,14 @@ namespace Fomoxa.Networking.Sessions
 
         public EnqueueResult Enqueue(uint messageId, ReadOnlySpan<byte> payload)
         {
+            bool isReliable = protocol.Channels.IsReliable(messageId);
+            if (isReliable && CannotReassemble(SeqHeader.Length + payload.Length))
+            {
+                return EnqueueResult.TooLargeForReassembly;
+            }
+
             Span<byte> header = stackalloc byte[SeqHeader.Length];
-            return queue.Enqueue(messageId, protocol.Channels.IsReliable(messageId) ? header : Span<byte>.Empty, payload);
+            return queue.Enqueue(messageId, isReliable ? header : Span<byte>.Empty, payload);
         }
 
         public EnqueueResult EnqueueUnbounded(uint messageId, ReadOnlySpan<byte> payload)
@@ -49,6 +61,11 @@ namespace Fomoxa.Networking.Sessions
         public EnqueueResult EnqueueToObject(uint messageId, uint objectId, byte behaviourIndex, ReadOnlySpan<byte> body)
         {
             int seqLength = protocol.Channels.IsReliable(messageId) ? SeqHeader.Length : 0;
+            if (seqLength > 0 && CannotReassemble(seqLength + ObjectHeader.UnreliableLength + body.Length))
+            {
+                return EnqueueResult.TooLargeForReassembly;
+            }
+
             Span<byte> header = stackalloc byte[SeqHeader.Length + ObjectHeader.UnreliableLength];
             ObjectHeader.WriteUnreliable(header.Slice(seqLength), objectId, behaviourIndex);
             return queue.Enqueue(messageId, header.Slice(0, seqLength + ObjectHeader.UnreliableLength), body);
@@ -60,12 +77,23 @@ namespace Fomoxa.Networking.Sessions
             {
                 Collect(now);
                 FlushOutcome outcome = SendCollected(sender, now, peerId, dropped, out int discarded);
-                if (outcome != FlushOutcome.Rebuild)
+                if (outcome == FlushOutcome.Rebuild || (outcome == FlushOutcome.Drained && DropUnsplittableHead(peerId, dropped)))
                 {
-                    return discarded;
+                    continue;
                 }
+
+                return discarded;
             }
         }
+
+        private bool NeedsSplit(int dataLength) =>
+            BundleFormat.BundleOverhead + BundleFormat.EntryOverhead + dataLength > bundle.PayloadBudget;
+
+        private bool CannotReassemble(int dataLength) =>
+            NeedsSplit(dataLength) && dataLength - SeqHeader.Length > Fragments.MaxLength;
+
+        private bool IsUnsplittable(QueuedMessage message) =>
+            protocol.Channels.IsReliable(message.MessageId) && CannotReassemble(message.Payload.Length);
 
         private void Collect(TimeSpan now)
         {
@@ -80,19 +108,78 @@ namespace Fomoxa.Networking.Sessions
             int tentative = 0;
             foreach (QueuedMessage message in queue)
             {
-                if (protocol.Channels.IsReliable(message.MessageId))
+                if (!protocol.Channels.IsReliable(message.MessageId))
                 {
-                    if (!reliable.CanSend(tentative))
+                    entries.Add(OutgoingEntry.Queued(message.MessageId, message.Payload));
+                    continue;
+                }
+
+                if (NeedsSplit(message.Payload.Length))
+                {
+                    if (IsUnsplittable(message) || !CollectFragments(message, ref tentative))
                     {
                         break;
                     }
 
-                    SeqHeader.Write(message.Payload, (ushort)(reliable.NextSendSeq + tentative));
-                    tentative++;
+                    continue;
                 }
 
+                if (!reliable.CanSend(tentative))
+                {
+                    break;
+                }
+
+                SeqHeader.Write(message.Payload, (ushort)(reliable.NextSendSeq + tentative));
+                tentative++;
                 entries.Add(OutgoingEntry.Queued(message.MessageId, message.Payload));
             }
+        }
+
+        private bool CollectFragments(QueuedMessage message, ref int tentative)
+        {
+            ReadOnlyMemory<byte> content = message.Payload.AsMemory(SeqHeader.Length);
+            int offset = ReferenceEquals(message.Payload, splitting) ? splitOffset : 0;
+            int room = bundle.PayloadBudget - BundleFormat.BundleOverhead - BundleFormat.EntryOverhead - SeqHeader.Length;
+            while (offset < content.Length)
+            {
+                if (!reliable.CanSend(tentative))
+                {
+                    return false;
+                }
+
+                IMessageCodec<FragmentStart> startCodec = protocol.FragmentStartCodec;
+                IMessageCodec<FragmentPart> partCodec = protocol.FragmentPartCodec;
+                ReadOnlyMemory<byte> encoded;
+                uint fragmentId;
+                int end;
+                if (offset == 0)
+                {
+                    end = Math.Min(content.Length, room - Fragments.StartOverhead);
+                    fragmentStart.MessageId = message.MessageId;
+                    fragmentStart.Length = (uint)content.Length;
+                    fragmentStart.Data = content.Slice(0, end);
+                    encoded = startCodec.Encode(fragmentStart);
+                    fragmentStart.Data = default;
+                    fragmentId = startCodec.MessageId;
+                }
+                else
+                {
+                    end = Math.Min(content.Length, offset + room - Fragments.PartOverhead);
+                    fragmentPart.Data = content.Slice(offset, end - offset);
+                    encoded = partCodec.Encode(fragmentPart);
+                    fragmentPart.Data = default;
+                    fragmentId = partCodec.MessageId;
+                }
+
+                var data = new byte[SeqHeader.Length + encoded.Length];
+                SeqHeader.Write(data, (ushort)(reliable.NextSendSeq + tentative));
+                encoded.Span.CopyTo(data.AsSpan(SeqHeader.Length));
+                tentative++;
+                entries.Add(OutgoingEntry.Fragment(fragmentId, data, end));
+                offset = end;
+            }
+
+            return true;
         }
 
         private FlushOutcome SendCollected(MessageSender sender, TimeSpan now, ulong peerId, Action<SendDroppedArgs> dropped, out int discarded)
@@ -123,6 +210,7 @@ namespace Fomoxa.Networking.Sessions
                                 maxEntries = int.MaxValue;
                                 continue;
                             case OutgoingKind.Retransmit:
+                            case OutgoingKind.Fragment:
                                 return FlushOutcome.Stop;
                             default:
                                 queue.TryDropNext(out uint messageId, out int payloadLength);
@@ -137,7 +225,19 @@ namespace Fomoxa.Networking.Sessions
                 }
             }
 
-            return FlushOutcome.Stop;
+            return FlushOutcome.Drained;
+        }
+
+        private bool DropUnsplittableHead(ulong peerId, Action<SendDroppedArgs> dropped)
+        {
+            if (queue.Count == 0 || !IsUnsplittable(HeadOfQueue()))
+            {
+                return false;
+            }
+
+            queue.TryDropNext(out uint messageId, out int payloadLength);
+            dropped?.Invoke(new SendDroppedArgs(peerId, messageId, payloadLength, SendStatus.TooLarge));
+            return true;
         }
 
         private void Commit(int start, int count, TimeSpan now)
@@ -153,6 +253,9 @@ namespace Fomoxa.Networking.Sessions
                     case OutgoingKind.Retransmit:
                         reliable.MarkResent(entry.InFlightIndex, now);
                         break;
+                    case OutgoingKind.Fragment:
+                        CommitFragment(entry, now);
+                        break;
                     default:
                         QueuedMessage sent = HeadOfQueue();
                         queue.Dequeue(1);
@@ -164,6 +267,22 @@ namespace Fomoxa.Networking.Sessions
                         break;
                 }
             }
+        }
+
+        private void CommitFragment(OutgoingEntry entry, TimeSpan now)
+        {
+            reliable.Track(entry.MessageId, entry.Data, now);
+            QueuedMessage head = HeadOfQueue();
+            if (entry.SplitEnd < head.Payload.Length - SeqHeader.Length)
+            {
+                splitting = head.Payload;
+                splitOffset = entry.SplitEnd;
+                return;
+            }
+
+            queue.Dequeue(1);
+            splitting = null;
+            splitOffset = 0;
         }
 
         private QueuedMessage HeadOfQueue()
@@ -180,6 +299,7 @@ namespace Fomoxa.Networking.Sessions
         {
             Stop,
             Rebuild,
+            Drained,
         }
     }
 }

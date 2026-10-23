@@ -225,6 +225,11 @@ namespace Fomoxa.Networking.Sessions
             {
                 EndByHandler(failedMessageId, exception);
             }
+            else if (inbox.TakeViolation() && State != ConnectionState.Stopped)
+            {
+                connection.Close();
+                End(StopReason.InvalidFragment, default);
+            }
         }
 
         private bool IsDelivering() => State != ConnectionState.Stopped && !inbox.HasFailed;

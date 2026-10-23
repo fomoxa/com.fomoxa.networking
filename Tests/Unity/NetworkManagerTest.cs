@@ -147,6 +147,8 @@ namespace Fomoxa.Unity.Tests
             registry.SetCodec(MessageBundleNetAdapter.Instance);
             registry.SetCodec(ReliableAckNetAdapter.Instance);
             registry.SetCodec(PeerLeaveNetAdapter.Instance);
+            registry.SetCodec(FragmentStartNetAdapter.Instance);
+            registry.SetCodec(FragmentPartNetAdapter.Instance);
             manager.Registry = registry;
 
             InvalidOperationException error = Assert.Throws<InvalidOperationException>(manager.Initialize);

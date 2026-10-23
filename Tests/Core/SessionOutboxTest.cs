@@ -66,7 +66,7 @@ namespace Fomoxa.Networking.Tests
         [Test]
         public void FrameBudgetSplitsTheQueueIntoSeveralBundles()
         {
-            int frameBudget = FomoxaWire.DataFrameHeaderSize + 4 + (8 + 3) + (8 + 1);
+            int frameBudget = BundleFormat.MinFrameBudget;
             SessionOutbox outbox = OutboxOfThree(frameBudget);
             var frames = new List<uint[]>();
 
@@ -85,7 +85,10 @@ namespace Fomoxa.Networking.Tests
         [Test]
         public void MessageLargerThanTheBudgetGoesAloneInItsOwnBundle()
         {
-            SessionOutbox outbox = OutboxOfThree(FomoxaWire.DataFrameHeaderSize + 4 + (8 + 1));
+            SessionOutbox outbox = Outbox(frameBudget: BundleFormat.MinFrameBudget);
+            outbox.Enqueue(10, new byte[30]);
+            outbox.Enqueue(20, new byte[15]);
+            outbox.Enqueue(30, new byte[1]);
             var frames = new List<uint[]>();
 
             outbox.Flush((messageId, payload) =>
