@@ -9,6 +9,8 @@ namespace Fomoxa.Networking.Objects
 {
     internal sealed class ServerEntities
     {
+        private static readonly Comparison<EntityRecord> BySpawnSequence = (first, second) => first.SpawnSequence.CompareTo(second.SpawnSequence);
+
         private readonly ServerSession session;
         private readonly MessageDispatcher dispatcher;
         private readonly MessageChannels channels;
@@ -21,6 +23,10 @@ namespace Fomoxa.Networking.Objects
         private readonly Dictionary<uint, EntityRecord> spawned = new Dictionary<uint, EntityRecord>();
         private readonly LinkedList<EntityRecord> spawnOrder = new LinkedList<EntityRecord>();
         private readonly LinkedList<EntityRecord> inputOrder = new LinkedList<EntityRecord>();
+        private readonly LinkedList<EntityRecord> stateOrder = new LinkedList<EntityRecord>();
+        private List<EntityRecord> queuedStates = new List<EntityRecord>();
+        private List<EntityRecord> syncingStates = new List<EntityRecord>();
+        private long spawnSequence;
         private readonly HashSet<INetworkEntity> sceneObjects = new HashSet<INetworkEntity>();
         private readonly Dictionary<ulong, List<EntityRecord>> owned = new Dictionary<ulong, List<EntityRecord>>();
         private readonly Dictionary<uint, Type> rpcTypes = new Dictionary<uint, Type>();
@@ -166,17 +172,24 @@ namespace Fomoxa.Networking.Objects
             backend.PrepareSpawn(entity);
             var record = new EntityRecord(entity, fingerprint);
             IReadOnlyList<EntityBehaviour> behaviours = entity.EntityBehaviours;
+            bool comparesState = false;
             foreach (EntityBehaviour behaviour in behaviours)
             {
                 behaviour.Register(rpcIds, channels, stateProtocol, InputRules);
                 record.HasInput |= behaviour.InputSlot != null;
+                if (behaviour.StateSlot != null)
+                {
+                    behaviour.StateSlot.Record = record;
+                    comparesState |= !behaviour.StateSlot.OnlyWhenDirty;
+                    record.HasMarkedState |= behaviour.StateSlot.OnlyWhenDirty;
+                }
             }
 
             CaptureTransforms(behaviours);
 
             RouteRpcs(behaviours);
             RouteStates(behaviours);
-            CaptureStates(behaviours);
+            CaptureStates(behaviours, true);
             uint sceneId = backend.SceneIdOf(entity);
             uint objectId;
             anchorGeneration++;
@@ -203,6 +216,11 @@ namespace Fomoxa.Networking.Objects
             entity.Bind(record);
             spawned.Add(objectId, record);
             record.SpawnOrderNode = spawnOrder.AddLast(record);
+            record.SpawnSequence = ++spawnSequence;
+            if (comparesState)
+            {
+                record.StateOrderNode = stateOrder.AddLast(record);
+            }
             if (record.HasInput)
             {
                 record.InputOrderNode = inputOrder.AddLast(record);
@@ -359,7 +377,7 @@ namespace Fomoxa.Networking.Objects
             IReadOnlyList<EntityBehaviour> behaviours = entity.EntityBehaviours;
             if (record.StatesStale)
             {
-                CaptureStates(behaviours);
+                CaptureStates(behaviours, false);
                 record.StatesStale = false;
             }
 
@@ -447,44 +465,91 @@ namespace Fomoxa.Networking.Objects
 
         public void SyncStates()
         {
-            foreach (EntityRecord record in spawnOrder)
+            (queuedStates, syncingStates) = (syncingStates, queuedStates);
+            if (syncingStates.Count > 1)
             {
-                if (Objects.ObserversOf(record.ObjectId).Count == 0)
+                syncingStates.Sort(BySpawnSequence);
+            }
+
+            LinkedListNode<EntityRecord> node = stateOrder.First;
+            int queued = 0;
+            while (node != null || queued < syncingStates.Count)
+            {
+                EntityRecord record;
+                if (queued < syncingStates.Count && (node == null || syncingStates[queued].SpawnSequence < node.Value.SpawnSequence))
                 {
-                    record.StatesStale = true;
+                    record = syncingStates[queued++];
+                    record.StateQueued = false;
+                    if (record.Server != this)
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    record = node.Value;
+                    node = node.Next;
+                }
+
+                SyncState(record);
+            }
+
+            syncingStates.Clear();
+        }
+
+        internal void QueueState(EntityRecord record)
+        {
+            if (record.StateQueued || record.StateOrderNode != null)
+            {
+                return;
+            }
+
+            record.StateQueued = true;
+            queuedStates.Add(record);
+            if (Objects.ObserversOf(record.ObjectId).Count == 0)
+            {
+                record.StatesStale = true;
+            }
+        }
+
+        private void SyncState(EntityRecord record)
+        {
+            if (Objects.ObserversOf(record.ObjectId).Count == 0)
+            {
+                record.StatesStale = true;
+                return;
+            }
+
+            bool marked = record.HasMarkedState;
+            IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
+            for (int index = 0; index < behaviours.Count; index++)
+            {
+                StateSlot slot = behaviours[index].StateSlot;
+                if (slot == null || (marked && !slot.NeedsCapture))
+                {
                     continue;
                 }
 
-                IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
-                for (int index = 0; index < behaviours.Count; index++)
+                behaviours[index].PrepareState();
+                if (!slot.Capture())
                 {
-                    StateSlot slot = behaviours[index].StateSlot;
-                    if (slot == null)
-                    {
-                        continue;
-                    }
-
-                    behaviours[index].PrepareState();
-                    if (!slot.Capture())
-                    {
-                        continue;
-                    }
-
-                    uint messageId = slot.MessageId;
-                    ReadOnlySpan<byte> body = slot.Sent.Span;
-                    if (slot.HasDelta)
-                    {
-                        stateDelta.Data = slot.Delta;
-                        ReadOnlySpan<byte> delta = stateProtocol.DeltaCodec.Encode(stateDelta).Span;
-                        if (delta.Length < body.Length)
-                        {
-                            messageId = stateProtocol.DeltaCodec.MessageId;
-                            body = delta;
-                        }
-                    }
-
-                    Objects.SendToObservers(messageId, record.ObjectId, (byte)index, body);
+                    continue;
                 }
+
+                uint messageId = slot.MessageId;
+                ReadOnlySpan<byte> body = slot.Sent.Span;
+                if (slot.HasDelta)
+                {
+                    stateDelta.Data = slot.Delta;
+                    ReadOnlySpan<byte> delta = stateProtocol.DeltaCodec.Encode(stateDelta).Span;
+                    if (delta.Length < body.Length)
+                    {
+                        messageId = stateProtocol.DeltaCodec.MessageId;
+                        body = delta;
+                    }
+                }
+
+                Objects.SendToObservers(messageId, record.ObjectId, (byte)index, body);
             }
         }
 
@@ -570,6 +635,11 @@ namespace Fomoxa.Networking.Objects
             INetworkEntity entity = record.Representation;
             spawnOrder.Remove(record.SpawnOrderNode);
             record.SpawnOrderNode = null;
+            if (record.StateOrderNode != null)
+            {
+                stateOrder.Remove(record.StateOrderNode);
+                record.StateOrderNode = null;
+            }
             Groups.ForgetEntity(entity);
             if (record.InputOrderNode != null)
             {
@@ -604,11 +674,11 @@ namespace Fomoxa.Networking.Objects
             return true;
         }
 
-        private void CaptureStates(IReadOnlyList<EntityBehaviour> behaviours)
+        private void CaptureStates(IReadOnlyList<EntityBehaviour> behaviours, bool everySlot)
         {
             foreach (EntityBehaviour behaviour in behaviours)
             {
-                if (behaviour.StateSlot != null)
+                if (behaviour.StateSlot != null && (everySlot || behaviour.StateSlot.NeedsCapture))
                 {
                     behaviour.PrepareState();
                     behaviour.StateSlot.Capture();
@@ -836,6 +906,7 @@ namespace Fomoxa.Networking.Objects
             owned.Clear();
             anchors.Clear();
             Groups.Clear();
+            queuedStates.Clear();
         }
 
         private void ForgetLeavingPeer(ConnectionStateArgs args)

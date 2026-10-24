@@ -86,6 +86,8 @@ namespace Fomoxa.Unity
         {
         }
 
+        protected void SetStateDirty() => Core.MarkStateDirty();
+
         protected SendResult SendServerRpc<T>(IMessageCodec<T> codec, T value) => Core.ServerRpcFrom(codec, value);
 
         protected int SendObserversRpc<T>(IMessageCodec<T> codec, T value) => Core.ObserversRpcFrom(codec, value);

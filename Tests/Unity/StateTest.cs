@@ -17,6 +17,7 @@ namespace Fomoxa.Unity.Tests
     {
         private const uint PrefabId = 0xC1;
         private const uint InvalidPrefabId = 0xC2;
+        private const uint MarkedPrefabId = 0xC3;
         private const double FrameSeconds = 1.0 / 30;
 
         private readonly List<GameObject> created = new List<GameObject>();
@@ -24,6 +25,7 @@ namespace Fomoxa.Unity.Tests
         private InMemoryNetworkTransport network;
         private NetworkManager server;
         private NetworkObject prefab;
+        private NetworkObject markedPrefab;
         private TimeSpan now;
 
         [SetUp]
@@ -35,6 +37,8 @@ namespace Fomoxa.Unity.Tests
             created.Add(network.gameObject);
             prefab = TestPrefabs.Create("Prefab", PrefabId);
             prefab.gameObject.AddComponent<StateBehaviour>();
+            markedPrefab = TestPrefabs.Create("Marked", MarkedPrefabId);
+            markedPrefab.gameObject.AddComponent<MarkedStateBehaviour>();
             server = CreateManager(network);
             server.ServerManager.StartConnection(1);
         }
@@ -170,6 +174,27 @@ namespace Fomoxa.Unity.Tests
             Assert.AreEqual(new[] { "1->3", "2->3" }, shared.Changes);
         }
 
+        [Test]
+        public void AStateThatSendsOnlyWhenDirtyWaitsForSetStateDirty()
+        {
+            (NetworkManager client, ulong _) = Connect();
+            NetworkObject instance = UnityEngine.Object.Instantiate(markedPrefab);
+            MarkedStateBehaviour onServer = instance.GetComponent<MarkedStateBehaviour>();
+            server.ServerManager.Spawn(instance);
+            RunFrames(3);
+            MarkedStateBehaviour onClient = ((NetworkObject)client.ClientManager.Spawned[instance.ObjectId]).GetComponent<MarkedStateBehaviour>();
+
+            onServer.State.Value = 8;
+            RunFrames(5);
+
+            Assert.AreEqual(0u, onClient.State.Value);
+
+            onServer.MarkChanged();
+            RunFrames(5);
+
+            Assert.AreEqual(8u, onClient.State.Value);
+        }
+
         [TestCase(InvalidStateUse.Unreliable, "is not on the reliable-ordered channel")]
         [TestCase(InvalidStateUse.Empty, "encodes to no bytes")]
         [TestCase(InvalidStateUse.Twice, "uses more than one state model")]
@@ -262,6 +287,7 @@ namespace Fomoxa.Unity.Tests
             manager.FindServerSceneObjects = () => new List<NetworkObject>();
             manager.FindClientSceneObjects = () => new List<NetworkObject>();
             manager.Prefabs.Register(prefab);
+            manager.Prefabs.Register(markedPrefab);
             created.Add(manager.gameObject);
             managers.Add(manager);
             return manager;

@@ -91,6 +91,10 @@ namespace Fomoxa.Networking
 
         protected void SyncTransform(TransformSync sync, ITransformSource source, ITransformReceiver receiver) => SetTransform(sync, source, receiver);
 
+        protected void SetStateDirty() => MarkStateDirty();
+
+        internal void MarkStateDirty() => StateSlot?.MarkDirty();
+
         protected SendResult SendServerRpc<T>(IMessageCodec<T> codec, T value) => ServerRpcFrom(codec, value);
 
         protected int SendObserversRpc<T>(IMessageCodec<T> codec, T value) => ObserversRpcFrom(codec, value);

@@ -304,6 +304,192 @@ namespace Fomoxa.Networking.Standalone.Tests
         }
 
         [Test]
+        public void AStateThatSendsOnlyWhenDirtyWaitsForSetStateDirty()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new[] { new MarkedCounter() }));
+            Connect();
+            var counter = new MarkedCounter();
+            var player = new StandaloneEntity(PlayerPrefabId, new[] { counter });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            var onClient = (MarkedCounter)client.ClientManager.Spawned[player.Record.ObjectId].EntityBehaviours[0];
+
+            counter.State.Value = 3;
+            Run(5);
+
+            Assert.AreEqual(0, onClient.State.Value);
+
+            counter.MarkChanged();
+            Run(5);
+
+            Assert.AreEqual(3, onClient.State.Value);
+
+            counter.State.Value = 5;
+            Run(5);
+
+            Assert.AreEqual(3, onClient.State.Value);
+        }
+
+        [Test]
+        public void AStateThatSendsOnlyWhenDirtySpawnsWithTheValueSetBeforeSpawn()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new[] { new MarkedCounter() }));
+            Connect();
+            var counter = new MarkedCounter();
+            counter.State.Value = 4;
+            var player = new StandaloneEntity(PlayerPrefabId, new[] { counter });
+
+            server.ServerManager.Spawn(player);
+            Run(5);
+
+            var onClient = (MarkedCounter)client.ClientManager.Spawned[player.Record.ObjectId].EntityBehaviours[0];
+            Assert.AreEqual(4, onClient.StartedWith);
+        }
+
+        [Test]
+        public void AStateMarkedDirtyWithoutObserversReachesANewObserverInItsSpawn()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new[] { new MarkedCounter() }));
+            Connect();
+            var rule = new SwitchRule();
+            server.ServerManager.ObserverRule = rule;
+            var counter = new MarkedCounter();
+            var player = new StandaloneEntity(PlayerPrefabId, new[] { counter });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            counter.State.Value = 7;
+            counter.MarkChanged();
+            Run(5);
+
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+
+            var onClient = (MarkedCounter)client.ClientManager.Spawned[player.Record.ObjectId].EntityBehaviours[0];
+            Assert.AreEqual(7, onClient.StartedWith);
+        }
+
+        [Test]
+        public void AStateChangedWithoutSetStateDirtyKeepsTheSentValueInALaterSpawn()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new[] { new MarkedCounter() }));
+            Connect();
+            var rule = new SwitchRule();
+            server.ServerManager.ObserverRule = rule;
+            var counter = new MarkedCounter();
+            var player = new StandaloneEntity(PlayerPrefabId, new[] { counter });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            counter.State.Value = 7;
+            Run(5);
+
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+
+            var onClient = (MarkedCounter)client.ClientManager.Spawned[player.Record.ObjectId].EntityBehaviours[0];
+            Assert.AreEqual(0, onClient.StartedWith);
+        }
+
+        [Test]
+        public void MarkedStatesReachClientsInSpawnOrderWhateverTheOrderOfMarking()
+        {
+            var changes = new List<int>();
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new[] { new MarkedCounter(changes) }));
+            Connect();
+            var first = new MarkedCounter();
+            var second = new MarkedCounter();
+            server.ServerManager.Spawn(new StandaloneEntity(PlayerPrefabId, new[] { first }));
+            server.ServerManager.Spawn(new StandaloneEntity(PlayerPrefabId, new[] { second }));
+            Run(5);
+
+            first.State.Value = 1;
+            second.State.Value = 2;
+            second.MarkChanged();
+            first.MarkChanged();
+            Run(5);
+
+            Assert.AreEqual(new[] { 1, 2 }, changes);
+        }
+
+        [Test]
+        public void AStateMarkedInTheTickItsObjectBecomesVisibleStartsTheClientWithTheNewValue()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new[] { new MarkedCounter() }));
+            Connect();
+            var rule = new SwitchRule();
+            server.ServerManager.ObserverRule = rule;
+            var counter = new MarkedCounter();
+            var player = new StandaloneEntity(PlayerPrefabId, new[] { counter });
+            server.ServerManager.Spawn(player);
+            Run(5);
+
+            counter.State.Value = 7;
+            counter.MarkChanged();
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+
+            var onClient = (MarkedCounter)client.ClientManager.Spawned[player.Record.ObjectId].EntityBehaviours[0];
+            Assert.AreEqual(7, onClient.StartedWith);
+        }
+
+        [Test]
+        public void AnObjectWithAComparedAndAMarkedStateSendsOnlyTheComparedOneWithoutAMark()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { new CounterBehaviour(), new MarkedCounter() }));
+            Connect();
+            var compared = new CounterBehaviour();
+            var marked = new MarkedCounter();
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { compared, marked });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            IReadOnlyList<EntityBehaviour> onClient = client.ClientManager.Spawned[player.Record.ObjectId].EntityBehaviours;
+
+            compared.State.Value = 3;
+            marked.State.Value = 4;
+            Run(5);
+
+            Assert.AreEqual(3, ((CounterBehaviour)onClient[0]).State.Value);
+            Assert.AreEqual(0, ((MarkedCounter)onClient[1]).State.Value);
+
+            marked.MarkChanged();
+            Run(5);
+
+            Assert.AreEqual(4, ((MarkedCounter)onClient[1]).State.Value);
+
+            marked.State.Value = 5;
+            Run(5);
+
+            Assert.AreEqual(4, ((MarkedCounter)onClient[1]).State.Value);
+        }
+
+        [Test]
+        public void AnUnmarkedChangeNextToAComparedStateStaysOutOfALaterSpawn()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { new CounterBehaviour(), new MarkedCounter() }));
+            Connect();
+            var rule = new SwitchRule();
+            server.ServerManager.ObserverRule = rule;
+            var compared = new CounterBehaviour();
+            var marked = new MarkedCounter();
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { compared, marked });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            compared.State.Value = 3;
+            marked.State.Value = 4;
+            Run(5);
+
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+
+            IReadOnlyList<EntityBehaviour> onClient = client.ClientManager.Spawned[player.Record.ObjectId].EntityBehaviours;
+            Assert.AreEqual(3, ((CounterBehaviour)onClient[0]).StartedWith);
+            Assert.AreEqual(0, ((MarkedCounter)onClient[1]).StartedWith);
+        }
+
+        [Test]
         public void AnObjectThatMovedWithoutObserversReachesANewObserverInOneSettle()
         {
             var onClient = new List<Glider>();
@@ -426,6 +612,26 @@ namespace Fomoxa.Networking.Standalone.Tests
                 }, requireOwnership: false);
                 rpc.OnClient(CountCodec.Echo, total => Echoes.Add(total.Value));
             }
+        }
+
+        private sealed class MarkedCounter : EntityBehaviour
+        {
+            private readonly List<int> changes;
+
+            public MarkedCounter(List<int> changes = null)
+            {
+                this.changes = changes;
+            }
+
+            public Count State { get; } = new Count();
+
+            public int StartedWith { get; private set; } = -1;
+
+            public void MarkChanged() => SetStateDirty();
+
+            public override void OnStartClient() => StartedWith = State.Value;
+
+            protected override void OnRegisterState(NetworkState state) => state.Use(CountCodec.State, State, previous => changes?.Add(State.Value), onlyWhenDirty: true);
         }
 
         private sealed class Glider : EntityBehaviour, ITransformSource, ITransformReceiver

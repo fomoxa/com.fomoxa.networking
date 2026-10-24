@@ -18,7 +18,7 @@ namespace Fomoxa.Networking
 
         internal StateProtocol Protocol { get; }
 
-        public void Use<T>(IMessageCodec<T> codec, T instance, Action<T> onChanged = null)
+        public void Use<T>(IMessageCodec<T> codec, T instance, Action<T> onChanged = null, bool onlyWhenDirty = false)
             where T : class, new()
         {
             if (codec == null)
@@ -42,7 +42,7 @@ namespace Fomoxa.Networking
                 throw new HandlerRegistrationException($"{owner} uses message id 0x{codec.MessageId:X8} as its state, whose model encodes to no bytes; a state model needs at least one field");
             }
 
-            behaviour.SetState(new StateSlot<T>(codec, instance, onChanged));
+            behaviour.SetState(new StateSlot<T>(codec, instance, onChanged, onlyWhenDirty));
         }
     }
 
@@ -57,12 +57,21 @@ namespace Fomoxa.Networking
         private byte[] delta = Array.Empty<byte>();
         private int deltaLength;
 
-        protected StateSlot(uint messageId)
+        protected StateSlot(uint messageId, bool onlyWhenDirty)
         {
             MessageId = messageId;
+            OnlyWhenDirty = onlyWhenDirty;
         }
 
         public uint MessageId { get; }
+
+        public bool OnlyWhenDirty { get; }
+
+        public bool Dirty { get; private set; }
+
+        public bool NeedsCapture => !OnlyWhenDirty || Dirty;
+
+        public EntityRecord Record { get; set; }
 
         public ReadOnlyMemory<byte> Sent => new ReadOnlyMemory<byte>(sent, 0, sentLength);
 
@@ -74,8 +83,18 @@ namespace Fomoxa.Networking
 
         private ReadOnlyMemory<byte> Received => new ReadOnlyMemory<byte>(received, 0, receivedLength);
 
+        public void MarkDirty()
+        {
+            Dirty = true;
+            if (OnlyWhenDirty)
+            {
+                Record?.Server?.QueueState(Record);
+            }
+        }
+
         public bool Capture()
         {
+            Dirty = false;
             ReadOnlySpan<byte> current = Encode().Span;
             ReadOnlySpan<byte> previous = Sent.Span;
             if (current.SequenceEqual(previous))
@@ -177,8 +196,8 @@ namespace Fomoxa.Networking
         private readonly Action<T> onChanged;
         private T spare = new T();
 
-        public StateSlot(IMessageCodec<T> codec, T instance, Action<T> onChanged)
-            : base(codec.MessageId)
+        public StateSlot(IMessageCodec<T> codec, T instance, Action<T> onChanged, bool onlyWhenDirty)
+            : base(codec.MessageId, onlyWhenDirty)
         {
             this.codec = codec;
             this.instance = instance;

@@ -56,5 +56,13 @@ namespace Fomoxa.Networking
         internal bool TransformsStale { get; set; }
 
         internal List<uint> GroupIds { get; set; }
+
+        internal long SpawnSequence { get; set; }
+
+        internal LinkedListNode<EntityRecord> StateOrderNode { get; set; }
+
+        internal bool StateQueued { get; set; }
+
+        internal bool HasMarkedState { get; set; }
     }
 }
