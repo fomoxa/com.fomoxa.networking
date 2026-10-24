@@ -112,6 +112,8 @@ namespace Fomoxa.Networking
             set => Entities.ObserverRule = value;
         }
 
+        public ObserverGroups Groups => Entities.Groups;
+
         public NetworkScenes Scenes { get; }
 
         public int ObserverInterval

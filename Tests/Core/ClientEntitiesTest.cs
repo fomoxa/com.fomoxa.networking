@@ -281,7 +281,7 @@ namespace Fomoxa.Networking.Tests
 
             public bool DespawnWithOwner => true;
 
-            public NetworkVisibility Visibility => NetworkVisibility.Rule;
+            public NetworkVisibility Visibility { get; set; } = NetworkVisibility.Rule;
 
             public IReadOnlyList<EntityBehaviour> EntityBehaviours => behaviours;
 

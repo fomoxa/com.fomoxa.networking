@@ -21,6 +21,8 @@ namespace Fomoxa.Networking
 
         public bool RebuildsOnFirstAnchor => true;
 
+        public bool RebuildsPeriodically => true;
+
         public bool Observes(ObserverContext context, INetworkEntity entity, ulong peerId)
         {
             if (context == null)

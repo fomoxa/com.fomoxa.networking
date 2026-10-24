@@ -65,9 +65,11 @@ namespace Fomoxa.Networking.Objects
             this.log = log;
             Representations = new RepresentationTable(spawned);
             Observers = new ObserverContext(this);
+            Groups = new ObserverGroups(this);
             dispatcher.RegisterObject(stateProtocol.ResyncCodec.MessageId, Resync);
             inputs.OnInputRejected += LogRejectedInput;
             objects.Observes = DecideObserver;
+            objects.CollectCandidates = CollectCandidates;
             objects.OnOwnerChanged += RaiseOwnerChanged;
             objects.DespawnWithOwner = objectId => !spawned.TryGetValue(objectId, out EntityRecord record) || record.Representation.DespawnWithOwner;
             objects.Despawner = DespawnForLeavingOwner;
@@ -91,6 +93,8 @@ namespace Fomoxa.Networking.Objects
         public IObserverRule ObserverRule { get; set; }
 
         public ObserverContext Observers { get; }
+
+        public ObserverGroups Groups { get; }
 
         public IReadOnlyDictionary<uint, EntityRecord> Spawned => spawned;
 
@@ -176,6 +180,7 @@ namespace Fomoxa.Networking.Objects
             uint sceneId = backend.SceneIdOf(entity);
             uint objectId;
             anchorGeneration++;
+            record.GroupIds = Groups.GroupIdsOf(entity);
             Spawning = record;
             try
             {
@@ -302,6 +307,12 @@ namespace Fomoxa.Networking.Objects
 
         public void RebuildObserversRound()
         {
+            IObserverRule rule = ObserverRule;
+            if (rule == null || !rule.RebuildsPeriodically)
+            {
+                return;
+            }
+
             anchorGeneration++;
             Objects.RebuildObserversRound();
         }
@@ -559,6 +570,7 @@ namespace Fomoxa.Networking.Objects
             INetworkEntity entity = record.Representation;
             spawnOrder.Remove(record.SpawnOrderNode);
             record.SpawnOrderNode = null;
+            Groups.ForgetEntity(entity);
             if (record.InputOrderNode != null)
             {
                 inputOrder.Remove(record.InputOrderNode);
@@ -704,6 +716,11 @@ namespace Fomoxa.Networking.Objects
                 return false;
             }
 
+            if (record.GroupIds != null && !Groups.Shares(record.GroupIds, peerId))
+            {
+                return false;
+            }
+
             switch (record.Representation.Visibility)
             {
                 case NetworkVisibility.Everyone:
@@ -727,6 +744,23 @@ namespace Fomoxa.Networking.Objects
                 log.Exception(exception);
                 return false;
             }
+        }
+
+        private bool CollectCandidates(uint objectId, HashSet<ulong> peers)
+        {
+            EntityRecord record = Spawning;
+            if (record == null && !spawned.TryGetValue(objectId, out record))
+            {
+                return false;
+            }
+
+            if (record.GroupIds == null)
+            {
+                return false;
+            }
+
+            Groups.CollectPeers(record.GroupIds, peers);
+            return true;
         }
 
         private void RebuildForFirstAnchor(ulong peerId)
@@ -801,6 +835,7 @@ namespace Fomoxa.Networking.Objects
             sceneObjects.Clear();
             owned.Clear();
             anchors.Clear();
+            Groups.Clear();
         }
 
         private void ForgetLeavingPeer(ConnectionStateArgs args)
@@ -811,6 +846,7 @@ namespace Fomoxa.Networking.Objects
             }
 
             anchors.Remove(args.PeerId);
+            Groups.ForgetPeer(args.PeerId);
             if (owned.TryGetValue(args.PeerId, out List<EntityRecord> records) && records.Count == 0)
             {
                 owned.Remove(args.PeerId);

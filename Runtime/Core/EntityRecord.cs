@@ -54,5 +54,7 @@ namespace Fomoxa.Networking
         internal bool StatesStale { get; set; }
 
         internal bool TransformsStale { get; set; }
+
+        internal List<uint> GroupIds { get; set; }
     }
 }

@@ -4,6 +4,8 @@ namespace Fomoxa.Networking
     {
         bool RebuildsOnFirstAnchor { get; }
 
+        bool RebuildsPeriodically { get; }
+
         bool Observes(ObserverContext context, INetworkEntity entity, ulong peerId);
     }
 }

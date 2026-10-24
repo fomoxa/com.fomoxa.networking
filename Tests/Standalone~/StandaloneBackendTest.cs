@@ -459,6 +459,8 @@ namespace Fomoxa.Networking.Standalone.Tests
 
             public bool RebuildsOnFirstAnchor => false;
 
+            public bool RebuildsPeriodically => true;
+
             public bool Observes(ObserverContext context, INetworkEntity entity, ulong peerId) => Open;
         }
 

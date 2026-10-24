@@ -22,6 +22,8 @@ namespace Fomoxa.Networking.Objects
         private readonly List<FailedEntry> failedEntries = new List<FailedEntry>();
         private readonly List<uint> roundObjectIds = new List<uint>();
         private readonly List<uint> everyObjectIds = new List<uint>();
+        private readonly HashSet<ulong> candidateSet = new HashSet<ulong>();
+        private readonly List<ulong> candidatePeers = new List<ulong>();
         private readonly LocalPeer localPeer = new LocalPeer();
         private ushort tickRate = 30;
         private readonly ObjectSpawn spawn = new ObjectSpawn();
@@ -64,6 +66,8 @@ namespace Fomoxa.Networking.Objects
         public Action<uint> Despawner { get; set; }
 
         public Func<uint, ulong, bool> Observes { get; set; }
+
+        public Func<uint, HashSet<ulong>, bool> CollectCandidates { get; set; }
 
         public ServerScenes Scenes { get; }
 
@@ -260,7 +264,7 @@ namespace Fomoxa.Networking.Objects
             CollectStartedPeers();
             try
             {
-                Rebuild(row);
+                Rebuild(row, true);
             }
             finally
             {
@@ -268,6 +272,30 @@ namespace Fomoxa.Networking.Objects
             }
 
             return true;
+        }
+
+        internal bool PeerStarted(ulong peerId) =>
+            session.State == ServerState.Started && session.PeerState(peerId) == ConnectionState.Started;
+
+        internal void RebuildPairs(List<uint> objectIds, ulong peerId)
+        {
+            EnsureNotDeciding();
+            startedPeers.Clear();
+            startedPeers.Add(peerId);
+            try
+            {
+                foreach (uint objectId in objectIds)
+                {
+                    if (table.TryGet(objectId, out ObjectRow row))
+                    {
+                        Rebuild(row, false);
+                    }
+                }
+            }
+            finally
+            {
+                FinishEntries();
+            }
         }
 
         public void RebuildObserversOfPeer(ulong peerId)
@@ -280,7 +308,7 @@ namespace Fomoxa.Networking.Objects
 
             startedPeers.Clear();
             startedPeers.Add(peerId);
-            RebuildEvery();
+            RebuildEvery(false);
         }
 
         public void RebuildObservers()
@@ -292,7 +320,7 @@ namespace Fomoxa.Networking.Objects
             }
 
             CollectStartedPeers();
-            RebuildEvery();
+            RebuildEvery(true);
         }
 
         public void RebuildObserversRound()
@@ -331,7 +359,7 @@ namespace Fomoxa.Networking.Objects
                     uint objectId = roundObjectIds[roundCursor++];
                     if (table.TryGet(objectId, out ObjectRow row))
                     {
-                        Rebuild(row);
+                        Rebuild(row, true);
                     }
                 }
             }
@@ -371,7 +399,7 @@ namespace Fomoxa.Networking.Objects
             }
         }
 
-        private void RebuildEvery()
+        private void RebuildEvery(bool everyPeer)
         {
             everyObjectIds.Clear();
             table.CopyIdsTo(everyObjectIds);
@@ -381,7 +409,7 @@ namespace Fomoxa.Networking.Objects
                 {
                     if (table.TryGet(objectId, out ObjectRow row))
                     {
-                        Rebuild(row);
+                        Rebuild(row, everyPeer);
                     }
                 }
             }
@@ -392,12 +420,12 @@ namespace Fomoxa.Networking.Objects
             }
         }
 
-        private void Rebuild(ObjectRow row)
+        private void Rebuild(ObjectRow row, bool everyPeer)
         {
             ObserverSet peerIds = observers[row.ObjectId];
             entering.Clear();
             leaving.Clear();
-            foreach (ulong peerId in startedPeers)
+            foreach (ulong peerId in everyPeer ? CandidatesOf(row, peerIds) : startedPeers)
             {
                 bool observes = InScene(row.SceneId, peerId) && (peerId == row.OwnerId || Decide(row.ObjectId, peerId));
                 bool present = peerIds.Contains(peerId);
@@ -418,6 +446,39 @@ namespace Fomoxa.Networking.Objects
             }
 
             Enter(row, peerIds, entering);
+        }
+
+        private List<ulong> CandidatesOf(ObjectRow row, ObserverSet peerIds)
+        {
+            candidateSet.Clear();
+            if (CollectCandidates == null || !CollectCandidates(row.ObjectId, candidateSet))
+            {
+                return startedPeers;
+            }
+
+            candidatePeers.Clear();
+            foreach (ulong peerId in candidateSet)
+            {
+                if (session.PeerState(peerId) == ConnectionState.Started)
+                {
+                    candidatePeers.Add(peerId);
+                }
+            }
+
+            if (row.OwnerId != 0 && !candidateSet.Contains(row.OwnerId) && session.PeerState(row.OwnerId) == ConnectionState.Started)
+            {
+                candidatePeers.Add(row.OwnerId);
+            }
+
+            foreach (ulong peerId in peerIds)
+            {
+                if (!candidateSet.Contains(peerId) && peerId != row.OwnerId)
+                {
+                    candidatePeers.Add(peerId);
+                }
+            }
+
+            return candidatePeers;
         }
 
         private void Enter(ObjectRow row, ObserverSet peerIds, List<ulong> peers)

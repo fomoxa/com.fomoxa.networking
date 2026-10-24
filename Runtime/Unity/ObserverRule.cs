@@ -9,6 +9,10 @@ namespace Fomoxa.Unity
 
         internal virtual bool RebuildsOnFirstAnchor => false;
 
+        bool IObserverRule.RebuildsPeriodically => this != null && RebuildsPeriodically;
+
+        public virtual bool RebuildsPeriodically => true;
+
         public abstract bool Observes(NetworkObject networkObject, ulong peerId);
 
         bool IObserverRule.Observes(ObserverContext context, INetworkEntity entity, ulong peerId) =>
