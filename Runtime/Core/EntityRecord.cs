@@ -48,5 +48,11 @@ namespace Fomoxa.Networking
         internal bool HasInput { get; set; }
 
         internal LinkedListNode<EntityRecord> SpawnOrderNode { get; set; }
+
+        internal LinkedListNode<EntityRecord> InputOrderNode { get; set; }
+
+        internal bool StatesStale { get; set; }
+
+        internal bool TransformsStale { get; set; }
     }
 }

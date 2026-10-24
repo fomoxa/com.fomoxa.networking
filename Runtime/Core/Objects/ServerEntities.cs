@@ -20,6 +20,7 @@ namespace Fomoxa.Networking.Objects
         private readonly NetworkLog log;
         private readonly Dictionary<uint, EntityRecord> spawned = new Dictionary<uint, EntityRecord>();
         private readonly LinkedList<EntityRecord> spawnOrder = new LinkedList<EntityRecord>();
+        private readonly LinkedList<EntityRecord> inputOrder = new LinkedList<EntityRecord>();
         private readonly HashSet<INetworkEntity> sceneObjects = new HashSet<INetworkEntity>();
         private readonly Dictionary<ulong, List<EntityRecord>> owned = new Dictionary<ulong, List<EntityRecord>>();
         private readonly Dictionary<uint, Type> rpcTypes = new Dictionary<uint, Type>();
@@ -197,6 +198,11 @@ namespace Fomoxa.Networking.Objects
             entity.Bind(record);
             spawned.Add(objectId, record);
             record.SpawnOrderNode = spawnOrder.AddLast(record);
+            if (record.HasInput)
+            {
+                record.InputOrderNode = inputOrder.AddLast(record);
+            }
+
             bool firstOwned = AddOwned(ownerId, record);
             try
             {
@@ -340,6 +346,12 @@ namespace Fomoxa.Networking.Objects
             INetworkEntity entity = record.Representation;
             spawnStates.Clear();
             IReadOnlyList<EntityBehaviour> behaviours = entity.EntityBehaviours;
+            if (record.StatesStale)
+            {
+                CaptureStates(behaviours);
+                record.StatesStale = false;
+            }
+
             for (int index = 0; index < behaviours.Count; index++)
             {
                 spawnStates.Add(behaviours[index].StateSlot?.Sent ?? ReadOnlyMemory<byte>.Empty);
@@ -365,6 +377,11 @@ namespace Fomoxa.Networking.Objects
                     if (slot != null && !slot.Sync.SettlePending)
                     {
                         slot.Source.ReadLocal(out Vector3 position, out Quaternion rotation, out Vector3 scale);
+                        if (enteredRecord.TransformsStale)
+                        {
+                            slot.Sync.MarkSettled(position, rotation, scale);
+                        }
+
                         ReadOnlySpan<byte> settle = EncodeSettle(slot.Sync, tick, slot.Sync.SelectedMask, position, rotation, scale);
                         session.SendToObject(entered.PeerId, transformProtocol.SettleCodec.MessageId, enteredRecord.ObjectId, (byte)index, settle);
                     }
@@ -374,6 +391,13 @@ namespace Fomoxa.Networking.Objects
             enteredObservers.Clear();
             foreach (EntityRecord record in spawnOrder)
             {
+                if (Objects.ObserversOf(record.ObjectId).Count == 0)
+                {
+                    record.TransformsStale = true;
+                    continue;
+                }
+
+                record.TransformsStale = false;
                 IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
                 for (int index = 0; index < behaviours.Count; index++)
                 {
@@ -414,6 +438,12 @@ namespace Fomoxa.Networking.Objects
         {
             foreach (EntityRecord record in spawnOrder)
             {
+                if (Objects.ObserversOf(record.ObjectId).Count == 0)
+                {
+                    record.StatesStale = true;
+                    continue;
+                }
+
                 IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
                 for (int index = 0; index < behaviours.Count; index++)
                 {
@@ -450,12 +480,9 @@ namespace Fomoxa.Networking.Objects
         public void ApplyInputs(uint tick, ulong hostPeerId)
         {
             applying.Clear();
-            foreach (EntityRecord record in spawnOrder)
+            foreach (EntityRecord record in inputOrder)
             {
-                if (record.HasInput)
-                {
-                    applying.Add(record);
-                }
+                applying.Add(record);
             }
 
             foreach (EntityRecord record in applying)
@@ -532,6 +559,12 @@ namespace Fomoxa.Networking.Objects
             INetworkEntity entity = record.Representation;
             spawnOrder.Remove(record.SpawnOrderNode);
             record.SpawnOrderNode = null;
+            if (record.InputOrderNode != null)
+            {
+                inputOrder.Remove(record.InputOrderNode);
+                record.InputOrderNode = null;
+            }
+
             RemoveOwned(Objects.TryGet(objectId, out ObjectRow row) ? row.OwnerId : 0, record);
             try
             {

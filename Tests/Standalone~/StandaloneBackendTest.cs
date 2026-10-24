@@ -280,6 +280,66 @@ namespace Fomoxa.Networking.Standalone.Tests
             return door;
         }
 
+        [Test]
+        public void AnObjectWithoutObserversSpawnsWithTheStateItReachedMeanwhile()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new[] { new CounterBehaviour() }));
+            Connect();
+            var rule = new SwitchRule();
+            server.ServerManager.ObserverRule = rule;
+            var counter = new CounterBehaviour();
+            var player = new StandaloneEntity(PlayerPrefabId, new[] { counter });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            counter.State.Value = 7;
+            Run(5);
+
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+
+            var onClient = (CounterBehaviour)client.ClientManager.Spawned[player.Record.ObjectId].EntityBehaviours[0];
+            Assert.AreEqual(7, onClient.StartedWith);
+            Assert.AreEqual(7, onClient.State.Value);
+        }
+
+        [Test]
+        public void AnObjectThatMovedWithoutObserversReachesANewObserverInOneSettle()
+        {
+            var onClient = new List<Glider>();
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () =>
+            {
+                var created = new Glider();
+                onClient.Add(created);
+                return new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { created });
+            });
+            Connect();
+            var rule = new SwitchRule { Open = true };
+            server.ServerManager.ObserverRule = rule;
+            var glider = new Glider();
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { glider });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            rule.Open = false;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+            for (int step = 1; step <= 5; step++)
+            {
+                glider.Position = new Vector3(step, 0, 0);
+                Run(1);
+            }
+
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(10);
+
+            Assert.AreEqual(2, onClient.Count);
+            List<TransformSample> received = onClient[1].Received;
+            Assert.AreEqual(1, received.Count);
+            Assert.IsTrue(received[0].Settle);
+            Assert.AreEqual(new Vector3(5, 0, 0), received[0].LocalPosition);
+        }
+
         private void Connect(params uint[] bootScenes)
         {
             var factory = new LoopbackFactory();
@@ -347,9 +407,13 @@ namespace Fomoxa.Networking.Standalone.Tests
         {
             public Count State { get; } = new Count();
 
+            public int StartedWith { get; private set; } = -1;
+
             public List<int> Echoes { get; } = new List<int>();
 
             public void Add(int amount) => SendServerRpc(CountCodec.Add, new Count { Value = amount });
+
+            public override void OnStartClient() => StartedWith = State.Value;
 
             protected override void OnRegisterState(NetworkState state) => state.Use(CountCodec.State, State);
 
@@ -362,6 +426,40 @@ namespace Fomoxa.Networking.Standalone.Tests
                 }, requireOwnership: false);
                 rpc.OnClient(CountCodec.Echo, total => Echoes.Add(total.Value));
             }
+        }
+
+        private sealed class Glider : EntityBehaviour, ITransformSource, ITransformReceiver
+        {
+            public Glider()
+            {
+                SyncTransform(new TransformSync(new TransformSyncSettings(true, true, false, 0.01f, 0.1f, 0.01f)), this, this);
+            }
+
+            public Vector3 Position { get; set; }
+
+            public List<TransformSample> Received { get; } = new List<TransformSample>();
+
+            public void ReadLocal(out Vector3 localPosition, out Quaternion localRotation, out Vector3 localScale)
+            {
+                localPosition = Position;
+                localRotation = Quaternion.Identity;
+                localScale = Vector3.One;
+            }
+
+            public void ResetReceive()
+            {
+            }
+
+            public void Receive(in TransformSample sample) => Received.Add(sample);
+        }
+
+        private sealed class SwitchRule : IObserverRule
+        {
+            public bool Open { get; set; }
+
+            public bool RebuildsOnFirstAnchor => false;
+
+            public bool Observes(ObserverContext context, INetworkEntity entity, ulong peerId) => Open;
         }
 
         private sealed class SimulatedEntity : StandaloneEntity

@@ -13,7 +13,7 @@ namespace Fomoxa.Networking.Objects
         private readonly SpawnSource source;
         private readonly ObjectTable table = new ObjectTable();
         private readonly HashSet<ulong> sceneObjectIds = new HashSet<ulong>();
-        private readonly Dictionary<uint, List<ulong>> observers = new Dictionary<uint, List<ulong>>();
+        private readonly Dictionary<uint, ObserverSet> observers = new Dictionary<uint, ObserverSet>();
         private readonly List<uint> ownedByLeavingPeer = new List<uint>();
         private readonly List<ulong> startedPeers = new List<ulong>();
         private readonly List<ulong> entering = new List<ulong>();
@@ -88,13 +88,13 @@ namespace Fomoxa.Networking.Objects
         public bool TryGet(uint objectId, out ObjectRow row) => table.TryGet(objectId, out row);
 
         public bool IsObserver(uint objectId, ulong peerId) =>
-            observers.TryGetValue(objectId, out List<ulong> peerIds) && peerIds.Contains(peerId);
+            observers.TryGetValue(objectId, out ObserverSet peerIds) && peerIds.Contains(peerId);
 
         public IReadOnlyList<ulong> ObserversOf(uint objectId) =>
-            observers.TryGetValue(objectId, out List<ulong> peerIds) ? peerIds : (IReadOnlyList<ulong>)Array.Empty<ulong>();
+            observers.TryGetValue(objectId, out ObserverSet peerIds) ? peerIds : (IReadOnlyList<ulong>)Array.Empty<ulong>();
 
         public int SendToObservers(uint messageId, uint objectId, byte behaviourIndex, ReadOnlySpan<byte> body) =>
-            observers.TryGetValue(objectId, out List<ulong> peerIds) ? session.BroadcastToObject(peerIds, messageId, objectId, behaviourIndex, body) : 0;
+            observers.TryGetValue(objectId, out ObserverSet peerIds) ? session.BroadcastToObject(peerIds, messageId, objectId, behaviourIndex, body) : 0;
 
         public SendResult SendToObserver(ulong peerId, uint messageId, uint objectId, byte behaviourIndex, ReadOnlySpan<byte> body)
         {
@@ -125,7 +125,7 @@ namespace Fomoxa.Networking.Objects
             EnsureValidOwner(ownerId);
             EnsureNetworkScene(sceneId);
             uint objectId = AllocateObjectId();
-            List<ulong> peerIds = DecideObservers(objectId, ownerId, sceneId);
+            ObserverSet peerIds = DecideObservers(objectId, ownerId, sceneId);
             WriteSpawn(objectId, prefabId, ownerId, sceneId);
             ReadOnlySpan<byte> payload = protocol.SpawnCodec.Encode(spawn).Span;
             foreach (ulong peerId in peerIds)
@@ -157,7 +157,7 @@ namespace Fomoxa.Networking.Objects
             EnsureValidOwner(ownerId);
             EnsureNetworkScene(sceneId);
             uint objectId = AllocateObjectId();
-            List<ulong> peerIds = DecideObservers(objectId, ownerId, sceneId);
+            ObserverSet peerIds = DecideObservers(objectId, ownerId, sceneId);
             WriteSceneSpawn(objectId, sceneObjectId, ownerId);
             ReadOnlySpan<byte> payload = protocol.SceneSpawnCodec.Encode(sceneSpawn).Span;
             foreach (ulong peerId in peerIds)
@@ -181,7 +181,7 @@ namespace Fomoxa.Networking.Objects
 
             table.Remove(objectId);
             sceneObjectIds.Remove(row.SceneObjectId);
-            observers.Remove(objectId, out List<ulong> peerIds);
+            observers.Remove(objectId, out ObserverSet peerIds);
             despawn.ObjectId = objectId;
             ReadOnlySpan<byte> payload = protocol.DespawnCodec.Encode(despawn).Span;
             foreach (ulong peerId in peerIds)
@@ -206,7 +206,7 @@ namespace Fomoxa.Networking.Objects
                 return true;
             }
 
-            List<ulong> peerIds = observers[objectId];
+            ObserverSet peerIds = observers[objectId];
             table.TryGet(objectId, out ObjectRow changed);
             bool previousLeaves;
             try
@@ -394,7 +394,7 @@ namespace Fomoxa.Networking.Objects
 
         private void Rebuild(ObjectRow row)
         {
-            List<ulong> peerIds = observers[row.ObjectId];
+            ObserverSet peerIds = observers[row.ObjectId];
             entering.Clear();
             leaving.Clear();
             foreach (ulong peerId in startedPeers)
@@ -420,7 +420,7 @@ namespace Fomoxa.Networking.Objects
             Enter(row, peerIds, entering);
         }
 
-        private void Enter(ObjectRow row, List<ulong> peerIds, List<ulong> peers)
+        private void Enter(ObjectRow row, ObserverSet peerIds, List<ulong> peers)
         {
             if (peers.Count == 0)
             {
@@ -494,10 +494,10 @@ namespace Fomoxa.Networking.Objects
             session.EnqueueObjectMessage(peerId, protocol.DespawnCodec.MessageId, protocol.DespawnCodec.Encode(despawn).Span);
         }
 
-        private List<ulong> DecideObservers(uint objectId, ulong ownerId, uint sceneId)
+        private ObserverSet DecideObservers(uint objectId, ulong ownerId, uint sceneId)
         {
             CollectStartedPeers();
-            var peerIds = new List<ulong>(startedPeers.Count);
+            var peerIds = new ObserverSet(startedPeers.Count);
             foreach (ulong peerId in startedPeers)
             {
                 if (InScene(sceneId, peerId) && (peerId == ownerId || Decide(objectId, peerId)))
@@ -682,7 +682,7 @@ namespace Fomoxa.Networking.Objects
 
         private void RemoveFromEverySet(ulong peerId)
         {
-            foreach (List<ulong> peerIds in observers.Values)
+            foreach (ObserverSet peerIds in observers.Values)
             {
                 peerIds.Remove(peerId);
             }
