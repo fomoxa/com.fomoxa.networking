@@ -42,7 +42,13 @@ namespace Fomoxa.Networking.Objects
         }
 
         public SpawnedObject(uint objectId, uint prefabId, ulong sceneObjectId, uint prefabFingerprint, ulong ownerId, Vector3 position, Quaternion rotation, Vector3 scale, IReadOnlyList<ReadOnlyMemory<byte>> states, uint sceneId)
+            : this(objectId, prefabId, sceneObjectId, prefabFingerprint, ownerId, position, rotation, scale, states, sceneId, null)
         {
+        }
+
+        public SpawnedObject(uint objectId, uint prefabId, ulong sceneObjectId, uint prefabFingerprint, ulong ownerId, Vector3 position, Quaternion rotation, Vector3 scale, IReadOnlyList<ReadOnlyMemory<byte>> states, uint sceneId, IReadOnlyList<ReadOnlyMemory<byte>> collections)
+        {
+            Collections = collections ?? Array.Empty<ReadOnlyMemory<byte>>();
             SceneId = sceneId;
             ObjectId = objectId;
             PrefabId = prefabId;
@@ -72,6 +78,8 @@ namespace Fomoxa.Networking.Objects
         public Vector3 Scale { get; }
 
         public IReadOnlyList<ReadOnlyMemory<byte>> States { get; }
+
+        public IReadOnlyList<ReadOnlyMemory<byte>> Collections { get; }
 
         public uint SceneId { get; }
     }

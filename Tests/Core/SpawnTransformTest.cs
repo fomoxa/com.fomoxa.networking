@@ -25,8 +25,8 @@ namespace Fomoxa.Networking.Tests
 
             Assert.AreEqual(0, identity.Mask);
             Assert.AreEqual(0, identity.Values.Count);
-            Assert.AreEqual(33, ObjectSpawnNetAdapter.Instance.Encode(identity).Length);
-            Assert.AreEqual(73, ObjectSpawnNetAdapter.Instance.Encode(full).Length);
+            Assert.AreEqual(37, ObjectSpawnNetAdapter.Instance.Encode(identity).Length);
+            Assert.AreEqual(77, ObjectSpawnNetAdapter.Instance.Encode(full).Length);
         }
 
         [Test]
@@ -58,7 +58,7 @@ namespace Fomoxa.Networking.Tests
             SpawnTransform.PackStates(new[] { ReadOnlyMemory<byte>.Empty, new ReadOnlyMemory<byte>(new byte[] { 1, 2 }) }, spawn.States);
 
             Assert.AreEqual(2, spawn.States.Count);
-            Assert.AreEqual(33 + 4 + 4 + 2, ObjectSpawnNetAdapter.Instance.Encode(spawn).Length);
+            Assert.AreEqual(37 + 4 + 4 + 2, ObjectSpawnNetAdapter.Instance.Encode(spawn).Length);
         }
 
         [Test]

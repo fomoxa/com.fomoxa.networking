@@ -46,6 +46,12 @@ namespace BundleFixture
 
         public static uint ReconcileStateId => ReconcileStateNetAdapter.Instance.MessageId;
 
+        public static uint CollectionChangesId => CollectionChangesNetAdapter.Instance.MessageId;
+
+        public static uint CollectionContentId => CollectionContentNetAdapter.Instance.MessageId;
+
+        public static uint CollectionResyncId => CollectionResyncNetAdapter.Instance.MessageId;
+
         public static Schema Schema() => SchemaWith(new MessageSchema(GreetingId, 0xF00D, new ulong[] { 0xF00D }));
 
         public static Schema SchemaWith(params MessageSchema[] messages)
@@ -74,6 +80,22 @@ namespace BundleFixture
                 new MessageSchema(Handshake.FragmentPartNetMessageId, Handshake.FragmentPartNetFingerprint, Handshake.FragmentPartNetPrefixes),
                 new MessageSchema(Handshake.SessionCloseNetMessageId, Handshake.SessionCloseNetFingerprint, Handshake.SessionCloseNetPrefixes),
                 new MessageSchema(Handshake.SceneFileNetMessageId, Handshake.SceneFileNetFingerprint, Handshake.SceneFileNetPrefixes),
+                new MessageSchema(Handshake.CollectionChangesNetMessageId, Handshake.CollectionChangesNetFingerprint, Handshake.CollectionChangesNetPrefixes),
+                new MessageSchema(Handshake.CollectionContentNetMessageId, Handshake.CollectionContentNetFingerprint, Handshake.CollectionContentNetPrefixes),
+                new MessageSchema(Handshake.CollectionContentsNetMessageId, Handshake.CollectionContentsNetFingerprint, Handshake.CollectionContentsNetPrefixes),
+                new MessageSchema(Handshake.CollectionResyncNetMessageId, Handshake.CollectionResyncNetFingerprint, Handshake.CollectionResyncNetPrefixes),
+                new MessageSchema(Handshake.BoolValueNetMessageId, Handshake.BoolValueNetFingerprint, Handshake.BoolValueNetPrefixes),
+                new MessageSchema(Handshake.I8ValueNetMessageId, Handshake.I8ValueNetFingerprint, Handshake.I8ValueNetPrefixes),
+                new MessageSchema(Handshake.U8ValueNetMessageId, Handshake.U8ValueNetFingerprint, Handshake.U8ValueNetPrefixes),
+                new MessageSchema(Handshake.I16ValueNetMessageId, Handshake.I16ValueNetFingerprint, Handshake.I16ValueNetPrefixes),
+                new MessageSchema(Handshake.U16ValueNetMessageId, Handshake.U16ValueNetFingerprint, Handshake.U16ValueNetPrefixes),
+                new MessageSchema(Handshake.I32ValueNetMessageId, Handshake.I32ValueNetFingerprint, Handshake.I32ValueNetPrefixes),
+                new MessageSchema(Handshake.U32ValueNetMessageId, Handshake.U32ValueNetFingerprint, Handshake.U32ValueNetPrefixes),
+                new MessageSchema(Handshake.I64ValueNetMessageId, Handshake.I64ValueNetFingerprint, Handshake.I64ValueNetPrefixes),
+                new MessageSchema(Handshake.U64ValueNetMessageId, Handshake.U64ValueNetFingerprint, Handshake.U64ValueNetPrefixes),
+                new MessageSchema(Handshake.F32ValueNetMessageId, Handshake.F32ValueNetFingerprint, Handshake.F32ValueNetPrefixes),
+                new MessageSchema(Handshake.F64ValueNetMessageId, Handshake.F64ValueNetFingerprint, Handshake.F64ValueNetPrefixes),
+                new MessageSchema(Handshake.StringValueNetMessageId, Handshake.StringValueNetFingerprint, Handshake.StringValueNetPrefixes),
             };
             return new Schema(0xCAFE, all.ToArray());
         }
@@ -106,6 +128,22 @@ namespace BundleFixture
             registry.SetCodec(FragmentPartNetAdapter.Instance);
             registry.SetCodec(SessionCloseNetAdapter.Instance);
             registry.SetCodec(SceneFileNetAdapter.Instance);
+            registry.SetCodec(CollectionChangesNetAdapter.Instance);
+            registry.SetCodec(CollectionContentNetAdapter.Instance);
+            registry.SetCodec(CollectionContentsNetAdapter.Instance);
+            registry.SetCodec(CollectionResyncNetAdapter.Instance);
+            registry.SetCodec(BoolValueNetAdapter.Instance);
+            registry.SetCodec(I8ValueNetAdapter.Instance);
+            registry.SetCodec(U8ValueNetAdapter.Instance);
+            registry.SetCodec(I16ValueNetAdapter.Instance);
+            registry.SetCodec(U16ValueNetAdapter.Instance);
+            registry.SetCodec(I32ValueNetAdapter.Instance);
+            registry.SetCodec(U32ValueNetAdapter.Instance);
+            registry.SetCodec(I64ValueNetAdapter.Instance);
+            registry.SetCodec(U64ValueNetAdapter.Instance);
+            registry.SetCodec(F32ValueNetAdapter.Instance);
+            registry.SetCodec(F64ValueNetAdapter.Instance);
+            registry.SetCodec(StringValueNetAdapter.Instance);
             registry.Channels.Set(LocalPeerId, Channel.ReliableOrdered);
             registry.Channels.Set(TestBundles.FragmentStartId, Channel.ReliableOrdered);
             registry.Channels.Set(TestBundles.FragmentPartId, Channel.ReliableOrdered);
@@ -121,6 +159,9 @@ namespace BundleFixture
             registry.Channels.Set(SceneLoadId, Channel.ReliableOrdered);
             registry.Channels.Set(SceneUnloadId, Channel.ReliableOrdered);
             registry.Channels.Set(SceneLoadedId, Channel.ReliableOrdered);
+            registry.Channels.Set(CollectionChangesId, Channel.ReliableOrdered);
+            registry.Channels.Set(CollectionContentId, Channel.ReliableOrdered);
+            registry.Channels.Set(CollectionResyncId, Channel.ReliableOrdered);
             return registry;
         }
 
@@ -139,6 +180,9 @@ namespace BundleFixture
             channels.Set(SceneLoadId, Channel.ReliableOrdered);
             channels.Set(SceneUnloadId, Channel.ReliableOrdered);
             channels.Set(SceneLoadedId, Channel.ReliableOrdered);
+            channels.Set(CollectionChangesId, Channel.ReliableOrdered);
+            channels.Set(CollectionContentId, Channel.ReliableOrdered);
+            channels.Set(CollectionResyncId, Channel.ReliableOrdered);
             return channels;
         }
 
@@ -152,7 +196,7 @@ namespace BundleFixture
                 channels);
 
         public static StateProtocol StateProtocol(MessageChannels channels) =>
-            new StateProtocol(StateDeltaNetAdapter.Instance, StateResyncNetAdapter.Instance, AnimatorStateNetAdapter.Instance, channels);
+            new StateProtocol(StateDeltaNetAdapter.Instance, StateResyncNetAdapter.Instance, AnimatorStateNetAdapter.Instance, CollectionProtocol.From(Registry()), channels);
 
         public static SceneProtocol SceneProtocol(MessageChannels channels) =>
             new SceneProtocol(SceneLoadNetAdapter.Instance, SceneUnloadNetAdapter.Instance, SceneLoadedNetAdapter.Instance, channels);

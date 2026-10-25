@@ -44,6 +44,94 @@ namespace Fomoxa.Networking
 
             behaviour.SetState(new StateSlot<T>(codec, instance, onChanged, onlyWhenDirty));
         }
+
+        public void Use<T>(byte index, NetworkList<T> list, IMessageCodec<T> codec, NetworkListChanged<T> onChanged = null)
+            where T : class, new()
+        {
+            Bind(list, new ListSlot<T>(behaviour, index, Checked(list, nameof(list)), ModelOf(codec), onChanged));
+        }
+
+        public void Use<T>(byte index, NetworkList<T> list, NetworkListChanged<T> onChanged = null)
+        {
+            Bind(list, new ListSlot<T>(behaviour, index, Checked(list, nameof(list)), ValueOf<T>(index, "elements"), onChanged));
+        }
+
+        public void Use<TKey, TValue>(byte index, NetworkDictionary<TKey, TValue> dictionary, IMessageCodec<TValue> codec, NetworkDictionaryChanged<TKey, TValue> onChanged = null)
+            where TValue : class, new()
+        {
+            Bind(dictionary, new DictionarySlot<TKey, TValue>(behaviour, index, Checked(dictionary, nameof(dictionary)), ValueOf<TKey>(index, "keys"), ModelOf(codec), onChanged));
+        }
+
+        public void Use<TKey, TValue>(byte index, NetworkDictionary<TKey, TValue> dictionary, NetworkDictionaryChanged<TKey, TValue> onChanged = null)
+        {
+            Bind(dictionary, new DictionarySlot<TKey, TValue>(behaviour, index, Checked(dictionary, nameof(dictionary)), ValueOf<TKey>(index, "keys"), ValueOf<TValue>(index, "values"), onChanged));
+        }
+
+        public void Use<T>(byte index, NetworkSet<T> set, NetworkSetChanged<T> onChanged = null)
+        {
+            Bind(set, new SetSlot<T>(behaviour, index, Checked(set, nameof(set)), ValueOf<T>(index, "elements"), onChanged));
+        }
+
+        private static TCollection Checked<TCollection>(TCollection collection, string name)
+            where TCollection : class
+        {
+            if (collection == null)
+            {
+                throw new ArgumentNullException(name);
+            }
+
+            return collection;
+        }
+
+        private static CollectionElement<T> ModelOf<T>(IMessageCodec<T> codec)
+            where T : class, new()
+        {
+            if (codec == null)
+            {
+                throw new ArgumentNullException(nameof(codec));
+            }
+
+            return new ModelElement<T>(codec);
+        }
+
+        private CollectionElement<T> ValueOf<T>(byte index, string role)
+        {
+            if (!Protocol.Collections.TryGetValue(out CollectionElement<T> element))
+            {
+                throw new HandlerRegistrationException($"{behaviour.DeclaringType.FullName} uses {typeof(T).FullName} as the {role} of collection {index}, which is not a primitive type; a model needs its codec, and keys and set elements must be primitive");
+            }
+
+            return element;
+        }
+
+        private void Bind<T>(NetworkList<T> list, ListSlot<T> slot)
+        {
+            EnsureUnbound(list.Slot, slot.Index);
+            behaviour.AddCollection(slot);
+            list.Slot = slot;
+        }
+
+        private void Bind<TKey, TValue>(NetworkDictionary<TKey, TValue> dictionary, DictionarySlot<TKey, TValue> slot)
+        {
+            EnsureUnbound(dictionary.Slot, slot.Index);
+            behaviour.AddCollection(slot);
+            dictionary.Slot = slot;
+        }
+
+        private void Bind<T>(NetworkSet<T> set, SetSlot<T> slot)
+        {
+            EnsureUnbound(set.Slot, slot.Index);
+            behaviour.AddCollection(slot);
+            set.Slot = slot;
+        }
+
+        private void EnsureUnbound(CollectionSlot bound, byte index)
+        {
+            if (bound != null)
+            {
+                throw new HandlerRegistrationException($"{behaviour.DeclaringType.FullName} uses as collection {index} an instance that is already collection {bound.Index} of a behaviour");
+            }
+        }
     }
 
     internal abstract class StateSlot

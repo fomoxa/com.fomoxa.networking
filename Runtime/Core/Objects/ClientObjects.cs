@@ -132,7 +132,7 @@ namespace Fomoxa.Networking.Objects
                 return;
             }
 
-            Spawn(spawn.ObjectId, spawn.PrefabId, 0, spawn.PrefabFingerprint, spawn.OwnerId, spawn.Mask, spawn.Values, spawn.States, spawn.SceneId);
+            Spawn(spawn.ObjectId, spawn.PrefabId, 0, spawn.PrefabFingerprint, spawn.OwnerId, spawn.Mask, spawn.Values, spawn.States, spawn.Collections, spawn.SceneId);
         }
 
         private void OnSceneSpawn(ulong peerId, ReadOnlyMemory<byte> payload)
@@ -148,10 +148,10 @@ namespace Fomoxa.Networking.Objects
                 return;
             }
 
-            Spawn(sceneSpawn.ObjectId, 0, sceneSpawn.SceneObjectId, sceneSpawn.Fingerprint, sceneSpawn.OwnerId, sceneSpawn.Mask, sceneSpawn.Values, sceneSpawn.States, 0);
+            Spawn(sceneSpawn.ObjectId, 0, sceneSpawn.SceneObjectId, sceneSpawn.Fingerprint, sceneSpawn.OwnerId, sceneSpawn.Mask, sceneSpawn.Values, sceneSpawn.States, sceneSpawn.Collections, 0);
         }
 
-        private void Spawn(uint objectId, uint prefabId, ulong sceneObjectId, uint fingerprint, ulong ownerId, byte mask, List<float> values, List<ReadOnlyMemory<byte>> states, uint sceneId)
+        private void Spawn(uint objectId, uint prefabId, ulong sceneObjectId, uint fingerprint, ulong ownerId, byte mask, List<float> values, List<ReadOnlyMemory<byte>> states, List<ReadOnlyMemory<byte>> collections, uint sceneId)
         {
             if (objectId == 0 || !SpawnTransform.TryUnpack(mask, values, out Vector3 position, out Quaternion rotation, out Vector3 scale))
             {
@@ -173,7 +173,7 @@ namespace Fomoxa.Networking.Objects
             SpawnResult result;
             try
             {
-                result = spawner.Spawn(new SpawnedObject(objectId, prefabId, sceneObjectId, fingerprint, ownerId, position, rotation, scale, states, sceneId));
+                result = spawner.Spawn(new SpawnedObject(objectId, prefabId, sceneObjectId, fingerprint, ownerId, position, rotation, scale, states, sceneId, collections));
             }
             catch
             {

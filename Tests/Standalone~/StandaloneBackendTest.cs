@@ -997,7 +997,7 @@ namespace Fomoxa.Networking.Standalone.Tests
             }
         }
 
-        private sealed class MemorySceneFiles : ISceneFiles
+        internal sealed class MemorySceneFiles : ISceneFiles
         {
             private readonly Dictionary<uint, byte[]> scenes = new Dictionary<uint, byte[]>();
 
@@ -1013,7 +1013,7 @@ namespace Fomoxa.Networking.Standalone.Tests
             public byte[] Read(uint sceneId) => scenes[sceneId];
         }
 
-        private sealed class LoopbackFactory : ITransportFactory
+        internal sealed class LoopbackFactory : ITransportFactory
         {
             private readonly LoopbackListener listener = new LoopbackListener(256);
 

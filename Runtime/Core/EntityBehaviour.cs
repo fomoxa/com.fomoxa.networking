@@ -13,6 +13,7 @@ namespace Fomoxa.Networking
 
         private readonly Dictionary<uint, ServerRpc> serverRpcs = new Dictionary<uint, ServerRpc>();
         private readonly Dictionary<uint, ClientRpc> clientRpcs = new Dictionary<uint, ClientRpc>();
+        private readonly List<CollectionSlot> collections = new List<CollectionSlot>();
         private IBehaviourLink link;
         private bool registered;
 
@@ -34,7 +35,11 @@ namespace Fomoxa.Networking
 
         internal TransformSlot TransformSlot { get; private set; }
 
+        internal IReadOnlyList<CollectionSlot> Collections => collections;
+
         internal bool SpawnedOnServer => link != null && link.SpawnedOnServer;
+
+        internal bool SpawnedOnClient => link != null && link.SpawnedOnClient;
 
         internal virtual Type DeclaringType => GetType();
 
@@ -202,6 +207,35 @@ namespace Fomoxa.Networking
             }
 
             StateSlot = slot;
+        }
+
+        internal void AddCollection(CollectionSlot slot)
+        {
+            int position = 0;
+            while (position < collections.Count && collections[position].Index < slot.Index)
+            {
+                position++;
+            }
+
+            if (position < collections.Count && collections[position].Index == slot.Index)
+            {
+                throw new HandlerRegistrationException($"{DeclaringType.FullName} uses collection index {slot.Index} twice");
+            }
+
+            collections.Insert(position, slot);
+        }
+
+        internal CollectionSlot CollectionAt(byte index)
+        {
+            foreach (CollectionSlot slot in collections)
+            {
+                if (slot.Index == index)
+                {
+                    return slot;
+                }
+            }
+
+            return null;
         }
 
         internal void SetInput(InputSlot slot)

@@ -41,6 +41,11 @@ namespace Fomoxa.Networking.Objects
         private readonly List<EntityRecord> applying = new List<EntityRecord>();
         private readonly List<ReconcileSend> reconciling = new List<ReconcileSend>();
         private readonly List<ReadOnlyMemory<byte>> spawnStates = new List<ReadOnlyMemory<byte>>();
+        private readonly List<ReadOnlyMemory<byte>> spawnCollections = new List<ReadOnlyMemory<byte>>();
+        private readonly ByteSegments spawnCollectionBytes = new ByteSegments();
+        private readonly CollectionContents spawnContents = new CollectionContents();
+        private readonly CollectionChanges collectionChanges = new CollectionChanges();
+        private CollectionResync collectionResync = new CollectionResync();
         private readonly Dictionary<ulong, AnchorPositions> anchors = new Dictionary<ulong, AnchorPositions>();
         private readonly List<ObserverAddedArgs> enteredObservers = new List<ObserverAddedArgs>();
         private readonly TransformUpdate transformUpdate = new TransformUpdate();
@@ -78,6 +83,7 @@ namespace Fomoxa.Networking.Objects
             Observers = new ObserverContext(this);
             Groups = new ObserverGroups(this);
             dispatcher.RegisterObject(stateProtocol.ResyncCodec.MessageId, Resync);
+            dispatcher.RegisterObject(stateProtocol.Collections.ResyncCodec.MessageId, ResyncCollection);
             inputs.OnInputRejected += LogRejectedInput;
             objects.Observes = DecideObserver;
             objects.CollectCandidates = CollectCandidates;
@@ -187,6 +193,12 @@ namespace Fomoxa.Networking.Objects
                     behaviour.StateSlot.Record = record;
                     comparesState |= !behaviour.StateSlot.OnlyWhenDirty;
                     record.HasMarkedState |= behaviour.StateSlot.OnlyWhenDirty;
+                }
+
+                foreach (CollectionSlot slot in behaviour.Collections)
+                {
+                    slot.Record = record;
+                    slot.ClearPending();
                 }
             }
 
@@ -393,8 +405,9 @@ namespace Fomoxa.Networking.Objects
                 spawnStates.Add(behaviours[index].StateSlot?.Sent ?? ReadOnlyMemory<byte>.Empty);
             }
 
+            WriteSpawnCollections(behaviours);
             entity.ReadRootPose(out Vector3 worldPosition, out Quaternion worldRotation, out Vector3 localScale);
-            return new SpawnData(record.Fingerprint, worldPosition, worldRotation, localScale, spawnStates);
+            return new SpawnData(record.Fingerprint, worldPosition, worldRotation, localScale, spawnStates, spawnCollections);
         }
 
         public void SyncTransforms(uint tick)
@@ -661,43 +674,97 @@ namespace Fomoxa.Networking.Objects
 
         private void SyncState(EntityRecord record)
         {
+            IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
             if (Objects.ObserversOf(record.ObjectId).Count == 0)
             {
                 record.StatesStale = true;
+                foreach (EntityBehaviour behaviour in behaviours)
+                {
+                    foreach (CollectionSlot slot in behaviour.Collections)
+                    {
+                        slot.ClearPending();
+                    }
+                }
+
                 return;
             }
 
             bool marked = record.HasMarkedState;
-            IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
             for (int index = 0; index < behaviours.Count; index++)
             {
-                StateSlot slot = behaviours[index].StateSlot;
-                if (slot == null || (marked && !slot.NeedsCapture))
-                {
-                    continue;
-                }
-
-                behaviours[index].PrepareState();
-                if (!slot.Capture())
-                {
-                    continue;
-                }
-
-                uint messageId = slot.MessageId;
-                ReadOnlySpan<byte> body = slot.Sent.Span;
-                if (slot.HasDelta)
-                {
-                    stateDelta.Data = slot.Delta;
-                    ReadOnlySpan<byte> delta = stateProtocol.DeltaCodec.Encode(stateDelta).Span;
-                    if (delta.Length < body.Length)
-                    {
-                        messageId = stateProtocol.DeltaCodec.MessageId;
-                        body = delta;
-                    }
-                }
-
-                Objects.SendToObservers(messageId, record.ObjectId, (byte)index, body);
+                SyncBehaviourState(record, behaviours[index], (byte)index, marked);
+                SyncCollections(record, behaviours[index], (byte)index);
             }
+        }
+
+        private void SyncBehaviourState(EntityRecord record, EntityBehaviour behaviour, byte index, bool marked)
+        {
+            StateSlot slot = behaviour.StateSlot;
+            if (slot == null || (marked && !slot.NeedsCapture))
+            {
+                return;
+            }
+
+            behaviour.PrepareState();
+            if (!slot.Capture())
+            {
+                return;
+            }
+
+            uint messageId = slot.MessageId;
+            ReadOnlySpan<byte> body = slot.Sent.Span;
+            if (slot.HasDelta)
+            {
+                stateDelta.Data = slot.Delta;
+                ReadOnlySpan<byte> delta = stateProtocol.DeltaCodec.Encode(stateDelta).Span;
+                if (delta.Length < body.Length)
+                {
+                    messageId = stateProtocol.DeltaCodec.MessageId;
+                    body = delta;
+                }
+            }
+
+            Objects.SendToObservers(messageId, record.ObjectId, index, body);
+        }
+
+        private void SyncCollections(EntityRecord record, EntityBehaviour behaviour, byte index)
+        {
+            foreach (CollectionSlot slot in behaviour.Collections)
+            {
+                if (!slot.HasPending)
+                {
+                    continue;
+                }
+
+                slot.FillChanges(collectionChanges);
+                IMessageCodec<CollectionChanges> codec = stateProtocol.Collections.ChangesCodec;
+                ReadOnlySpan<byte> body = codec.Encode(collectionChanges).Span;
+                slot.ClearPending();
+                Objects.SendToObservers(codec.MessageId, record.ObjectId, index, body);
+            }
+        }
+
+        private void WriteSpawnCollections(IReadOnlyList<EntityBehaviour> behaviours)
+        {
+            spawnCollectionBytes.Clear();
+            foreach (EntityBehaviour behaviour in behaviours)
+            {
+                if (behaviour.Collections.Count == 0)
+                {
+                    spawnCollectionBytes.Add(ReadOnlySpan<byte>.Empty);
+                    continue;
+                }
+
+                spawnContents.Collections.Clear();
+                foreach (CollectionSlot slot in behaviour.Collections)
+                {
+                    spawnContents.Collections.Add(slot.Content());
+                }
+
+                spawnCollectionBytes.Add(stateProtocol.Collections.ContentsCodec.Encode(spawnContents).Span);
+            }
+
+            spawnCollectionBytes.CopyTo(spawnCollections);
         }
 
         public void ApplyInputs(uint tick, ulong hostPeerId)
@@ -928,6 +995,30 @@ namespace Fomoxa.Networking.Objects
             }
 
             session.SendToObject(peerId, slot.MessageId, objectId, behaviourIndex, slot.Sent.Span);
+        }
+
+        private void ResyncCollection(ulong peerId, uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
+        {
+            if (!spawned.TryGetValue(objectId, out EntityRecord record) || !Objects.IsObserver(objectId, peerId))
+            {
+                return;
+            }
+
+            IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
+            if (behaviourIndex >= behaviours.Count)
+            {
+                return;
+            }
+
+            CollectionProtocol protocol = stateProtocol.Collections;
+            protocol.ResyncCodec.Decode(body, ref collectionResync);
+            CollectionSlot slot = behaviours[behaviourIndex].CollectionAt(collectionResync.Collection);
+            if (slot == null)
+            {
+                return;
+            }
+
+            session.SendToObject(peerId, protocol.ContentCodec.MessageId, objectId, behaviourIndex, protocol.ContentCodec.Encode(slot.Content()).Span);
         }
 
         private bool DecideObserver(uint objectId, ulong peerId)

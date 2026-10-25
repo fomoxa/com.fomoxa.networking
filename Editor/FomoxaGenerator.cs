@@ -78,6 +78,22 @@ namespace Fomoxa.Unity.Editor
             "FragmentPart",
             "SessionClose",
             "SceneFile",
+            "CollectionChanges",
+            "CollectionContent",
+            "CollectionContents",
+            "CollectionResync",
+            "BoolValue",
+            "I8Value",
+            "U8Value",
+            "I16Value",
+            "U16Value",
+            "I32Value",
+            "U32Value",
+            "I64Value",
+            "U64Value",
+            "F32Value",
+            "F64Value",
+            "StringValue",
         };
 
         private static readonly Regex ModelLine = new Regex(@"^// model: (\S+)\r?$", RegexOptions.Multiline);

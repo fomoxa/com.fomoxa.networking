@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/ObjectSceneSpawn.cs
 // model: ObjectSceneSpawn
 // codec: net
-// fingerprint: sha256:a93d679db7a042d3f80204db045883b9a10ff5be55badf494a9b0dda1f84d3a5
+// fingerprint: sha256:387c4247a3e10d645d3a90238afe11af414fb52fb349a9886ad7cedc6f38ae2d
 // fomoxac-version: 0.2.2
-// generated-at: 2026-10-01T08:58:14Z
+// generated-at: 2026-10-25T15:43:53Z
 
 namespace BundleFixture
 {
@@ -21,6 +21,7 @@ namespace BundleFixture
 /// <item><description><c>Mask</c>: <c>u8</c></description></item>
 /// <item><description><c>Values</c>: <c>Array&lt;f32&gt;</c></description></item>
 /// <item><description><c>States</c>: <c>Array&lt;bytes&gt;</c></description></item>
+/// <item><description><c>Collections</c>: <c>Array&lt;bytes&gt;</c></description></item>
 /// </list>
 /// </remarks>
 public static class ObjectSceneSpawnNetCodec
@@ -33,7 +34,7 @@ public static class ObjectSceneSpawnNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0xA93D679DB7A042D3;
+    public const ulong Fingerprint = 0x387C4247A3E10D64;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.ObjectSceneSpawn value)
@@ -50,6 +51,11 @@ public static class ObjectSceneSpawnNetCodec
         }
         writer.WriteArrayCount(value.States.Count);
         foreach (var element in value.States)
+        {
+            writer.WriteBytes(element);
+        }
+        writer.WriteArrayCount(value.Collections.Count);
+        foreach (var element in value.Collections)
         {
             writer.WriteBytes(element);
         }
@@ -104,6 +110,23 @@ public static class ObjectSceneSpawnNetCodec
         }
         ArrayField.Trim(statesValueList, statesValueCount);
         value.States = statesValueList;
+        int collectionsValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var collectionsValueList = ArrayField.Reuse(value.Collections, collectionsValueCount);
+        for (int i = 0; i < collectionsValueCount; i++)
+        {
+            var element = i < collectionsValueList.Count ? collectionsValueList[i] : default;
+            reader.ReadBytes(ref element);
+            if (i < collectionsValueList.Count)
+            {
+                collectionsValueList[i] = element;
+            }
+            else
+            {
+                collectionsValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(collectionsValueList, collectionsValueCount);
+        value.Collections = collectionsValueList;
     }
 }
 

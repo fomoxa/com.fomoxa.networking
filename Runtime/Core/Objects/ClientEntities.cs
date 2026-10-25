@@ -22,6 +22,10 @@ namespace Fomoxa.Networking.Objects
         private readonly HashSet<uint> stateIds = new HashSet<uint>();
         private readonly List<EntityRecord> hiddenStarted = new List<EntityRecord>();
         private StateDelta stateDelta = new StateDelta();
+        private CollectionChanges collectionChanges = new CollectionChanges();
+        private CollectionContent collectionContent = new CollectionContent();
+        private CollectionContents spawnContents = new CollectionContents();
+        private readonly CollectionResync collectionResync = new CollectionResync();
         private TransformUpdate transformUpdate = new TransformUpdate();
         private TransformSettle transformSettle = new TransformSettle();
 
@@ -49,6 +53,8 @@ namespace Fomoxa.Networking.Objects
             this.log = log;
             Representations = new RepresentationTable(spawned);
             dispatcher.RegisterObject(stateProtocol.DeltaCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverDelta(objectId, behaviourIndex, body));
+            dispatcher.RegisterObject(stateProtocol.Collections.ChangesCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverChanges(objectId, behaviourIndex, body));
+            dispatcher.RegisterObject(stateProtocol.Collections.ContentCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverContent(objectId, behaviourIndex, body));
             dispatcher.RegisterObject(transformProtocol.UpdateCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, false));
             dispatcher.RegisterObject(transformProtocol.SettleCodec.MessageId, (peerId, objectId, behaviourIndex, body) => DeliverTransform(objectId, behaviourIndex, body, true));
         }
@@ -100,7 +106,7 @@ namespace Fomoxa.Networking.Objects
                 entity = record.Representation;
                 if (spawned.TryGetValue(objectId, out EntityRecord hidden) && hidden == record)
                 {
-                    if (!TryApplyStates(record.Representation.EntityBehaviours, spawnedObject.States, true))
+                    if (!TryApplySpawn(record.Representation.EntityBehaviours, spawnedObject, true))
                     {
                         return SpawnResult.InvalidSpawn;
                     }
@@ -139,7 +145,7 @@ namespace Fomoxa.Networking.Objects
                     record.HasInput |= behaviour.InputSlot != null;
                 }
 
-                statesValid = TryApplyStates(record.Representation.EntityBehaviours, spawnedObject.States, record.Server != null);
+                statesValid = TryApplySpawn(record.Representation.EntityBehaviours, spawnedObject, record.Server != null);
                 if (statesValid)
                 {
                     ResetReceive(entity.EntityBehaviours);
@@ -274,6 +280,66 @@ namespace Fomoxa.Networking.Objects
                 entity.Unbind(record);
                 backend.End(entity);
             }
+        }
+
+        private bool TryApplySpawn(IReadOnlyList<EntityBehaviour> behaviours, in SpawnedObject spawnedObject, bool shared)
+        {
+            if (!TryStageCollections(behaviours, spawnedObject.Collections) || !TryApplyStates(behaviours, spawnedObject.States, shared))
+            {
+                return false;
+            }
+
+            foreach (EntityBehaviour behaviour in behaviours)
+            {
+                foreach (CollectionSlot slot in behaviour.Collections)
+                {
+                    slot.Commit(shared, false);
+                }
+            }
+
+            return true;
+        }
+
+        private bool TryStageCollections(IReadOnlyList<EntityBehaviour> behaviours, IReadOnlyList<ReadOnlyMemory<byte>> collections)
+        {
+            if (collections.Count != behaviours.Count)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < behaviours.Count; index++)
+            {
+                IReadOnlyList<CollectionSlot> slots = behaviours[index].Collections;
+                if (slots.Count == 0 || collections[index].IsEmpty)
+                {
+                    if (slots.Count != 0 || !collections[index].IsEmpty)
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+
+                try
+                {
+                    stateProtocol.Collections.ContentsCodec.Decode(collections[index], ref spawnContents);
+                    if (spawnContents.Collections.Count != slots.Count)
+                    {
+                        return false;
+                    }
+
+                    for (int at = 0; at < slots.Count; at++)
+                    {
+                        slots[at].Stage(spawnContents.Collections[at]);
+                    }
+                }
+                catch (MessageDecodeException)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         internal static bool TryApplyStates(IReadOnlyList<EntityBehaviour> behaviours, IReadOnlyList<ReadOnlyMemory<byte>> states, bool shared)
@@ -482,6 +548,65 @@ namespace Fomoxa.Networking.Objects
             }
         }
 
+        private void DeliverChanges(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
+        {
+            if (!TryGetBehaviour(objectId, behaviourIndex, out EntityRecord record, out EntityBehaviour behaviour) || behaviour.Collections.Count == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                stateProtocol.Collections.ChangesCodec.Decode(body, ref collectionChanges);
+            }
+            catch (MessageDecodeException)
+            {
+                foreach (CollectionSlot unknown in behaviour.Collections)
+                {
+                    if (!unknown.OutOfSync)
+                    {
+                        LoseSync(unknown, objectId, behaviourIndex);
+                    }
+                }
+
+                throw;
+            }
+
+            CollectionSlot slot = behaviour.CollectionAt(collectionChanges.Collection);
+            if (slot == null || slot.OutOfSync)
+            {
+                return;
+            }
+
+            try
+            {
+                slot.Receive(collectionChanges, record.Server != null);
+            }
+            catch (MessageDecodeException)
+            {
+                LoseSync(slot, objectId, behaviourIndex);
+                throw;
+            }
+        }
+
+        private void DeliverContent(uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
+        {
+            if (!TryGetBehaviour(objectId, behaviourIndex, out EntityRecord record, out EntityBehaviour behaviour) || behaviour.Collections.Count == 0)
+            {
+                return;
+            }
+
+            stateProtocol.Collections.ContentCodec.Decode(body, ref collectionContent);
+            CollectionSlot slot = behaviour.CollectionAt(collectionContent.Collection);
+            if (slot == null || !slot.OutOfSync)
+            {
+                return;
+            }
+
+            slot.Stage(collectionContent);
+            slot.Commit(record.Server != null, true);
+        }
+
         private void DeliverRpc(uint messageId, uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
         {
             if (TryGetBehaviour(objectId, behaviourIndex, out EntityRecord _, out EntityBehaviour behaviour)
@@ -495,6 +620,14 @@ namespace Fomoxa.Networking.Objects
         {
             slot.MarkOutOfSync();
             session.SendToObject(stateProtocol.ResyncCodec.MessageId, objectId, behaviourIndex, ReadOnlySpan<byte>.Empty);
+        }
+
+        private void LoseSync(CollectionSlot slot, uint objectId, byte behaviourIndex)
+        {
+            slot.MarkOutOfSync();
+            collectionResync.Collection = slot.Index;
+            IMessageCodec<CollectionResync> codec = stateProtocol.Collections.ResyncCodec;
+            session.SendToObject(codec.MessageId, objectId, behaviourIndex, codec.Encode(collectionResync).Span);
         }
 
         private void RaiseOwnerChanged(ObjectOwnerChangedArgs args)

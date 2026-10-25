@@ -44,7 +44,7 @@ namespace Fomoxa.Networking
                 RequireCodec<ObjectDespawn>(),
                 RequireCodec<ObjectOwnerChange>(),
                 registry.Channels);
-            var stateProtocol = new StateProtocol(RequireCodec<StateDelta>(), RequireCodec<StateResync>(), RequireCodec<AnimatorState>(), registry.Channels);
+            var stateProtocol = new StateProtocol(RequireCodec<StateDelta>(), RequireCodec<StateResync>(), RequireCodec<AnimatorState>(), CollectionProtocol.From(registry), registry.Channels);
             var transformProtocol = new TransformProtocol(RequireCodec<TransformUpdate>(), RequireCodec<TransformSettle>(), registry.Channels);
             var sceneProtocol = new SceneProtocol(RequireCodec<SceneLoad>(), RequireCodec<SceneUnload>(), RequireCodec<SceneLoaded>(), registry.Channels);
             var clockProtocol = new ClockProtocol(RequireCodec<TickPing>(), RequireCodec<TickPong>());

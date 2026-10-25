@@ -40,5 +40,9 @@ namespace Fomoxa.Networking.Messaging
         [Network("u32")]
         [Codec("net")]
         public uint SceneId { get; set; }
+
+        [Network("Array<bytes>")]
+        [Codec("net")]
+        public List<ReadOnlyMemory<byte>> Collections { get; set; } = new List<ReadOnlyMemory<byte>>();
     }
 }

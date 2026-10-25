@@ -36,5 +36,9 @@ namespace Fomoxa.Networking.Messaging
         [Network("Array<bytes>")]
         [Codec("net")]
         public List<ReadOnlyMemory<byte>> States { get; set; } = new List<ReadOnlyMemory<byte>>();
+
+        [Network("Array<bytes>")]
+        [Codec("net")]
+        public List<ReadOnlyMemory<byte>> Collections { get; set; } = new List<ReadOnlyMemory<byte>>();
     }
 }

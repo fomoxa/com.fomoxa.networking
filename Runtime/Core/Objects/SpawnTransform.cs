@@ -8,12 +8,18 @@ namespace Fomoxa.Networking.Objects
     public readonly struct SpawnData
     {
         public SpawnData(uint prefabFingerprint, Vector3 position, Quaternion rotation, Vector3 scale, IReadOnlyList<ReadOnlyMemory<byte>> states = null)
+            : this(prefabFingerprint, position, rotation, scale, states, null)
+        {
+        }
+
+        public SpawnData(uint prefabFingerprint, Vector3 position, Quaternion rotation, Vector3 scale, IReadOnlyList<ReadOnlyMemory<byte>> states, IReadOnlyList<ReadOnlyMemory<byte>> collections)
         {
             PrefabFingerprint = prefabFingerprint;
             Position = position;
             Rotation = rotation;
             Scale = scale;
             States = states ?? Array.Empty<ReadOnlyMemory<byte>>();
+            Collections = collections ?? Array.Empty<ReadOnlyMemory<byte>>();
         }
 
         public uint PrefabFingerprint { get; }
@@ -25,6 +31,8 @@ namespace Fomoxa.Networking.Objects
         public Vector3 Scale { get; }
 
         public IReadOnlyList<ReadOnlyMemory<byte>> States { get; }
+
+        public IReadOnlyList<ReadOnlyMemory<byte>> Collections { get; }
     }
 
     public delegate SpawnData SpawnSource(uint objectId);
@@ -40,12 +48,14 @@ namespace Fomoxa.Networking.Objects
         {
             spawn.Mask = Pack(data, spawn.Values);
             PackStates(data.States, spawn.States);
+            PackStates(data.Collections, spawn.Collections);
         }
 
         public static void Pack(in SpawnData data, ObjectSceneSpawn spawn)
         {
             spawn.Mask = Pack(data, spawn.Values);
             PackStates(data.States, spawn.States);
+            PackStates(data.Collections, spawn.Collections);
         }
 
         public static void PackStates(IReadOnlyList<ReadOnlyMemory<byte>> states, List<ReadOnlyMemory<byte>> target)
