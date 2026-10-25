@@ -32,6 +32,8 @@ namespace Fomoxa.Networking
 
         public int ReliableWindow { get; set; } = 1024;
 
+        public TimeSpan CloseTimeout { get; set; } = TimeSpan.FromSeconds(1);
+
         public bool LogSendDropped { get; set; } = true;
 
         public bool LogReceiveDropped { get; set; } = true;

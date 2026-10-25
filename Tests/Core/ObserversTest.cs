@@ -277,6 +277,7 @@ namespace Fomoxa.Networking.Tests
             host.Hidden.Clear();
             host.Failing.Add(objectId);
             host.Objects.RebuildObservers(objectId);
+            host.Server.Flush();
 
             Assert.AreEqual(1, host.Exceptions.Count);
             Assert.AreEqual(failingId, host.Exceptions[0].PeerId);

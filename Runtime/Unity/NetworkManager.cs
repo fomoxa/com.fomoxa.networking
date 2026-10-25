@@ -24,6 +24,7 @@ namespace Fomoxa.Unity
         [SerializeField] private int messageCapacity = 1024;
         [SerializeField] private int byteCapacity = 1024 * 1024;
         [SerializeField] private int reliableWindow = 1024;
+        [SerializeField] private float closeTimeoutSeconds = 1f;
         [SerializeField] private bool logSendDropped = true;
         [SerializeField] private bool logReceiveDropped = true;
         [SerializeField] private int maxReconnectRetries = -1;
@@ -117,6 +118,7 @@ namespace Fomoxa.Unity
                 MessageCapacity = messageCapacity,
                 ByteCapacity = byteCapacity,
                 ReliableWindow = reliableWindow,
+                CloseTimeout = TimeSpan.FromSeconds(closeTimeoutSeconds),
                 LogSendDropped = logSendDropped,
                 LogReceiveDropped = logReceiveDropped,
                 MaxReconnectRetries = maxReconnectRetries,

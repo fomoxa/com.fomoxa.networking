@@ -11,6 +11,7 @@ namespace Fomoxa.Networking.Messaging
             IMessageCodec<PeerLeave> leaveCodec,
             IMessageCodec<FragmentStart> fragmentStartCodec,
             IMessageCodec<FragmentPart> fragmentPartCodec,
+            IMessageCodec<SessionClose> closeCodec,
             MessageChannels channels)
         {
             Bundle = bundle ?? throw new ArgumentNullException(nameof(bundle));
@@ -18,9 +19,11 @@ namespace Fomoxa.Networking.Messaging
             LeaveCodec = leaveCodec ?? throw new ArgumentNullException(nameof(leaveCodec));
             FragmentStartCodec = fragmentStartCodec ?? throw new ArgumentNullException(nameof(fragmentStartCodec));
             FragmentPartCodec = fragmentPartCodec ?? throw new ArgumentNullException(nameof(fragmentPartCodec));
+            CloseCodec = closeCodec ?? throw new ArgumentNullException(nameof(closeCodec));
             Channels = channels ?? throw new ArgumentNullException(nameof(channels));
             ObjectProtocol.EnsureReliable(channels, fragmentStartCodec.MessageId, nameof(FragmentStart));
             ObjectProtocol.EnsureReliable(channels, fragmentPartCodec.MessageId, nameof(FragmentPart));
+            ObjectProtocol.EnsureReliable(channels, closeCodec.MessageId, nameof(SessionClose));
         }
 
         public BundleFormat Bundle { get; }
@@ -32,6 +35,8 @@ namespace Fomoxa.Networking.Messaging
         public IMessageCodec<FragmentStart> FragmentStartCodec { get; }
 
         public IMessageCodec<FragmentPart> FragmentPartCodec { get; }
+
+        public IMessageCodec<SessionClose> CloseCodec { get; }
 
         public MessageChannels Channels { get; }
 

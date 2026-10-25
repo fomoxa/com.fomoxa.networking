@@ -31,6 +31,14 @@ namespace Fomoxa.Networking.Sessions
         ObjectMismatch,
         PhysicsBackendMismatch,
         InvalidFragment,
+        ServerClosed,
+    }
+
+    public enum SessionCloseReason : byte
+    {
+        Unspecified = 0,
+        HandlerException = 1,
+        Kicked = 2,
     }
 
     public readonly struct ServerConnectionStateArgs
@@ -51,7 +59,8 @@ namespace Fomoxa.Networking.Sessions
             StopReason reason,
             HandshakeFailure failure,
             int discardedMessages,
-            bool willRetry = false)
+            bool willRetry = false,
+            SessionCloseReason closeReason = SessionCloseReason.Unspecified)
         {
             PeerId = peerId;
             State = state;
@@ -59,6 +68,7 @@ namespace Fomoxa.Networking.Sessions
             Failure = failure;
             DiscardedMessages = discardedMessages;
             WillRetry = willRetry;
+            CloseReason = closeReason;
         }
 
         public ulong PeerId { get; }
@@ -72,6 +82,8 @@ namespace Fomoxa.Networking.Sessions
         public int DiscardedMessages { get; }
 
         public bool WillRetry { get; }
+
+        public SessionCloseReason CloseReason { get; }
     }
 
     public readonly struct SendDroppedArgs
@@ -129,5 +141,7 @@ namespace Fomoxa.Networking.Sessions
         public int ByteCapacity { get; set; } = 1024 * 1024;
 
         public int ReliableWindow { get; set; } = 1024;
+
+        public TimeSpan CloseTimeout { get; set; } = TimeSpan.FromSeconds(1);
     }
 }

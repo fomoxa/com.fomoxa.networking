@@ -184,6 +184,8 @@ namespace Fomoxa.Networking
 
         public void Disconnect(ulong peerId) => session.Disconnect(peerId);
 
+        public bool Kick(ulong peerId) => session.Kick(peerId);
+
         public void Spawn(INetworkEntity networkObject, ulong ownerId = 0)
         {
             if (networkObject == null)

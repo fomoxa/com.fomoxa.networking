@@ -96,7 +96,8 @@ namespace Fomoxa.Networking.Sessions
                 args.Reason,
                 args.Failure,
                 args.DiscardedMessages,
-                willRetry));
+                willRetry,
+                args.CloseReason));
         }
 
         private bool ShouldRetry(ConnectionStateArgs args) =>
@@ -107,6 +108,7 @@ namespace Fomoxa.Networking.Sessions
             && args.Reason != StopReason.ObjectMismatch
             && args.Reason != StopReason.PhysicsBackendMismatch
             && args.Reason != StopReason.InvalidFragment
+            && args.Reason != StopReason.ServerClosed
             && (args.Reason != StopReason.HandshakeFailed || args.Failure == HandshakeFailure.Timeout)
             && (policy.MaxRetries < 0 || retries < policy.MaxRetries);
     }

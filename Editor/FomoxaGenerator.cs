@@ -76,6 +76,7 @@ namespace Fomoxa.Unity.Editor
             "PeerLeave",
             "FragmentStart",
             "FragmentPart",
+            "SessionClose",
             "SceneFile",
         };
 

@@ -80,6 +80,8 @@ namespace Fomoxa.Networking.Tests
             Assert.AreEqual(1, exceptions.Count);
             Assert.AreEqual(GreetingId, exceptions[0].MessageId);
             Assert.IsInstanceOf<InvalidOperationException>(exceptions[0].Exception);
+            Assert.AreEqual(0, stopped.Count);
+            server.Flush();
             Assert.AreEqual(1, stopped.Count);
             Assert.AreEqual(exceptions[0].PeerId, stopped[0].PeerId);
             Assert.AreEqual(StopReason.HandlerException, stopped[0].Reason);

@@ -36,6 +36,7 @@ namespace Fomoxa.Networking
             IMessageCodec<PeerLeave> leaveCodec = RequireCodec<PeerLeave>();
             IMessageCodec<FragmentStart> fragmentStartCodec = RequireCodec<FragmentStart>();
             IMessageCodec<FragmentPart> fragmentPartCodec = RequireCodec<FragmentPart>();
+            IMessageCodec<SessionClose> closeCodec = RequireCodec<SessionClose>();
             var objectProtocol = new ObjectProtocol(
                 RequireCodec<LocalPeer>(),
                 RequireCodec<ObjectSpawn>(),
@@ -67,6 +68,7 @@ namespace Fomoxa.Networking
                 MessageCapacity = settings.MessageCapacity,
                 ByteCapacity = settings.ByteCapacity,
                 ReliableWindow = settings.ReliableWindow,
+                CloseTimeout = settings.CloseTimeout,
             };
             TimeManager = new TimeManager(settings.TickRate, settings.MaxTicksPerFrame, settings.TimingMode);
             var protocol = new SessionProtocol(
@@ -75,6 +77,7 @@ namespace Fomoxa.Networking
                 leaveCodec,
                 fragmentStartCodec,
                 fragmentPartCodec,
+                closeCodec,
                 registry.Channels);
             var sessionConfig = new SessionConfig
             {

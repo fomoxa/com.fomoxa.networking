@@ -14,12 +14,14 @@ namespace BundleFixture
             channels ??= new MessageChannels();
             channels.Set(FragmentStartId, Channel.ReliableOrdered);
             channels.Set(FragmentPartId, Channel.ReliableOrdered);
+            channels.Set(CloseId, Channel.ReliableOrdered);
             return new SessionProtocol(
                 Format(frameBudget),
                 ReliableAckNetAdapter.Instance,
                 PeerLeaveNetAdapter.Instance,
                 FragmentStartNetAdapter.Instance,
                 FragmentPartNetAdapter.Instance,
+                SessionCloseNetAdapter.Instance,
                 channels);
         }
 
@@ -32,5 +34,7 @@ namespace BundleFixture
         public static uint FragmentStartId => FragmentStartNetAdapter.Instance.MessageId;
 
         public static uint FragmentPartId => FragmentPartNetAdapter.Instance.MessageId;
+
+        public static uint CloseId => SessionCloseNetAdapter.Instance.MessageId;
     }
 }

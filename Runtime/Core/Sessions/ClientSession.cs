@@ -230,9 +230,14 @@ namespace Fomoxa.Networking.Sessions
                 connection.Close();
                 End(StopReason.InvalidFragment, default);
             }
+            else if (inbox.TakeClose(out SessionCloseReason closeReason) && State != ConnectionState.Stopped)
+            {
+                connection.Close();
+                End(StopReason.ServerClosed, default, closeReason);
+            }
         }
 
-        private bool IsDelivering() => State != ConnectionState.Stopped && !inbox.HasFailed;
+        private bool IsDelivering() => State != ConnectionState.Stopped && !inbox.HasFailed && !inbox.IsClosed;
 
         private void SendLeave()
         {
@@ -281,7 +286,7 @@ namespace Fomoxa.Networking.Sessions
             lastNow = now;
         }
 
-        private void End(StopReason reason, HandshakeFailure failure)
+        private void End(StopReason reason, HandshakeFailure failure, SessionCloseReason closeReason = SessionCloseReason.Unspecified)
         {
             int total = discarded + outbox.Queue.Clear();
             connector?.Dispose();
@@ -291,14 +296,14 @@ namespace Fomoxa.Networking.Sessions
             outbox = null;
             sender = null;
             discarded = 0;
-            ChangeState(ConnectionState.Stopped, reason, failure, total);
+            ChangeState(ConnectionState.Stopped, reason, failure, total, closeReason);
             stopped?.Invoke();
         }
 
-        private void ChangeState(ConnectionState state, StopReason reason, HandshakeFailure failure, int discardedMessages)
+        private void ChangeState(ConnectionState state, StopReason reason, HandshakeFailure failure, int discardedMessages, SessionCloseReason closeReason = SessionCloseReason.Unspecified)
         {
             State = state;
-            OnClientConnectionState?.Invoke(new ConnectionStateArgs(0, state, reason, failure, discardedMessages));
+            OnClientConnectionState?.Invoke(new ConnectionStateArgs(0, state, reason, failure, discardedMessages, closeReason: closeReason));
         }
     }
 }

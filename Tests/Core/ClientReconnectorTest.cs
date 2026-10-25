@@ -228,6 +228,23 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void ServerClosedIsNotRetried()
+        {
+            var host = new Harness(new ReconnectPolicy { Interval = Step });
+            host.Client.Start(host.Loopback, host.Now);
+            host.Run(20);
+
+            Assert.IsTrue(host.Server.Kick(host.StartedPeers[0]));
+            host.Run(20);
+
+            Assert.AreEqual(1, host.ConnectorsCreated);
+            Assert.AreEqual(StopReason.ServerClosed, host.Stops()[0].Reason);
+            Assert.AreEqual(SessionCloseReason.Kicked, host.Stops()[0].CloseReason);
+            Assert.IsFalse(host.Stops()[0].WillRetry);
+            Assert.AreEqual(ConnectionState.Stopped, host.Session.State);
+        }
+
+        [Test]
         public void StopInTheStoppedHandlerCancelsThePendingRetry()
         {
             var host = new Harness(new ReconnectPolicy { Interval = Step });

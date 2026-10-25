@@ -21,6 +21,7 @@ namespace Fomoxa.Networking.Sessions
         private readonly List<ulong> stoppingPeerIds = new List<ulong>();
         private readonly List<Peer> flushingPeers = new List<Peer>();
         private readonly List<QueuedMessage> heldMessages = new List<QueuedMessage>();
+        private readonly SessionClose close = new SessionClose();
 
         private FomoxaServer server;
         private PeerStartHandler peerStart;
@@ -74,7 +75,7 @@ namespace Fomoxa.Networking.Sessions
 
         public SendResult Send(ulong peerId, uint messageId, ReadOnlySpan<byte> payload)
         {
-            if (!peers.TryGetValue(peerId, out Peer peer))
+            if (!peers.TryGetValue(peerId, out Peer peer) || peer.Closing)
             {
                 return SendResult.NotConnected;
             }
@@ -84,7 +85,7 @@ namespace Fomoxa.Networking.Sessions
 
         public SendResult SendToObject(ulong peerId, uint messageId, uint objectId, byte behaviourIndex, ReadOnlySpan<byte> body)
         {
-            if (!peers.TryGetValue(peerId, out Peer peer))
+            if (!peers.TryGetValue(peerId, out Peer peer) || peer.Closing)
             {
                 return SendResult.NotConnected;
             }
@@ -97,7 +98,7 @@ namespace Fomoxa.Networking.Sessions
             int queued = 0;
             foreach (Peer peer in peers.Values)
             {
-                if (peer.State == ConnectionState.Started && peer.Outbox.Enqueue(messageId, payload) == EnqueueResult.Queued)
+                if (peer.Accepts && peer.Outbox.Enqueue(messageId, payload) == EnqueueResult.Queued)
                 {
                     queued++;
                 }
@@ -111,7 +112,7 @@ namespace Fomoxa.Networking.Sessions
             int queued = 0;
             foreach (Peer peer in peers.Values)
             {
-                if (peer.State == ConnectionState.Started && peer.Outbox.EnqueueToObject(messageId, objectId, behaviourIndex, body) == EnqueueResult.Queued)
+                if (peer.Accepts && peer.Outbox.EnqueueToObject(messageId, objectId, behaviourIndex, body) == EnqueueResult.Queued)
                 {
                     queued++;
                 }
@@ -126,7 +127,7 @@ namespace Fomoxa.Networking.Sessions
             for (int index = 0; index < peerIds.Count; index++)
             {
                 if (peers.TryGetValue(peerIds[index], out Peer peer)
-                    && peer.State == ConnectionState.Started
+                    && peer.Accepts
                     && peer.Outbox.EnqueueToObject(messageId, objectId, behaviourIndex, body) == EnqueueResult.Queued)
                 {
                     queued++;
@@ -156,6 +157,16 @@ namespace Fomoxa.Networking.Sessions
 
                 if (!peers.TryGetValue(raised.PeerId, out Peer peer))
                 {
+                    continue;
+                }
+
+                if (peer.Closing)
+                {
+                    if (raised.Kind == FomoxaEventKind.Disconnected || raised.Kind == FomoxaEventKind.HandshakeFailed)
+                    {
+                        End(peer, peer.CloseStopReason, default);
+                    }
+
                     continue;
                 }
 
@@ -197,9 +208,15 @@ namespace Fomoxa.Networking.Sessions
                     return;
                 }
 
-                if (peers.ContainsKey(peer.Id))
+                if (!peers.ContainsKey(peer.Id))
                 {
-                    peer.Discarded += peer.Outbox.Flush(peer.Sender, lastNow, peer.Id, OnSendDropped);
+                    continue;
+                }
+
+                peer.Discarded += peer.Outbox.Flush(peer.Sender, lastNow, peer.Id, OnSendDropped);
+                if (peer.Closing && (peer.Outbox.Queue.Count == 0 || lastNow >= peer.CloseDeadline))
+                {
+                    Disconnect(peer, peer.CloseStopReason);
                 }
             }
         }
@@ -212,6 +229,23 @@ namespace Fomoxa.Networking.Sessions
             }
 
             Disconnect(peer, StopReason.LocalStop);
+        }
+
+        public bool Kick(ulong peerId)
+        {
+            if (!peers.TryGetValue(peerId, out Peer peer) || peer.Closing)
+            {
+                return false;
+            }
+
+            if (peer.State == ConnectionState.Starting)
+            {
+                Disconnect(peer, StopReason.LocalStop);
+                return true;
+            }
+
+            BeginClose(peer, SessionCloseReason.Kicked, StopReason.LocalStop);
+            return true;
         }
 
         public void Stop()
@@ -246,7 +280,7 @@ namespace Fomoxa.Networking.Sessions
 
         internal void EnqueueObjectMessage(ulong peerId, uint messageId, ReadOnlySpan<byte> payload)
         {
-            if (peers.TryGetValue(peerId, out Peer peer))
+            if (peers.TryGetValue(peerId, out Peer peer) && !peer.Closing)
             {
                 peer.Outbox.EnqueueUnbounded(messageId, payload);
             }
@@ -256,7 +290,7 @@ namespace Fomoxa.Networking.Sessions
         {
             foreach (Peer peer in peers.Values)
             {
-                if (peer.State == ConnectionState.Started)
+                if (peer.Accepts)
                 {
                     peer.Outbox.EnqueueUnbounded(messageId, payload);
                 }
@@ -357,10 +391,19 @@ namespace Fomoxa.Networking.Sessions
         private void EndByHandler(Peer peer, uint messageId, Exception exception)
         {
             OnHandlerException?.Invoke(new HandlerExceptionArgs(peer.Id, messageId, exception));
-            if (IsServing(peer))
+            if (IsServing(peer) && !peer.Closing)
             {
-                Disconnect(peer, StopReason.HandlerException);
+                BeginClose(peer, SessionCloseReason.HandlerException, StopReason.HandlerException);
             }
+        }
+
+        private void BeginClose(Peer peer, SessionCloseReason reason, StopReason stopReason)
+        {
+            peer.Closing = true;
+            peer.CloseStopReason = stopReason;
+            peer.CloseDeadline = lastNow + limits.CloseTimeout;
+            close.Reason = (byte)reason;
+            peer.Outbox.EnqueueUnbounded(protocol.CloseCodec.MessageId, protocol.CloseCodec.Encode(close).Span);
         }
 
         private void Disconnect(Peer peer, StopReason reason)
@@ -428,6 +471,14 @@ namespace Fomoxa.Networking.Sessions
             public ConnectionState State { get; set; } = ConnectionState.Starting;
 
             public int Discarded { get; set; }
+
+            public bool Closing { get; set; }
+
+            public StopReason CloseStopReason { get; set; }
+
+            public TimeSpan CloseDeadline { get; set; }
+
+            public bool Accepts => State == ConnectionState.Started && !Closing;
         }
     }
 }

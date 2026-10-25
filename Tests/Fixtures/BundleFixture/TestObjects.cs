@@ -72,6 +72,7 @@ namespace BundleFixture
                 new MessageSchema(Handshake.PeerLeaveNetMessageId, Handshake.PeerLeaveNetFingerprint, Handshake.PeerLeaveNetPrefixes),
                 new MessageSchema(Handshake.FragmentStartNetMessageId, Handshake.FragmentStartNetFingerprint, Handshake.FragmentStartNetPrefixes),
                 new MessageSchema(Handshake.FragmentPartNetMessageId, Handshake.FragmentPartNetFingerprint, Handshake.FragmentPartNetPrefixes),
+                new MessageSchema(Handshake.SessionCloseNetMessageId, Handshake.SessionCloseNetFingerprint, Handshake.SessionCloseNetPrefixes),
                 new MessageSchema(Handshake.SceneFileNetMessageId, Handshake.SceneFileNetFingerprint, Handshake.SceneFileNetPrefixes),
             };
             return new Schema(0xCAFE, all.ToArray());
@@ -103,10 +104,12 @@ namespace BundleFixture
             registry.SetCodec(PeerLeaveNetAdapter.Instance);
             registry.SetCodec(FragmentStartNetAdapter.Instance);
             registry.SetCodec(FragmentPartNetAdapter.Instance);
+            registry.SetCodec(SessionCloseNetAdapter.Instance);
             registry.SetCodec(SceneFileNetAdapter.Instance);
             registry.Channels.Set(LocalPeerId, Channel.ReliableOrdered);
             registry.Channels.Set(TestBundles.FragmentStartId, Channel.ReliableOrdered);
             registry.Channels.Set(TestBundles.FragmentPartId, Channel.ReliableOrdered);
+            registry.Channels.Set(TestBundles.CloseId, Channel.ReliableOrdered);
             registry.Channels.Set(SpawnId, Channel.ReliableOrdered);
             registry.Channels.Set(SceneSpawnId, Channel.ReliableOrdered);
             registry.Channels.Set(DespawnId, Channel.ReliableOrdered);

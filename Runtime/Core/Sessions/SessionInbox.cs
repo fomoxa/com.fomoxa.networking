@@ -13,7 +13,10 @@ namespace Fomoxa.Networking.Sessions
         private PeerLeave leave = new PeerLeave();
         private FragmentStart fragmentStart = new FragmentStart();
         private FragmentPart fragmentPart = new FragmentPart();
+        private SessionClose close = new SessionClose();
         private bool leaving;
+        private bool closed;
+        private SessionCloseReason closeReason;
         private bool violated;
         private uint failedMessageId;
         private Exception failure;
@@ -29,6 +32,8 @@ namespace Fomoxa.Networking.Sessions
         public int Count => reader.Count;
 
         public bool HasFailed => failure != null || violated;
+
+        public bool IsClosed => closed;
 
         public bool TryRead(uint messageId, ReadOnlyMemory<byte> payload, ReliableChannel reliable)
         {
@@ -114,6 +119,15 @@ namespace Fomoxa.Networking.Sessions
             return taken;
         }
 
+        public bool TakeClose(out SessionCloseReason reason)
+        {
+            reason = closeReason;
+            bool taken = closed;
+            closed = false;
+            closeReason = SessionCloseReason.Unspecified;
+            return taken;
+        }
+
         public bool TakeLeave()
         {
             bool taken = leaving;
@@ -128,6 +142,14 @@ namespace Fomoxa.Networking.Sessions
 
         private void DeliverReliable(ulong peerId, uint messageId, ReadOnlyMemory<byte> data, ReliableChannel reliable)
         {
+            if (messageId == protocol.CloseCodec.MessageId)
+            {
+                protocol.CloseCodec.Decode(data, ref close);
+                closed = true;
+                closeReason = (SessionCloseReason)close.Reason;
+                return;
+            }
+
             if (!protocol.IsFragment(messageId))
             {
                 Dispatch(peerId, messageId, data);
