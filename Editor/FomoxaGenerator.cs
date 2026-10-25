@@ -94,6 +94,8 @@ namespace Fomoxa.Unity.Editor
             "F32Value",
             "F64Value",
             "StringValue",
+            "PeerTransfer",
+            "TransferTicket",
         };
 
         private static readonly Regex ModelLine = new Regex(@"^// model: (\S+)\r?$", RegexOptions.Multiline);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BundleFixture;
 using Fomoxa.Net;
 using Fomoxa.Net.Transports;
@@ -278,6 +279,93 @@ namespace Fomoxa.Networking.Tests
 
             Assert.AreEqual(1, host.ConnectorsCreated);
             Assert.AreEqual(1, host.Stops().Count);
+        }
+
+        [Test]
+        public void ATransferConnectsAtOnceToTheRedirectedTarget()
+        {
+            var host = new Harness(new ReconnectPolicy { Interval = TimeSpan.FromSeconds(5) });
+            host.Session.SetTransferringHandler((address, port) => host.Client.Redirect(host.Failing));
+            host.Client.Start(host.Loopback, host.Now);
+            host.Run(20);
+
+            host.Server.Transfer(host.StartedPeers[0], "arena-2.example", 7778, ReadOnlyMemory<byte>.Empty);
+            while (host.Stops().Count == 0)
+            {
+                host.Run(1);
+            }
+
+            Assert.AreEqual(StopReason.Transferred, host.Stops()[0].Reason);
+            Assert.IsTrue(host.Stops()[0].WillRetry);
+            Assert.AreEqual(1, host.ConnectorsCreated);
+            host.Run(1);
+            Assert.AreEqual(2, host.ConnectorsCreated);
+            Assert.AreEqual(StopReason.TransportError, host.Stops()[1].Reason);
+            Assert.IsTrue(host.Stops()[1].WillRetry);
+            host.Run(60);
+            Assert.AreEqual(1, host.StartedPeers.Count);
+        }
+
+        [Test]
+        public void ATransferIsFollowedEvenWhenRetriesAreUsedUp()
+        {
+            var host = new Harness(new ReconnectPolicy { MaxRetries = 0, Interval = Step });
+            host.Session.SetTransferringHandler((address, port) => host.Client.Redirect(host.Failing));
+            host.Client.Start(host.Loopback, host.Now);
+            host.Run(20);
+
+            host.Server.Transfer(host.StartedPeers[0], "arena-2.example", 7778, ReadOnlyMemory<byte>.Empty);
+            host.Run(20);
+
+            Assert.AreEqual(2, host.ConnectorsCreated);
+            Assert.AreEqual(new[] { true, false }, host.Stops().ConvertAll(args => args.WillRetry).ToArray());
+        }
+
+        [Test]
+        public void StopInTheStoppedHandlerCancelsTheTransfer()
+        {
+            var host = new Harness(new ReconnectPolicy { Interval = Step });
+            host.Session.SetTransferringHandler((address, port) => host.Client.Redirect(host.Failing));
+            host.Client.OnClientConnectionState += args =>
+            {
+                if (args.Reason == StopReason.Transferred)
+                {
+                    host.Client.Stop();
+                }
+            };
+            host.Client.Start(host.Loopback, host.Now);
+            host.Run(20);
+
+            host.Server.Transfer(host.StartedPeers[0], "arena-2.example", 7778, ReadOnlyMemory<byte>.Empty);
+            host.Run(20);
+
+            Assert.AreEqual(1, host.ConnectorsCreated);
+            Assert.AreEqual(1, host.Stops().Count);
+            Assert.AreEqual(ConnectionState.Stopped, host.Session.State);
+        }
+
+        [Test]
+        public void ATransferOfAClientStartedWithoutRetryIsNotFollowed()
+        {
+            var host = new Harness(new ReconnectPolicy { Interval = Step });
+            host.Session.SetTransferringHandler((address, port) => host.Client.Redirect(host.Failing));
+            host.Client.StartWithoutRetry(host.Listener.Connect(), host.Now);
+            host.Run(20);
+
+            host.Server.Transfer(host.StartedPeers[0], "arena-2.example", 7778, ReadOnlyMemory<byte>.Empty);
+            host.Run(20);
+
+            Assert.AreEqual(0, host.ConnectorsCreated);
+            Assert.AreEqual(StopReason.Transferred, host.Stops().Single().Reason);
+            Assert.IsFalse(host.Stops().Single().WillRetry);
+        }
+
+        [Test]
+        public void RedirectRequiresASource()
+        {
+            var host = new Harness(new ReconnectPolicy());
+
+            Assert.Throws<ArgumentNullException>(() => host.Client.Redirect(null));
         }
 
         [Test]

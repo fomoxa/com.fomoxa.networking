@@ -23,6 +23,7 @@ namespace Fomoxa.Networking.Sessions
         private readonly List<Peer> flushingPeers = new List<Peer>();
         private readonly List<QueuedMessage> heldMessages = new List<QueuedMessage>();
         private readonly SessionClose close = new SessionClose();
+        private readonly PeerTransfer transfer = new PeerTransfer();
 
         private FomoxaServer server;
         private PeerStartHandler peerStart;
@@ -51,6 +52,8 @@ namespace Fomoxa.Networking.Sessions
         public event Action<HandlerExceptionArgs> OnHandlerException;
 
         public ServerState State { get; private set; } = ServerState.Stopped;
+
+        internal int LocalListenerIndex { get; set; } = -1;
 
         public int PeerCount => peers.Count;
 
@@ -249,6 +252,39 @@ namespace Fomoxa.Networking.Sessions
             }
 
             BeginClose(peer, SessionCloseReason.Kicked, StopReason.LocalStop);
+            return true;
+        }
+
+        public bool Transfer(ulong peerId, string address, ushort port, ReadOnlyMemory<byte> ticket)
+        {
+            if (address == null)
+            {
+                throw new ArgumentNullException(nameof(address));
+            }
+
+            if (!peers.TryGetValue(peerId, out Peer peer) || !peer.Accepts)
+            {
+                return false;
+            }
+
+            if (LocalListenerIndex >= 0 && peer.ListenerIndex == LocalListenerIndex)
+            {
+                throw new InvalidOperationException("the local client of a host cannot be transferred to another server");
+            }
+
+            transfer.Address = address;
+            transfer.Port = port;
+            transfer.Ticket = ticket;
+            try
+            {
+                peer.Outbox.EnqueueActiveUnbounded(protocol.TransferCodec.MessageId, protocol.TransferCodec.Encode(transfer).Span);
+            }
+            finally
+            {
+                transfer.Ticket = default;
+            }
+
+            BeginClose(peer, SessionCloseReason.Transferred, StopReason.Transferred);
             return true;
         }
 
@@ -565,6 +601,7 @@ namespace Fomoxa.Networking.Sessions
                 new ReliableChannel(limits.ReliableWindow),
                 BundleOf(owner.Listener));
             var peer = new Peer(peerId, outbox, (messageId, payload) => owner.Send(peerId, messageId, payload));
+            peer.ListenerIndex = owner.Listener is CompositeListener composite && composite.TryTakeAcceptedListener(out int listenerIndex) ? listenerIndex : -1;
             peers.Add(peerId, peer);
             RaisePeer(peerId, ConnectionState.Starting, StopReason.None, default, 0);
         }
@@ -628,6 +665,8 @@ namespace Fomoxa.Networking.Sessions
             public ServerAuthenticationContext Authentication { get; set; }
 
             public CancellationTokenSource AuthenticationCancellation { get; set; }
+
+            public int ListenerIndex { get; set; }
 
             public bool Accepts => State == ConnectionState.Started && !Closing;
         }

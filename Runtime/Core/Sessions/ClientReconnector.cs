@@ -61,6 +61,19 @@ namespace Fomoxa.Networking.Sessions
             session.Tick(now);
         }
 
+        public void Redirect(Func<ITransportConnector> source)
+        {
+            if (source == null)
+            {
+                throw new ArgumentNullException(nameof(source));
+            }
+
+            if (connectorSource != null)
+            {
+                connectorSource = source;
+            }
+        }
+
         public void Stop()
         {
             connectorSource = null;
@@ -83,8 +96,13 @@ namespace Fomoxa.Networking.Sessions
                 retries = 0;
             }
 
-            bool willRetry = args.State == ConnectionState.Stopped && ShouldRetry(args);
-            if (willRetry)
+            bool transferred = args.State == ConnectionState.Stopped && args.Reason == StopReason.Transferred && connectorSource != null;
+            bool willRetry = transferred || (args.State == ConnectionState.Stopped && ShouldRetry(args));
+            if (transferred)
+            {
+                retryAt = lastNow;
+            }
+            else if (willRetry)
             {
                 retries++;
                 retryAt = lastNow + policy.Interval;

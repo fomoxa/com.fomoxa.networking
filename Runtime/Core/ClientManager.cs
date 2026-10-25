@@ -69,6 +69,7 @@ namespace Fomoxa.Networking
             session.OnClientConnectionState += PrepareSceneObjectsWhenStarted;
             session.OnClientConnectionState += EndHostVisibilityWhenStopped;
             reconnector = new ClientReconnector(session, reconnectPolicy);
+            session.SetTransferringHandler(Transfer);
             Objects = new ClientObjects(session, objectProtocol, Entities, sceneProtocol, new HostAwareSceneHost(this));
             Entities.Attach(Objects);
             Objects.OnObjectMismatch += RaiseObjectMismatch;
@@ -103,6 +104,8 @@ namespace Fomoxa.Networking
         public event Action<HandlerExceptionArgs> OnHandlerException;
 
         public event Action<ObjectMismatchArgs> OnObjectMismatch;
+
+        public event Action<TransferringArgs> OnTransferring;
 
         public MessageDispatcher Dispatcher { get; }
 
@@ -186,6 +189,7 @@ namespace Fomoxa.Networking
                 throw new InvalidOperationException("the client is already running");
             }
 
+            session.ForgetTransferTicket();
             if (serverManager.State == ServerState.Started)
             {
                 Entities.ConnectedLocally = true;
@@ -341,6 +345,12 @@ namespace Fomoxa.Networking
 
             timeManager.UseTickRate(Objects.ServerTickRate);
             clock.Estimator.SetTickRate(Objects.ServerTickRate);
+        }
+
+        private void Transfer(string address, ushort port)
+        {
+            OnTransferring?.Invoke(new TransferringArgs(address, port));
+            reconnector.Redirect(() => transport.CreateConnector(address, port));
         }
 
         private void RestoreTickRateWhenStopped(ConnectionStateArgs args)

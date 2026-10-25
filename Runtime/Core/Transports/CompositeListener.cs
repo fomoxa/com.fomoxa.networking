@@ -9,6 +9,7 @@ namespace Fomoxa.Networking.Transports
         private readonly IListenerTransport[] listeners;
         private readonly int[] budgets;
         private readonly Queue<int> acceptedBudgets = new Queue<int>();
+        private readonly Queue<int> acceptedListeners = new Queue<int>();
         private int nextIndex;
 
         public CompositeListener(params IListenerTransport[] listeners)
@@ -45,6 +46,7 @@ namespace Fomoxa.Networking.Transports
                 if (outcome.Status == AcceptStatus.Accepted)
                 {
                     RecordBudget(index);
+                    acceptedListeners.Enqueue(index);
                 }
 
                 if (outcome.Status == AcceptStatus.Accepted || outcome.Status == AcceptStatus.Progress)
@@ -70,6 +72,18 @@ namespace Fomoxa.Networking.Transports
             }
 
             budget = acceptedBudgets.Dequeue();
+            return true;
+        }
+
+        public bool TryTakeAcceptedListener(out int index)
+        {
+            if (acceptedListeners.Count == 0)
+            {
+                index = -1;
+                return false;
+            }
+
+            index = acceptedListeners.Dequeue();
             return true;
         }
 

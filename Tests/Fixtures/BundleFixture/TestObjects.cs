@@ -79,6 +79,8 @@ namespace BundleFixture
                 new MessageSchema(Handshake.FragmentStartNetMessageId, Handshake.FragmentStartNetFingerprint, Handshake.FragmentStartNetPrefixes),
                 new MessageSchema(Handshake.FragmentPartNetMessageId, Handshake.FragmentPartNetFingerprint, Handshake.FragmentPartNetPrefixes),
                 new MessageSchema(Handshake.SessionCloseNetMessageId, Handshake.SessionCloseNetFingerprint, Handshake.SessionCloseNetPrefixes),
+                new MessageSchema(Handshake.PeerTransferNetMessageId, Handshake.PeerTransferNetFingerprint, Handshake.PeerTransferNetPrefixes),
+                new MessageSchema(Handshake.TransferTicketNetMessageId, Handshake.TransferTicketNetFingerprint, Handshake.TransferTicketNetPrefixes),
                 new MessageSchema(Handshake.SceneFileNetMessageId, Handshake.SceneFileNetFingerprint, Handshake.SceneFileNetPrefixes),
                 new MessageSchema(Handshake.CollectionChangesNetMessageId, Handshake.CollectionChangesNetFingerprint, Handshake.CollectionChangesNetPrefixes),
                 new MessageSchema(Handshake.CollectionContentNetMessageId, Handshake.CollectionContentNetFingerprint, Handshake.CollectionContentNetPrefixes),
@@ -127,6 +129,8 @@ namespace BundleFixture
             registry.SetCodec(FragmentStartNetAdapter.Instance);
             registry.SetCodec(FragmentPartNetAdapter.Instance);
             registry.SetCodec(SessionCloseNetAdapter.Instance);
+            registry.SetCodec(PeerTransferNetAdapter.Instance);
+            registry.SetCodec(TransferTicketNetAdapter.Instance);
             registry.SetCodec(SceneFileNetAdapter.Instance);
             registry.SetCodec(CollectionChangesNetAdapter.Instance);
             registry.SetCodec(CollectionContentNetAdapter.Instance);
@@ -148,6 +152,7 @@ namespace BundleFixture
             registry.Channels.Set(TestBundles.FragmentStartId, Channel.ReliableOrdered);
             registry.Channels.Set(TestBundles.FragmentPartId, Channel.ReliableOrdered);
             registry.Channels.Set(TestBundles.CloseId, Channel.ReliableOrdered);
+            registry.Channels.Set(TestBundles.TransferId, Channel.ReliableOrdered);
             registry.Channels.Set(SpawnId, Channel.ReliableOrdered);
             registry.Channels.Set(SceneSpawnId, Channel.ReliableOrdered);
             registry.Channels.Set(DespawnId, Channel.ReliableOrdered);

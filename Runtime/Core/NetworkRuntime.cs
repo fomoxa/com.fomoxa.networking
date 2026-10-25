@@ -37,6 +37,7 @@ namespace Fomoxa.Networking
             IMessageCodec<FragmentStart> fragmentStartCodec = RequireCodec<FragmentStart>();
             IMessageCodec<FragmentPart> fragmentPartCodec = RequireCodec<FragmentPart>();
             IMessageCodec<SessionClose> closeCodec = RequireCodec<SessionClose>();
+            IMessageCodec<PeerTransfer> transferCodec = RequireCodec<PeerTransfer>();
             var objectProtocol = new ObjectProtocol(
                 RequireCodec<LocalPeer>(),
                 RequireCodec<ObjectSpawn>(),
@@ -79,6 +80,7 @@ namespace Fomoxa.Networking
                 fragmentStartCodec,
                 fragmentPartCodec,
                 closeCodec,
+                transferCodec,
                 registry.Channels);
             var sessionConfig = new SessionConfig
             {

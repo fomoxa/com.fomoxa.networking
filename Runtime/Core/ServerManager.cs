@@ -201,6 +201,7 @@ namespace Fomoxa.Networking
             LocalListener = localListener;
             Port = boundPort;
             session.Start(new CompositeListener(new[] { network, localListener }, new[] { transport.FrameBudget, transport.FrameBudget }));
+            session.LocalListenerIndex = 1;
             SpawnSceneObjects();
         }
 
@@ -222,6 +223,9 @@ namespace Fomoxa.Networking
         public void Disconnect(ulong peerId) => session.Disconnect(peerId);
 
         public bool Kick(ulong peerId) => session.Kick(peerId);
+
+        public bool Transfer(ulong peerId, string address, ushort port, ReadOnlyMemory<byte> ticket) =>
+            session.Transfer(peerId, address, port, ticket);
 
         public void Spawn(INetworkEntity networkObject, ulong ownerId = 0)
         {

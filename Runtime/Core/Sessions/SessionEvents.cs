@@ -36,6 +36,7 @@ namespace Fomoxa.Networking.Sessions
         UnauthenticatedMessage,
         AuthenticationFailed,
         AuthenticationTimeout,
+        Transferred,
     }
 
     public enum SessionCloseReason : byte
@@ -45,6 +46,7 @@ namespace Fomoxa.Networking.Sessions
         Kicked = 2,
         AuthenticationFailed = 3,
         AuthenticationTimeout = 4,
+        Transferred = 5,
     }
 
     public readonly struct ServerConnectionStateArgs
@@ -122,6 +124,19 @@ namespace Fomoxa.Networking.Sessions
         public ulong PeerId { get; }
 
         public int FrameLength { get; }
+    }
+
+    public readonly struct TransferringArgs
+    {
+        public TransferringArgs(string address, ushort port)
+        {
+            Address = address;
+            Port = port;
+        }
+
+        public string Address { get; }
+
+        public ushort Port { get; }
     }
 
     public readonly struct HandlerExceptionArgs

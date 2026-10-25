@@ -14,9 +14,12 @@ namespace Fomoxa.Networking.Sessions
         private FragmentStart fragmentStart = new FragmentStart();
         private FragmentPart fragmentPart = new FragmentPart();
         private SessionClose close = new SessionClose();
+        private PeerTransfer transfer = new PeerTransfer();
         private bool leaving;
         private bool closed;
         private SessionCloseReason closeReason;
+        private bool acceptsTransfer;
+        private bool transferred;
         private bool violated;
         private bool refused;
         private bool accepts;
@@ -37,7 +40,7 @@ namespace Fomoxa.Networking.Sessions
 
         public bool HasFailed => failure != null || violated || refused;
 
-        public bool IsClosed => closed;
+        public bool IsClosed => closed || transferred;
 
         public bool Gated { get; set; }
 
@@ -46,6 +49,11 @@ namespace Fomoxa.Networking.Sessions
             accepted = onAccepted ?? throw new ArgumentNullException(nameof(onAccepted));
             acceptanceId = messageId;
             accepts = true;
+        }
+
+        public void AcceptTransfer()
+        {
+            acceptsTransfer = true;
         }
 
         public bool TryRead(uint messageId, ReadOnlyMemory<byte> payload, ReliableChannel reliable)
@@ -154,6 +162,14 @@ namespace Fomoxa.Networking.Sessions
             return taken;
         }
 
+        public bool TakeTransfer(out PeerTransfer target)
+        {
+            target = transfer;
+            bool taken = transferred;
+            transferred = false;
+            return taken;
+        }
+
         public bool TakeLeave()
         {
             bool taken = leaving;
@@ -173,6 +189,12 @@ namespace Fomoxa.Networking.Sessions
                 protocol.CloseCodec.Decode(data, ref close);
                 closed = true;
                 closeReason = (SessionCloseReason)close.Reason;
+                return;
+            }
+
+            if (acceptsTransfer && messageId == protocol.TransferCodec.MessageId)
+            {
+                ReceiveTransfer(peerId, data);
                 return;
             }
 
@@ -200,6 +222,26 @@ namespace Fomoxa.Networking.Sessions
             }
 
             Dispatch(peerId, assembledId, assembled);
+        }
+
+        private void ReceiveTransfer(ulong peerId, ReadOnlyMemory<byte> data)
+        {
+            if (Gated)
+            {
+                refused = true;
+                return;
+            }
+
+            try
+            {
+                protocol.TransferCodec.Decode(data, ref transfer);
+                transfer.Ticket = transfer.Ticket.ToArray();
+                transferred = true;
+            }
+            catch (MessageDecodeException)
+            {
+                entryDropped(peerId, data.Length + SeqHeader.Length);
+            }
         }
 
         private bool Assemble(uint messageId, ReadOnlyMemory<byte> data, FragmentAssembler fragments)

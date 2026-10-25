@@ -260,6 +260,76 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ClientInstancesStopBeforeTheStoppedHandlerRuns()
+        {
+            Connect();
+            server.ServerManager.Spawn(UnityEngine.Object.Instantiate(prefab));
+            RunFrames(3);
+            RecordingBehaviour.Log.Clear();
+            client.ClientManager.OnClientConnectionState += args =>
+                RecordingBehaviour.Log.Add($"{args.State} {args.Reason} spawned={client.ClientManager.Spawned.Count}");
+
+            client.ClientManager.StopConnection();
+
+            Assert.AreEqual(new[] { "1 StopClient", "Stopped LocalStop spawned=0" }, RecordingBehaviour.Log);
+        }
+
+        [Test]
+        public void ClientInstancesStopBeforeTheStoppedHandlerWhenTheServerStops()
+        {
+            Connect();
+            server.ServerManager.Spawn(UnityEngine.Object.Instantiate(prefab));
+            RunFrames(3);
+            client.ClientManager.OnClientConnectionState += args =>
+                RecordingBehaviour.Log.Add($"{args.State} {args.Reason} spawned={client.ClientManager.Spawned.Count}");
+            RecordingBehaviour.Log.Clear();
+
+            server.ServerManager.StopConnection();
+            RunFrames(5);
+
+            CollectionAssert.AreEqual(new[] { "1 StopServer", "1 StopClient", "Stopped PeerClosed spawned=0" }, RecordingBehaviour.Log.GetRange(0, 3));
+        }
+
+        [Test]
+        public void ATransferredClientStopsItsInstancesBetweenTheAnnouncementAndTheStop()
+        {
+            Connect();
+            server.ServerManager.Spawn(UnityEngine.Object.Instantiate(prefab));
+            RunFrames(3);
+            ulong transferredPeer = clientPeerId;
+            var peerStops = new List<StopReason>();
+            server.ServerManager.OnRemoteConnectionState += args =>
+            {
+                if (args.State == ConnectionState.Stopped)
+                {
+                    peerStops.Add(args.Reason);
+                }
+            };
+            client.ClientManager.OnTransferring += args =>
+                RecordingBehaviour.Log.Add($"Transferring {args.Address}:{args.Port} spawned={client.ClientManager.Spawned.Count}");
+            client.ClientManager.OnClientConnectionState += args =>
+                RecordingBehaviour.Log.Add($"{args.State} {args.Reason} retry={args.WillRetry}");
+            RecordingBehaviour.Log.Clear();
+
+            Assert.IsTrue(server.ServerManager.Transfer(transferredPeer, "unused.invalid", 1, new byte[] { 1 }));
+            RunFrames(20);
+
+            Assert.AreEqual(new[]
+            {
+                "Transferring unused.invalid:1 spawned=1",
+                "1 StopClient",
+                "Stopped Transferred retry=True",
+                "Starting None retry=False",
+                "Authenticating None retry=False",
+                "Started None retry=False",
+                "1 StartClient",
+            }, RecordingBehaviour.Log);
+            Assert.AreEqual(new[] { StopReason.Transferred }, peerStops);
+            Assert.AreNotEqual(transferredPeer, clientPeerId);
+            Assert.AreEqual(1, client.ClientManager.Spawned.Count);
+        }
+
+        [Test]
         public void UnknownPrefabStopsTheClientWithPrefabMismatch()
         {
             NetworkObject other = TestPrefabs.Create("Other", OtherPrefabId);

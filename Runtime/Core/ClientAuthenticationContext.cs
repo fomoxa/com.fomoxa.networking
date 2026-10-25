@@ -9,13 +9,16 @@ namespace Fomoxa.Networking
     {
         private readonly ClientSession session;
 
-        internal ClientAuthenticationContext(ClientSession session, CancellationToken cancellationToken)
+        internal ClientAuthenticationContext(ClientSession session, CancellationToken cancellationToken, ReadOnlyMemory<byte> ticket)
         {
             this.session = session;
             CancellationToken = cancellationToken;
+            Ticket = ticket;
         }
 
         public CancellationToken CancellationToken { get; }
+
+        public ReadOnlyMemory<byte> Ticket { get; }
 
         public SendResult Send<T>(IMessageCodec<T> codec, T value)
         {

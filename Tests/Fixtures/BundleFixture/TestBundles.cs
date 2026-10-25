@@ -15,6 +15,7 @@ namespace BundleFixture
             channels.Set(FragmentStartId, Channel.ReliableOrdered);
             channels.Set(FragmentPartId, Channel.ReliableOrdered);
             channels.Set(CloseId, Channel.ReliableOrdered);
+            channels.Set(TransferId, Channel.ReliableOrdered);
             channels.Set(LocalPeerId, Channel.ReliableOrdered);
             return new SessionProtocol(
                 Format(frameBudget),
@@ -23,6 +24,7 @@ namespace BundleFixture
                 FragmentStartNetAdapter.Instance,
                 FragmentPartNetAdapter.Instance,
                 SessionCloseNetAdapter.Instance,
+                PeerTransferNetAdapter.Instance,
                 channels);
         }
 
@@ -37,6 +39,8 @@ namespace BundleFixture
         public static uint FragmentPartId => FragmentPartNetAdapter.Instance.MessageId;
 
         public static uint CloseId => SessionCloseNetAdapter.Instance.MessageId;
+
+        public static uint TransferId => PeerTransferNetAdapter.Instance.MessageId;
 
         public static uint LocalPeerId => LocalPeerNetAdapter.Instance.MessageId;
     }

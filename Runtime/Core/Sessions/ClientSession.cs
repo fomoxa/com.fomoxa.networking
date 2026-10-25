@@ -30,6 +30,8 @@ namespace Fomoxa.Networking.Sessions
         private Action<ClientAuthenticationContext> authenticating;
         private ClientAuthenticationContext authentication;
         private CancellationTokenSource authenticationCancellation;
+        private Action<string, ushort> transferring;
+        private ReadOnlyMemory<byte> transferTicket;
 
         public ClientSession(Schema schema, SessionConfig config, SessionLimits limits, MessageDispatcher dispatcher, SessionProtocol protocol)
         {
@@ -39,6 +41,7 @@ namespace Fomoxa.Networking.Sessions
             this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             this.protocol = protocol ?? throw new ArgumentNullException(nameof(protocol));
             inbox = new SessionInbox(protocol, dispatcher, (peerId, length) => OnReceiveDropped?.Invoke(new ReceiveDroppedArgs(peerId, length)));
+            inbox.AcceptTransfer();
         }
 
         public event Action<ConnectionStateArgs> OnClientConnectionState;
@@ -201,6 +204,16 @@ namespace Fomoxa.Networking.Sessions
             inbox.SetAcceptance(messageId, Accept);
         }
 
+        internal void SetTransferringHandler(Action<string, ushort> handler)
+        {
+            transferring = handler;
+        }
+
+        internal void ForgetTransferTicket()
+        {
+            transferTicket = default;
+        }
+
         internal void SetAuthenticatingHandler(Action<ClientAuthenticationContext> handler)
         {
             authenticating = handler;
@@ -266,6 +279,10 @@ namespace Fomoxa.Networking.Sessions
                 connection.Close();
                 End(StopReason.UnauthenticatedMessage, default);
             }
+            else if (inbox.TakeTransfer(out PeerTransfer target) && State != ConnectionState.Stopped)
+            {
+                Transfer(target);
+            }
             else if (inbox.TakeClose(out SessionCloseReason closeReason) && State != ConnectionState.Stopped)
             {
                 connection.Close();
@@ -273,12 +290,25 @@ namespace Fomoxa.Networking.Sessions
             }
         }
 
+        private void Transfer(PeerTransfer target)
+        {
+            transferTicket = target.Ticket;
+            transferring?.Invoke(target.Address, target.Port);
+            if (State == ConnectionState.Stopped)
+            {
+                return;
+            }
+
+            connection.Close();
+            End(StopReason.Transferred, default);
+        }
+
         private void Authenticate()
         {
             outbox.Gate();
             inbox.Gated = true;
             authenticationCancellation = new CancellationTokenSource();
-            authentication = new ClientAuthenticationContext(this, authenticationCancellation.Token);
+            authentication = new ClientAuthenticationContext(this, authenticationCancellation.Token, transferTicket);
             ChangeState(ConnectionState.Authenticating, StopReason.None, default, 0);
             if (State != ConnectionState.Authenticating || authenticating == null)
             {
@@ -298,6 +328,7 @@ namespace Fomoxa.Networking.Sessions
         private bool Accept()
         {
             outbox.OpenGate(false);
+            transferTicket = default;
             ChangeState(ConnectionState.Started, StopReason.None, default, 0);
             if (State != ConnectionState.Started)
             {
@@ -375,8 +406,9 @@ namespace Fomoxa.Networking.Sessions
             outbox = null;
             sender = null;
             discarded = 0;
-            ChangeState(ConnectionState.Stopped, reason, failure, total, closeReason);
+            State = ConnectionState.Stopped;
             stopped?.Invoke();
+            RaiseState(ConnectionState.Stopped, reason, failure, total, closeReason);
             Exception exception = CancelAuthentication(cancellation);
             if (exception != null)
             {
@@ -405,7 +437,10 @@ namespace Fomoxa.Networking.Sessions
         private void ChangeState(ConnectionState state, StopReason reason, HandshakeFailure failure, int discardedMessages, SessionCloseReason closeReason = SessionCloseReason.Unspecified)
         {
             State = state;
-            OnClientConnectionState?.Invoke(new ConnectionStateArgs(0, state, reason, failure, discardedMessages, closeReason: closeReason));
+            RaiseState(state, reason, failure, discardedMessages, closeReason);
         }
+
+        private void RaiseState(ConnectionState state, StopReason reason, HandshakeFailure failure, int discardedMessages, SessionCloseReason closeReason) =>
+            OnClientConnectionState?.Invoke(new ConnectionStateArgs(0, state, reason, failure, discardedMessages, closeReason: closeReason));
     }
 }
