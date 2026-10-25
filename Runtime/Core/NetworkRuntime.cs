@@ -136,6 +136,7 @@ namespace Fomoxa.Networking
 
                 physics = value;
                 ClientManager.Prediction.Physics = value;
+                ServerManager.Entities.Motion = value as IPhysicsMotion;
             }
         }
 
@@ -238,6 +239,11 @@ namespace Fomoxa.Networking
                 TimeManager.RaisePostTick();
                 ServerManager.RebuildObserversRound();
                 ServerManager.SyncStates();
+                if (worlds is IPhysicsMotion motion)
+                {
+                    ServerManager.Entities.CollectMotion(motion);
+                }
+
                 ServerManager.SyncTransforms(TimeManager.Tick);
                 if (TimeManager.Mode == TimingMode.Tick)
                 {

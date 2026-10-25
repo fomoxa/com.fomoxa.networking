@@ -17,17 +17,28 @@ namespace Fomoxa.Networking
         private Quaternion sampledRotation;
         private Vector3 sampledScale;
         private bool moving;
+        private TransformSyncSettings syncSettings;
 
         public TransformSync(TransformSyncSettings settings)
         {
-            Settings = settings;
+            syncSettings = settings;
         }
 
-        public TransformSyncSettings Settings { get; set; }
+        public TransformSyncSettings Settings
+        {
+            get => syncSettings;
+            set
+            {
+                syncSettings = value;
+                behaviour?.TransformSlot?.Signal();
+            }
+        }
 
         public byte Generation { get; private set; }
 
         internal bool SettlePending { get; set; }
+
+        internal bool Moving => moving;
 
         internal byte SelectedMask =>
             (byte)((Settings.SyncPosition ? SpawnTransform.PositionBit : 0)
@@ -43,6 +54,7 @@ namespace Fomoxa.Networking
 
             Generation++;
             SettlePending = true;
+            behaviour.TransformSlot?.Signal();
         }
 
         internal void Bind(EntityBehaviour owner)

@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Reflection;
 using Fomoxa.Networking.Simulation;
 
 namespace Fomoxa.Networking.Standalone
 {
-    public class StandaloneEntity : INetworkEntity
+    public class StandaloneEntity : INetworkEntity, IPoseSignals
     {
+        private static readonly Dictionary<Type, bool> PoseOverrides = new Dictionary<Type, bool>();
         private readonly EntityBehaviour[] behaviours;
         private Vector3 position;
         private Quaternion rotation = Quaternion.Identity;
@@ -15,6 +17,7 @@ namespace Fomoxa.Networking.Standalone
         private BodyDesc2D? fileBody2D;
         private float? fileAngle;
         private bool attached;
+        private readonly bool signalsPose;
 
         public StandaloneEntity(uint prefabId, IReadOnlyList<EntityBehaviour> behaviours)
             : this(prefabId, 0, 0, behaviours)
@@ -37,6 +40,7 @@ namespace Fomoxa.Networking.Standalone
                 this.behaviours[index] = behaviours[index];
             }
 
+            signalsPose = !OverridesPose(GetType());
             EntityBehaviour.Attach(this);
         }
 
@@ -89,6 +93,8 @@ namespace Fomoxa.Networking.Standalone
                     PhysicsBody2D body = Body2D;
                     body.Position = new Vector2(value.X, value.Y);
                 }
+
+                SignalPose();
             }
         }
 
@@ -123,16 +129,26 @@ namespace Fomoxa.Networking.Standalone
                     PhysicsBody2D body = Body2D;
                     body.Rotation = AngleOf(value);
                 }
+
+                SignalPose();
             }
         }
 
         public virtual Vector3 Scale
         {
             get => scale;
-            set => scale = value;
+            set
+            {
+                scale = value;
+                SignalPose();
+            }
         }
 
         internal uint SceneFingerprint { get; }
+
+        bool IPoseSignals.SignalsPose => signalsPose;
+
+        bool IPoseSignals.HasBody => Body.IsValid || Body2D.IsValid;
 
         public virtual bool TryGetBody(out BodyDesc body)
         {
@@ -183,6 +199,40 @@ namespace Fomoxa.Networking.Standalone
             Body = default;
             Body2D = default;
             attached = false;
+        }
+
+        private void SignalPose()
+        {
+            EntityRecord record = Record;
+            record?.Server?.SignalTransform(record);
+        }
+
+        private static bool OverridesPose(Type type)
+        {
+            lock (PoseOverrides)
+            {
+                if (!PoseOverrides.TryGetValue(type, out bool overrides))
+                {
+                    overrides = OverridesGetter(type, nameof(Position)) || OverridesGetter(type, nameof(Rotation)) || OverridesGetter(type, nameof(Scale));
+                    PoseOverrides.Add(type, overrides);
+                }
+
+                return overrides;
+            }
+        }
+
+        private static bool OverridesGetter(Type type, string property)
+        {
+            for (Type current = type; current != typeof(StandaloneEntity); current = current.BaseType)
+            {
+                MethodInfo getter = current.GetProperty(property, BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetMethod;
+                if (getter != null && getter.GetBaseDefinition().DeclaringType == typeof(StandaloneEntity))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static float AngleOf(Quaternion rotation) => 2f * MathF.Atan2(rotation.Z, rotation.W);

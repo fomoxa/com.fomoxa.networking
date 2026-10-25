@@ -4,6 +4,7 @@ using System.Numerics;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Prediction;
 using Fomoxa.Networking.Sessions;
+using Fomoxa.Networking.Simulation;
 
 namespace Fomoxa.Networking.Objects
 {
@@ -26,6 +27,10 @@ namespace Fomoxa.Networking.Objects
         private readonly LinkedList<EntityRecord> stateOrder = new LinkedList<EntityRecord>();
         private List<EntityRecord> queuedStates = new List<EntityRecord>();
         private List<EntityRecord> syncingStates = new List<EntityRecord>();
+        private readonly LinkedList<EntityRecord> transformOrder = new LinkedList<EntityRecord>();
+        private List<EntityRecord> queuedTransforms = new List<EntityRecord>();
+        private List<EntityRecord> syncingTransforms = new List<EntityRecord>();
+        private readonly List<INetworkEntity> moved = new List<INetworkEntity>();
         private long spawnSequence;
         private readonly HashSet<INetworkEntity> sceneObjects = new HashSet<INetworkEntity>();
         private readonly Dictionary<ulong, List<EntityRecord>> owned = new Dictionary<ulong, List<EntityRecord>>();
@@ -185,7 +190,7 @@ namespace Fomoxa.Networking.Objects
                 }
             }
 
-            CaptureTransforms(behaviours);
+            CaptureTransforms(record, behaviours);
 
             RouteRpcs(behaviours);
             RouteStates(behaviours);
@@ -221,6 +226,8 @@ namespace Fomoxa.Networking.Objects
             {
                 record.StateOrderNode = stateOrder.AddLast(record);
             }
+
+            QueueSpawnedTransforms(record);
             if (record.HasInput)
             {
                 record.InputOrderNode = inputOrder.AddLast(record);
@@ -403,7 +410,11 @@ namespace Fomoxa.Networking.Objects
                 for (int index = 0; index < enteredBehaviours.Count; index++)
                 {
                     TransformSlot slot = enteredBehaviours[index].TransformSlot;
-                    if (slot != null && !slot.Sync.SettlePending)
+                    if (slot != null && slot.Sync.SettlePending)
+                    {
+                        QueueTransform(enteredRecord);
+                    }
+                    else if (slot != null)
                     {
                         slot.Source.ReadLocal(out Vector3 position, out Quaternion rotation, out Vector3 scale);
                         if (enteredRecord.TransformsStale)
@@ -418,34 +429,111 @@ namespace Fomoxa.Networking.Objects
             }
 
             enteredObservers.Clear();
-            foreach (EntityRecord record in spawnOrder)
+            (queuedTransforms, syncingTransforms) = (syncingTransforms, queuedTransforms);
+            if (syncingTransforms.Count > 1)
             {
-                if (Objects.ObserversOf(record.ObjectId).Count == 0)
+                syncingTransforms.Sort(BySpawnSequence);
+            }
+
+            LinkedListNode<EntityRecord> node = transformOrder.First;
+            int queued = 0;
+            while (node != null || queued < syncingTransforms.Count)
+            {
+                EntityRecord record;
+                if (queued < syncingTransforms.Count && (node == null || syncingTransforms[queued].SpawnSequence < node.Value.SpawnSequence))
                 {
-                    record.TransformsStale = true;
+                    record = syncingTransforms[queued++];
+                    record.TransformQueued = false;
+                    if (record.Server != this)
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    record = node.Value;
+                    node = node.Next;
+                }
+
+                SyncTransform(record, tick);
+            }
+
+            syncingTransforms.Clear();
+        }
+
+        public IPhysicsMotion Motion { get; set; }
+
+        public void CollectMotion(IPhysicsMotion motion)
+        {
+            moved.Clear();
+            motion.CollectMoved(moved);
+            foreach (INetworkEntity entity in moved)
+            {
+                EntityRecord record = entity.Record;
+                if (record != null && record.Server == this)
+                {
+                    SignalTransform(record);
+                }
+            }
+
+            moved.Clear();
+        }
+
+        internal void SignalTransform(EntityRecord record)
+        {
+            record.TransformSignaled = true;
+            QueueTransform(record);
+        }
+
+        private void QueueTransform(EntityRecord record)
+        {
+            if (record.TransformQueued || record.TransformOrderNode != null)
+            {
+                return;
+            }
+
+            record.TransformQueued = true;
+            queuedTransforms.Add(record);
+        }
+
+        private void SyncTransform(EntityRecord record, uint tick)
+        {
+            bool signaled = record.TransformSignaled;
+            record.TransformSignaled = false;
+            if (Objects.ObserversOf(record.ObjectId).Count == 0)
+            {
+                record.TransformsStale = true;
+                return;
+            }
+
+            record.TransformsStale = false;
+            bool polled = false;
+            bool moving = false;
+            IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
+            for (int index = 0; index < behaviours.Count; index++)
+            {
+                TransformSlot slot = behaviours[index].TransformSlot;
+                if (slot == null)
+                {
                     continue;
                 }
 
-                record.TransformsStale = false;
-                IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
-                for (int index = 0; index < behaviours.Count; index++)
+                TransformSync sync = slot.Sync;
+                if (slot.Tracked && !signaled && !sync.Moving && !sync.SettlePending)
                 {
-                    TransformSlot slot = behaviours[index].TransformSlot;
-                    if (slot == null)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    TransformSync sync = slot.Sync;
-                    slot.Source.ReadLocal(out Vector3 position, out Quaternion rotation, out Vector3 scale);
-                    if (sync.SettlePending)
-                    {
-                        sync.SettlePending = false;
-                        sync.MarkSettled(position, rotation, scale);
-                        Objects.SendToObservers(transformProtocol.SettleCodec.MessageId, record.ObjectId, (byte)index, EncodeSettle(sync, tick, sync.SelectedMask, position, rotation, scale));
-                        continue;
-                    }
-
+                slot.Tracked = Follows(record, slot);
+                slot.Source.ReadLocal(out Vector3 position, out Quaternion rotation, out Vector3 scale);
+                if (sync.SettlePending)
+                {
+                    sync.SettlePending = false;
+                    sync.MarkSettled(position, rotation, scale);
+                    Objects.SendToObservers(transformProtocol.SettleCodec.MessageId, record.ObjectId, (byte)index, EncodeSettle(sync, tick, sync.SelectedMask, position, rotation, scale));
+                }
+                else
+                {
                     TransformSend send = sync.Sample(position, rotation, scale, out byte mask);
                     if (send == TransformSend.Update)
                     {
@@ -460,7 +548,66 @@ namespace Fomoxa.Networking.Objects
                         Objects.SendToObservers(transformProtocol.SettleCodec.MessageId, record.ObjectId, (byte)index, EncodeSettle(sync, tick, mask, position, rotation, scale));
                     }
                 }
+
+                polled |= !slot.Tracked;
+                moving |= slot.Tracked && sync.Moving;
             }
+
+            PlaceInTransformOrder(record, polled);
+            if (moving && !polled)
+            {
+                QueueTransform(record);
+            }
+        }
+
+        private bool Follows(EntityRecord record, TransformSlot slot)
+        {
+            switch (slot.Target)
+            {
+                case TransformTarget.EntityPose:
+                    return record.Representation is IPoseSignals signals
+                        && signals.SignalsPose
+                        && (!signals.HasBody || (Motion != null && Motion.ReportsMotion(record.Representation)));
+                case TransformTarget.BodyRoot:
+                    return !slot.Sync.Settings.SyncScale && Motion != null && Motion.ReportsMotion(record.Representation);
+                default:
+                    return false;
+            }
+        }
+
+        private void QueueSpawnedTransforms(EntityRecord record)
+        {
+            foreach (EntityBehaviour behaviour in record.Representation.EntityBehaviours)
+            {
+                if (behaviour.TransformSlot != null)
+                {
+                    SignalTransform(record);
+                    return;
+                }
+            }
+        }
+
+        private void PlaceInTransformOrder(EntityRecord record, bool polled)
+        {
+            if (polled == (record.TransformOrderNode != null))
+            {
+                return;
+            }
+
+            if (!polled)
+            {
+                transformOrder.Remove(record.TransformOrderNode);
+                record.TransformOrderNode = null;
+                return;
+            }
+
+            LinkedListNode<EntityRecord> after = transformOrder.Last;
+            while (after != null && after.Value.SpawnSequence > record.SpawnSequence)
+            {
+                after = after.Previous;
+            }
+
+            record.TransformOrderNode = after == null ? transformOrder.AddFirst(record) : transformOrder.AddAfter(after, record);
         }
 
         public void SyncStates()
@@ -639,6 +786,11 @@ namespace Fomoxa.Networking.Objects
             {
                 stateOrder.Remove(record.StateOrderNode);
                 record.StateOrderNode = null;
+            }
+            if (record.TransformOrderNode != null)
+            {
+                transformOrder.Remove(record.TransformOrderNode);
+                record.TransformOrderNode = null;
             }
             Groups.ForgetEntity(entity);
             if (record.InputOrderNode != null)
@@ -970,13 +1122,14 @@ namespace Fomoxa.Networking.Objects
             session.SendToObject(ownerId, inputProtocol.ReconcileCodec.MessageId, objectId, behaviourIndex, inputProtocol.ReconcileCodec.Encode(reconcileState).Span);
         }
 
-        private static void CaptureTransforms(IReadOnlyList<EntityBehaviour> behaviours)
+        private static void CaptureTransforms(EntityRecord record, IReadOnlyList<EntityBehaviour> behaviours)
         {
             foreach (EntityBehaviour behaviour in behaviours)
             {
                 TransformSlot slot = behaviour.TransformSlot;
                 if (slot != null)
                 {
+                    slot.Record = record;
                     slot.Source.ReadLocal(out Vector3 position, out Quaternion rotation, out Vector3 scale);
                     slot.Sync.CaptureSpawn(position, rotation, scale);
                 }

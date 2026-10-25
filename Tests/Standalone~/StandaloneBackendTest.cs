@@ -526,6 +526,227 @@ namespace Fomoxa.Networking.Standalone.Tests
             Assert.AreEqual(new Vector3(5, 0, 0), received[0].LocalPosition);
         }
 
+        [Test]
+        public void AnObjectSpawnedWithoutObserversIsSentAndReadOnceItGetsOne()
+        {
+            var onClient = new List<Glider>();
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () =>
+            {
+                var created = new Glider();
+                onClient.Add(created);
+                return new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { created });
+            });
+            Connect();
+            var rule = new SwitchRule { Open = false };
+            server.ServerManager.ObserverRule = rule;
+            var glider = new Glider { Position = new Vector3(1, 0, 0) };
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { glider });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            glider.Position = new Vector3(4, 0, 0);
+            Run(5);
+
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+            Vector3 afterEntry = onClient[0].Received[onClient[0].Received.Count - 1].LocalPosition;
+            glider.Position = new Vector3(6, 0, 0);
+            Run(5);
+
+            Assert.AreEqual(1, onClient.Count);
+            Assert.AreEqual(new Vector3(4, 0, 0), afterEntry);
+            Assert.AreEqual(new Vector3(6, 0, 0), onClient[0].Received[onClient[0].Received.Count - 1].LocalPosition);
+        }
+
+        [Test]
+        public void ATeleportWithoutObserversReachesTheNextObserverAsASettle()
+        {
+            List<PoseGlider> onClient = RegisterPoseGliders();
+            Connect();
+            var rule = new SwitchRule { Open = true };
+            server.ServerManager.ObserverRule = rule;
+            var glider = new PoseGlider();
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { glider });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            rule.Open = false;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+            player.Position = new Vector3(9, 0, 0);
+            glider.Sync.Teleport();
+            Run(5);
+
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+
+            Assert.AreEqual(2, onClient.Count);
+            List<TransformSample> received = onClient[1].Received;
+            Assert.IsTrue(received[received.Count - 1].Settle);
+            Assert.AreEqual(new Vector3(9, 0, 0), received[received.Count - 1].LocalPosition);
+            Assert.AreEqual(glider.Sync.Generation, received[received.Count - 1].Generation);
+            Assert.IsFalse(glider.Sync.SettlePending);
+        }
+
+        [Test]
+        public void ADespawnedObjectThatWasReadEveryTickIsNoLongerRead()
+        {
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () => new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { new Glider() }));
+            Connect();
+            var glider = new Glider();
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { glider });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            EntityRecord record = player.Record;
+            bool readEveryTick = record.TransformOrderNode != null;
+            int readsWhileSpawned = glider.Reads;
+            Run(5);
+            int readsBeforeDespawn = glider.Reads;
+
+            server.ServerManager.Despawn(player);
+            Run(5);
+
+            Assert.IsTrue(readEveryTick);
+            Assert.AreEqual(readsWhileSpawned + 5, readsBeforeDespawn);
+            Assert.IsNull(record.TransformOrderNode);
+            Assert.AreEqual(readsBeforeDespawn, glider.Reads);
+        }
+
+        [Test]
+        public void AnEntityPoseMovedThroughItsSetterReachesTheClientAndSettlesWithoutPerTickReads()
+        {
+            List<PoseGlider> onClient = RegisterPoseGliders();
+            Connect();
+            var glider = new PoseGlider();
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { glider });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            Assert.IsNull(player.Record.TransformOrderNode);
+            Assert.IsFalse(player.Record.TransformQueued);
+
+            for (int step = 1; step <= 3; step++)
+            {
+                player.Position = new Vector3(step, 0, 0);
+                Run(1);
+            }
+
+            Run(5);
+
+            List<TransformSample> received = onClient[0].Received;
+            Assert.AreEqual(5, received.Count);
+            Assert.IsTrue(received[0].Settle);
+            Assert.AreEqual(new Vector3(3, 0, 0), received[3].LocalPosition);
+            Assert.IsFalse(received[3].Settle);
+            Assert.IsTrue(received[4].Settle);
+            Assert.AreEqual(new Vector3(3, 0, 0), received[4].LocalPosition);
+            Assert.IsNull(player.Record.TransformOrderNode);
+            Assert.IsFalse(player.Record.TransformQueued);
+        }
+
+        [Test]
+        public void AnEntityThatOverridesAPoseGetterIsReadEveryTick()
+        {
+            List<PoseGlider> onClient = RegisterPoseGliders(syncScale: true);
+            Connect();
+            var glider = new PoseGlider(syncScale: true);
+            var player = new FacingEntity(PlayerPrefabId, glider);
+            server.ServerManager.Spawn(player);
+            Run(5);
+            Assert.IsNotNull(player.Record.TransformOrderNode);
+
+            player.FacesLeft = true;
+            Run(5);
+
+            List<TransformSample> received = onClient[0].Received;
+            Assert.AreEqual(new Vector3(-1, 1, 1), received[received.Count - 1].LocalScale);
+        }
+
+        [Test]
+        public void TeleportingAnUnmovedEntityPoseSendsASettleOfTheNextGeneration()
+        {
+            List<PoseGlider> onClient = RegisterPoseGliders();
+            Connect();
+            var glider = new PoseGlider();
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { glider });
+            server.ServerManager.Spawn(player);
+            Run(5);
+
+            glider.Sync.Teleport();
+            Run(3);
+
+            List<TransformSample> received = onClient[0].Received;
+            Assert.AreEqual(2, received.Count);
+            Assert.IsTrue(received[1].Settle);
+            Assert.AreEqual(1, received[1].Generation);
+        }
+
+        [Test]
+        public void AnEntityPoseThatMovedWithoutObserversReachesANewObserverInOneSettle()
+        {
+            List<PoseGlider> onClient = RegisterPoseGliders();
+            Connect();
+            var rule = new SwitchRule { Open = true };
+            server.ServerManager.ObserverRule = rule;
+            var player = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { new PoseGlider() });
+            server.ServerManager.Spawn(player);
+            Run(5);
+            rule.Open = false;
+            server.ServerManager.RebuildObservers();
+            Run(5);
+            for (int step = 1; step <= 5; step++)
+            {
+                player.Position = new Vector3(step, 0, 0);
+                Run(1);
+            }
+
+            rule.Open = true;
+            server.ServerManager.RebuildObservers();
+            Run(10);
+
+            Assert.AreEqual(2, onClient.Count);
+            List<TransformSample> received = onClient[1].Received;
+            Assert.AreEqual(1, received.Count);
+            Assert.IsTrue(received[0].Settle);
+            Assert.AreEqual(new Vector3(5, 0, 0), received[0].LocalPosition);
+        }
+
+        [Test]
+        public void EntityPosesMovedInOneTickReachTheClientInSpawnOrder()
+        {
+            var order = new List<int>();
+            int created = 0;
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () =>
+            {
+                var glider = new OrderedPoseGlider(order, created++);
+                return new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { glider });
+            });
+            Connect();
+            var first = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { new PoseGlider() });
+            var second = new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { new PoseGlider() });
+            server.ServerManager.Spawn(first);
+            server.ServerManager.Spawn(second);
+            Run(5);
+            order.Clear();
+
+            second.Position = new Vector3(1, 0, 0);
+            first.Position = new Vector3(1, 0, 0);
+            Run(1);
+
+            CollectionAssert.AreEqual(new[] { 0, 1 }, order);
+        }
+
+        private List<PoseGlider> RegisterPoseGliders(bool syncScale = false)
+        {
+            var onClient = new List<PoseGlider>();
+            clientPrefabs.Register(PlayerPrefabId, PlayerFingerprint, () =>
+            {
+                var created = new PoseGlider(syncScale);
+                onClient.Add(created);
+                return new StandaloneEntity(PlayerPrefabId, new EntityBehaviour[] { created });
+            });
+            return onClient;
+        }
+
         private void Connect(params uint[] bootScenes)
         {
             var factory = new LoopbackFactory();
@@ -643,10 +864,13 @@ namespace Fomoxa.Networking.Standalone.Tests
 
             public Vector3 Position { get; set; }
 
+            public int Reads { get; private set; }
+
             public List<TransformSample> Received { get; } = new List<TransformSample>();
 
             public void ReadLocal(out Vector3 localPosition, out Quaternion localRotation, out Vector3 localScale)
             {
+                Reads++;
                 localPosition = Position;
                 localRotation = Quaternion.Identity;
                 localScale = Vector3.One;
@@ -657,6 +881,60 @@ namespace Fomoxa.Networking.Standalone.Tests
             }
 
             public void Receive(in TransformSample sample) => Received.Add(sample);
+        }
+
+        private sealed class PoseGlider : EntityBehaviour, ITransformReceiver
+        {
+            public PoseGlider(bool syncScale = false)
+            {
+                Sync = new TransformSync(new TransformSyncSettings(true, true, syncScale, 0.01f, 0.1f, 0.01f));
+                SyncTransform(Sync, this);
+            }
+
+            public TransformSync Sync { get; }
+
+            public List<TransformSample> Received { get; } = new List<TransformSample>();
+
+            public void ResetReceive()
+            {
+            }
+
+            public void Receive(in TransformSample sample) => Received.Add(sample);
+        }
+
+        private sealed class OrderedPoseGlider : EntityBehaviour, ITransformReceiver
+        {
+            private readonly List<int> order;
+            private readonly int index;
+
+            public OrderedPoseGlider(List<int> order, int index)
+            {
+                this.order = order;
+                this.index = index;
+                SyncTransform(new TransformSync(new TransformSyncSettings(true, true, false, 0.01f, 0.1f, 0.01f)), this);
+            }
+
+            public void ResetReceive()
+            {
+            }
+
+            public void Receive(in TransformSample sample) => order.Add(index);
+        }
+
+        private sealed class FacingEntity : StandaloneEntity
+        {
+            public FacingEntity(uint prefabId, EntityBehaviour behaviour)
+                : base(prefabId, new[] { behaviour })
+            {
+            }
+
+            public bool FacesLeft { get; set; }
+
+            public override Vector3 Scale
+            {
+                get => new Vector3(FacesLeft ? -1 : 1, 1, 1);
+                set => base.Scale = value;
+            }
         }
 
         private sealed class SwitchRule : IObserverRule

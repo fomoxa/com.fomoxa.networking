@@ -17,6 +17,8 @@ namespace Fomoxa.Networking.Standalone.Tests
     {
         private const uint BallPrefabId = 0x0000_0B01;
         private const uint BallFingerprint = 0x0000_0BA1;
+        private const uint TrackedBallPrefabId = 0x0000_0B02;
+        private const uint TrackedBallFingerprint = 0x0000_0BA2;
         private const uint ArenaSceneId = 0x00A1_E7A0;
         private const double FrameSeconds = 1.0 / 30;
         private static readonly BodyMotion2D CrateMotion = new BodyMotion2D(BodyLocks2D.Rotation, 1.5f, 0.25f, 0.5f);
@@ -188,6 +190,144 @@ namespace Fomoxa.Networking.Standalone.Tests
             };
         }
 
+        [Test]
+        public void AnEntityWithABodyIsReadOnlyWhileThePhysicsReportsItMoving()
+        {
+            var physics = new ReportingPhysicsScenes();
+            serverPhysics = physics;
+            List<List<TransformSample>> onClient = RegisterTrackedBalls(() => new PoseBall());
+            Connect();
+            var ball = new TrackedBall(new PoseBall());
+            server.ServerManager.Spawn(ball);
+            Run(5);
+            Assert.IsNull(ball.Record.TransformOrderNode);
+
+            PhysicsBody body = ball.Body;
+            body.Velocity = new Vector3(3f, 0f, 0f);
+            Run(5);
+            Assert.AreEqual(1, onClient[0].Count);
+
+            physics.Awake.Add(ball);
+            Run(5);
+            Assert.Greater(onClient[0].Count, 1);
+            Assert.IsFalse(onClient[0][onClient[0].Count - 1].Settle);
+
+            body.Velocity = Vector3.Zero;
+            physics.Awake.Remove(ball);
+            Run(5);
+            TransformSample last = onClient[0][onClient[0].Count - 1];
+            Assert.IsTrue(last.Settle);
+            Assert.AreEqual(ball.Position, last.LocalPosition);
+            Assert.IsFalse(ball.Record.TransformQueued);
+        }
+
+        [Test]
+        public void ABodyWrittenInATickHandlerIsSentInThatTick()
+        {
+            var physics = new ReportingPhysicsScenes();
+            serverPhysics = physics;
+            List<List<TransformSample>> onClient = RegisterTrackedBalls(() => new PoseBall());
+            Connect();
+            var ball = new TrackedBall(new PoseBall());
+            server.ServerManager.Spawn(ball);
+            Run(5);
+            int settled = onClient[0].Count;
+            uint writtenAt = 0;
+            void Write()
+            {
+                if (writtenAt == 0)
+                {
+                    writtenAt = server.TimeManager.Tick;
+                    PhysicsBody body = ball.Body;
+                    body.Position = new Vector3(2f, 0f, 0f);
+                    physics.Written.Add(ball);
+                }
+            }
+
+            server.TimeManager.OnTick += Write;
+            Run(5);
+            server.TimeManager.OnTick -= Write;
+
+            Assert.Greater(onClient[0].Count, settled);
+            Assert.AreEqual(writtenAt, onClient[0][settled].Tick);
+            Assert.AreEqual(new Vector3(2f, 0f, 0f), onClient[0][settled].LocalPosition);
+        }
+
+        [Test]
+        public void WithoutMotionReportsAnEntityWithABodyIsReadEveryTick()
+        {
+            List<List<TransformSample>> onClient = RegisterTrackedBalls(() => new PoseBall());
+            Connect();
+            var ball = new TrackedBall(new PoseBall());
+            server.ServerManager.Spawn(ball);
+            Run(5);
+            Assert.IsNotNull(ball.Record.TransformOrderNode);
+
+            PhysicsBody body = ball.Body;
+            body.Velocity = new Vector3(3f, 0f, 0f);
+            Run(5);
+
+            Assert.Greater(onClient[0].Count, 1);
+        }
+
+        [Test]
+        public void ABodyRootThatSyncsScaleIsReadEveryTick()
+        {
+            var physics = new ReportingPhysicsScenes();
+            serverPhysics = physics;
+            List<List<TransformSample>> onClient = RegisterTrackedBalls(() => new RootFollower(false));
+            Connect();
+            var follower = new RootFollower(false);
+            var ball = new TrackedBall(follower);
+            server.ServerManager.Spawn(ball);
+            Run(5);
+            Assert.IsNull(ball.Record.TransformOrderNode);
+            follower.Scale = new Vector3(2f, 2f, 2f);
+            Run(5);
+            Assert.AreEqual(1, onClient[0].Count);
+
+            follower.Sync.Settings = new TransformSyncSettings(true, true, true, 0.01f, 0.1f, 0.01f);
+            Run(5);
+
+            Assert.IsNotNull(ball.Record.TransformOrderNode);
+            Assert.AreEqual(new Vector3(2f, 2f, 2f), onClient[0][onClient[0].Count - 1].LocalScale);
+        }
+
+        [Test]
+        public void AnEntityWhoseBodyNoLongerReportsMotionFallsBackToPerTickReads()
+        {
+            var physics = new ReportingPhysicsScenes();
+            serverPhysics = physics;
+            List<List<TransformSample>> onClient = RegisterTrackedBalls(() => new PoseBall());
+            Connect();
+            var ball = new TrackedBall(new PoseBall());
+            server.ServerManager.Spawn(ball);
+            Run(5);
+
+            physics.Reports = false;
+            physics.Awake.Add(ball);
+            Run(1);
+            physics.Awake.Clear();
+            PhysicsBody body = ball.Body;
+            body.Velocity = new Vector3(3f, 0f, 0f);
+            Run(5);
+
+            Assert.IsNotNull(ball.Record.TransformOrderNode);
+            Assert.Greater(onClient[0].Count, 1);
+        }
+
+        private List<List<TransformSample>> RegisterTrackedBalls(Func<IPoseReceiver> create)
+        {
+            var onClient = new List<List<TransformSample>>();
+            prefabs.Register(TrackedBallPrefabId, TrackedBallFingerprint, () =>
+            {
+                IPoseReceiver created = create();
+                onClient.Add(created.Received);
+                return new TrackedBall((EntityBehaviour)created);
+            });
+            return onClient;
+        }
+
         private static uint FindObjectId(NetworkRuntime runtime, ulong sceneObjectId)
         {
             foreach (KeyValuePair<uint, INetworkEntity> entry in runtime.ServerManager.Spawned)
@@ -241,7 +381,93 @@ namespace Fomoxa.Networking.Standalone.Tests
             }
         }
 
-        private sealed class FakePhysicsScenes : IPhysicsScenes
+        private interface IPoseReceiver
+        {
+            List<TransformSample> Received { get; }
+        }
+
+        private sealed class TrackedBall : StandaloneEntity
+        {
+            public TrackedBall(EntityBehaviour behaviour)
+                : base(TrackedBallPrefabId, new[] { behaviour })
+            {
+                if (behaviour is RootFollower follower)
+                {
+                    follower.Entity = this;
+                }
+            }
+
+            public override bool TryGetBody(out BodyDesc body)
+            {
+                body = new BodyDesc(BodyKind.Dynamic, BodyShape.Sphere(0.5f), Vector3.Zero, Quaternion.Identity, 1f);
+                return true;
+            }
+        }
+
+        private sealed class PoseBall : EntityBehaviour, ITransformReceiver, IPoseReceiver
+        {
+            public PoseBall()
+            {
+                SyncTransform(new TransformSync(new TransformSyncSettings(true, true, false, 0.01f, 0.1f, 0.01f)), this);
+            }
+
+            public List<TransformSample> Received { get; } = new List<TransformSample>();
+
+            public void ResetReceive()
+            {
+            }
+
+            public void Receive(in TransformSample sample) => Received.Add(sample);
+        }
+
+        private sealed class RootFollower : EntityBehaviour, ITransformSource, ITransformReceiver, IPoseReceiver
+        {
+            public RootFollower(bool syncScale)
+            {
+                Sync = new TransformSync(new TransformSyncSettings(true, true, syncScale, 0.01f, 0.1f, 0.01f));
+                SetTransform(Sync, this, this, TransformTarget.BodyRoot);
+            }
+
+            public TransformSync Sync { get; }
+
+            public StandaloneEntity Entity { get; set; }
+
+            public Vector3 Scale { get; set; } = Vector3.One;
+
+            public List<TransformSample> Received { get; } = new List<TransformSample>();
+
+            public void ReadLocal(out Vector3 localPosition, out Quaternion localRotation, out Vector3 localScale)
+            {
+                localPosition = Entity.Position;
+                localRotation = Entity.Rotation;
+                localScale = Scale;
+            }
+
+            public void ResetReceive()
+            {
+            }
+
+            public void Receive(in TransformSample sample) => Received.Add(sample);
+        }
+
+        private sealed class ReportingPhysicsScenes : FakePhysicsScenes, IPhysicsMotion
+        {
+            public readonly HashSet<INetworkEntity> Awake = new HashSet<INetworkEntity>();
+            public readonly List<INetworkEntity> Written = new List<INetworkEntity>();
+
+            public bool Reports { get; set; } = true;
+
+            public bool ReportsMotion(INetworkEntity entity) => Reports && HasBodies(entity);
+
+            public void CollectMoved(List<INetworkEntity> into)
+            {
+                into.AddRange(Awake);
+                into.AddRange(Written);
+                Written.Clear();
+            }
+        }
+
+        private class FakePhysicsScenes : IPhysicsScenes
         {
             public readonly List<string> Calls = new List<string>();
             public readonly List<SceneFile> Loaded = new List<SceneFile>();
@@ -342,6 +568,8 @@ namespace Fomoxa.Networking.Standalone.Tests
             }
 
             public IContactTracker TrackerOf(IPhysicsSimulation world) => null;
+
+            public bool HasBodies(INetworkEntity entity) => bodies.ContainsKey(entity) || bodies2D.ContainsKey(entity);
 
             private static void Track(Dictionary<INetworkEntity, List<BodyHandle>> owned, INetworkEntity entity, BodyHandle handle)
             {

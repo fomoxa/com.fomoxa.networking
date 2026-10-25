@@ -89,7 +89,9 @@ namespace Fomoxa.Networking
         {
         }
 
-        protected void SyncTransform(TransformSync sync, ITransformSource source, ITransformReceiver receiver) => SetTransform(sync, source, receiver);
+        protected void SyncTransform(TransformSync sync, ITransformSource source, ITransformReceiver receiver) => SetTransform(sync, source, receiver, TransformTarget.Source);
+
+        protected void SyncTransform(TransformSync sync, ITransformReceiver receiver) => SetTransform(sync, new EntityPoseSource(this), receiver, TransformTarget.EntityPose);
 
         protected void SetStateDirty() => MarkStateDirty();
 
@@ -212,7 +214,7 @@ namespace Fomoxa.Networking
             InputSlot = slot;
         }
 
-        internal void SetTransform(TransformSync sync, ITransformSource source, ITransformReceiver receiver)
+        internal void SetTransform(TransformSync sync, ITransformSource source, ITransformReceiver receiver, TransformTarget target)
         {
             if (sync == null)
             {
@@ -235,7 +237,7 @@ namespace Fomoxa.Networking
             }
 
             sync.Bind(this);
-            TransformSlot = new TransformSlot(sync, source, receiver);
+            TransformSlot = new TransformSlot(sync, source, receiver, target);
         }
 
         internal void Reconciled(uint tick)

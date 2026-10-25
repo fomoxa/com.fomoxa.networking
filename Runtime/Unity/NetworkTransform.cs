@@ -71,7 +71,8 @@ namespace Fomoxa.Unity
             }
 
             sync = new TransformSync(CurrentSettings());
-            Core.SetTransform(sync, this, this);
+            TransformTarget target = NetworkObject != null && NetworkObject.gameObject == gameObject ? TransformTarget.BodyRoot : TransformTarget.Source;
+            Core.SetTransform(sync, this, this, target);
         }
 
         void ITransformSource.ReadLocal(out System.Numerics.Vector3 localPosition, out System.Numerics.Quaternion localRotation, out System.Numerics.Vector3 localScale)
