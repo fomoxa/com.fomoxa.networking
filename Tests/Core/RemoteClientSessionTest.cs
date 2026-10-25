@@ -68,10 +68,10 @@ namespace Fomoxa.Networking.Tests
             var received = new List<byte[]>();
             var serverDispatcher = new MessageDispatcher(TestSchema());
             serverDispatcher.Register(GreetingId, (peerId, payload) => received.Add(payload.ToArray()));
-            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol());
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol()).SendingLocalPeer();
             var listener = new TcpListenerTransport(new IPEndPoint(IPAddress.Loopback, 0));
             server.Start(listener);
-            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).AcceptingLocalPeer();
             var clientStates = new List<ConnectionState>();
             client.OnClientConnectionState += args => clientStates.Add(args.State);
 
@@ -81,7 +81,7 @@ namespace Fomoxa.Networking.Tests
 
             RunUntil(() => received.Count == 1, server.Tick, client.Tick, now => server.Flush(), now => client.Flush());
 
-            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Started }, clientStates.ToArray());
+            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Authenticating, ConnectionState.Started }, clientStates.ToArray());
             Assert.AreEqual(new byte[] { 9 }, received[0]);
             client.Stop();
             server.Stop();
@@ -90,12 +90,12 @@ namespace Fomoxa.Networking.Tests
         [Test]
         public void ClientStopOverUdpEndsThePeerAtOnceWithPeerClosed()
         {
-            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).SendingLocalPeer();
             var peerStates = new List<ConnectionStateArgs>();
             server.OnRemoteConnectionState += peerStates.Add;
             var factory = new UdpTransportFactory();
             server.Start(factory.CreateListener(0, out ushort port));
-            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).AcceptingLocalPeer();
             client.Start(factory.CreateConnector("127.0.0.1", port));
             RunUntil(() => client.State == ConnectionState.Started && server.PeerCount == 1, server.Tick, client.Tick, now => server.Flush(), now => client.Flush());
             Assert.AreEqual(ConnectionState.Started, client.State);
@@ -121,9 +121,9 @@ namespace Fomoxa.Networking.Tests
             var received = new List<byte[]>();
             var serverDispatcher = new MessageDispatcher(TestSchema());
             serverDispatcher.Register(GreetingId, (peerId, payload) => received.Add(payload.ToArray()));
-            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol(channels, factory.FrameBudget));
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol(channels, factory.FrameBudget)).SendingLocalPeer();
             server.Start(factory.CreateListener(0, out ushort port));
-            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol(channels, factory.FrameBudget));
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol(channels, factory.FrameBudget)).AcceptingLocalPeer();
             client.Start(factory.CreateConnector("127.0.0.1", port));
             var large = new byte[200 * 1024];
             new Random(171).NextBytes(large);
@@ -148,7 +148,7 @@ namespace Fomoxa.Networking.Tests
                 closedPort = probe.LocalEndPoint.Port;
             }
 
-            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).AcceptingLocalPeer();
             var stopped = new List<ConnectionStateArgs>();
             client.OnClientConnectionState += args =>
             {
@@ -171,7 +171,7 @@ namespace Fomoxa.Networking.Tests
         public void StopWhileConnectingStopsWithLocalStop()
         {
             using var listener = new TcpListenerTransport(new IPEndPoint(IPAddress.Loopback, 0));
-            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).AcceptingLocalPeer();
             var states = new List<ConnectionStateArgs>();
             client.OnClientConnectionState += states.Add;
 
@@ -187,9 +187,9 @@ namespace Fomoxa.Networking.Tests
         public void ClientSessionAcceptsAConnectorFromOutsideThePackage()
         {
             var listener = new LoopbackListener(64);
-            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).SendingLocalPeer();
             server.Start(listener);
-            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).AcceptingLocalPeer();
 
             client.Start(new DelayedLoopbackConnector(listener, 3));
             TimeSpan now = TimeSpan.Zero;
@@ -198,6 +198,7 @@ namespace Fomoxa.Networking.Tests
                 now += TimeSpan.FromMilliseconds(16);
                 server.Tick(now);
                 client.Tick(now);
+                server.Flush();
             }
 
             Assert.AreEqual(ConnectionState.Started, client.State);

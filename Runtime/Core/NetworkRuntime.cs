@@ -69,6 +69,7 @@ namespace Fomoxa.Networking
                 ByteCapacity = settings.ByteCapacity,
                 ReliableWindow = settings.ReliableWindow,
                 CloseTimeout = settings.CloseTimeout,
+                AuthenticationTimeout = settings.AuthenticationTimeout,
             };
             TimeManager = new TimeManager(settings.TickRate, settings.MaxTicksPerFrame, settings.TimingMode);
             var protocol = new SessionProtocol(

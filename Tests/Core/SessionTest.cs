@@ -73,8 +73,8 @@ namespace Fomoxa.Networking.Tests
                 clientDispatcher.Register(GreetingId, (peerId, payload) => ClientReceived.Add(payload.ToArray()));
                 serverDispatcher.RegisterObject(ObjectCallId, (peerId, objectId, behaviourIndex, body) => ServerObjectCalls.Add((peerId, objectId, behaviourIndex, body.ToArray())));
                 clientDispatcher.RegisterObject(ObjectCallId, (peerId, objectId, behaviourIndex, body) => ClientObjectCalls.Add((objectId, behaviourIndex, body.ToArray())));
-                Server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol());
-                Client = new ClientSession(clientSchema ?? HostSchema(), new SessionConfig(), clientLimits ?? new SessionLimits(), clientDispatcher, TestBundles.Protocol());
+                Server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol()).SendingLocalPeer();
+                Client = new ClientSession(clientSchema ?? HostSchema(), new SessionConfig(), clientLimits ?? new SessionLimits(), clientDispatcher, TestBundles.Protocol()).AcceptingLocalPeer();
                 Server.OnServerConnectionState += ServerStates.Add;
                 Server.OnRemoteConnectionState += PeerStates.Add;
                 Client.OnClientConnectionState += ClientStates.Add;
@@ -102,7 +102,7 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
-        public void ClientAndPeerAreStartingDuringTheHandshakeAndStartedAtReady()
+        public void PeerPassesAuthenticatingAtReadyAndTheClientIsStartedAtLocalPeer()
         {
             var host = new Host();
             Assert.AreEqual(new[] { ServerState.Starting, ServerState.Started }, host.ServerStates.ConvertAll(args => args.State).ToArray());
@@ -112,8 +112,8 @@ namespace Fomoxa.Networking.Tests
 
             host.Step(20);
 
-            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Started }, host.ClientStates.ConvertAll(args => args.State).ToArray());
-            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Started }, host.PeerStates.ConvertAll(args => args.State).ToArray());
+            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Authenticating, ConnectionState.Started }, host.ClientStates.ConvertAll(args => args.State).ToArray());
+            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Authenticating, ConnectionState.Started }, host.PeerStates.ConvertAll(args => args.State).ToArray());
             Assert.AreEqual(ConnectionState.Started, host.Server.PeerState(host.OnlyPeerId));
         }
 

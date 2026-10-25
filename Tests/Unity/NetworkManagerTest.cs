@@ -197,9 +197,52 @@ namespace Fomoxa.Unity.Tests
             RunFrames(host, 20);
 
             Assert.AreEqual(new[] { ServerState.Starting, ServerState.Started }, serverStates.ToArray());
-            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Started }, peerStates.ToArray());
-            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Started }, clientStates.ToArray());
+            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Authenticating, ConnectionState.Started }, peerStates.ToArray());
+            Assert.AreEqual(new[] { ConnectionState.Starting, ConnectionState.Authenticating, ConnectionState.Started }, clientStates.ToArray());
             Assert.AreEqual(1, host.ServerManager.PeerCount);
+        }
+
+        [Test]
+        public void TheAuthenticatorOnTheManagerHoldsTheHostClientUntilItAccepts()
+        {
+            var authenticator = new GameObject("Authenticator").AddComponent<TestAuthenticator>();
+            extraObjects.Add(authenticator.gameObject);
+            NetworkManager host = Create(configure: serialized => serialized.FindProperty("authenticator").objectReferenceValue = authenticator);
+            host.ServerManager.StartConnection(0);
+            host.ClientManager.StartConnection("unused.invalid", 1);
+            RunFrames(host, 20);
+
+            Assert.AreSame(authenticator, host.ServerManager.Authenticator);
+            Assert.AreSame(authenticator, host.ClientManager.Authenticator);
+            Assert.AreEqual(1, authenticator.ServerContexts.Count);
+            Assert.AreEqual(1, authenticator.ClientContexts.Count);
+            Assert.AreEqual(ConnectionState.Authenticating, host.ClientManager.State);
+
+            Assert.IsTrue(authenticator.ServerContexts[0].Accept());
+            RunFrames(host, 5);
+
+            Assert.AreEqual(ConnectionState.Started, host.ClientManager.State);
+        }
+
+        [Test]
+        public void TheAuthenticationTimeoutOnTheManagerEndsAWaitingClient()
+        {
+            var authenticator = new GameObject("Authenticator").AddComponent<TestAuthenticator>();
+            extraObjects.Add(authenticator.gameObject);
+            NetworkManager host = Create(configure: serialized =>
+            {
+                serialized.FindProperty("authenticator").objectReferenceValue = authenticator;
+                serialized.FindProperty("authenticationTimeoutSeconds").floatValue = 0.2f;
+            });
+            var clientStates = new List<ConnectionStateArgs>();
+            host.ClientManager.OnClientConnectionState += clientStates.Add;
+            host.ServerManager.StartConnection(0);
+            host.ClientManager.StartConnection("unused.invalid", 1);
+            RunFrames(host, 30);
+
+            ConnectionStateArgs stop = clientStates.Find(args => args.State == ConnectionState.Stopped);
+            Assert.AreEqual(StopReason.ServerClosed, stop.Reason);
+            Assert.AreEqual(SessionCloseReason.AuthenticationTimeout, stop.CloseReason);
         }
 
         [Test]

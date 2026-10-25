@@ -18,6 +18,10 @@ namespace Fomoxa.Networking.Sessions
         private bool closed;
         private SessionCloseReason closeReason;
         private bool violated;
+        private bool refused;
+        private bool accepts;
+        private uint acceptanceId;
+        private Func<bool> accepted;
         private uint failedMessageId;
         private Exception failure;
 
@@ -31,9 +35,18 @@ namespace Fomoxa.Networking.Sessions
 
         public int Count => reader.Count;
 
-        public bool HasFailed => failure != null || violated;
+        public bool HasFailed => failure != null || violated || refused;
 
         public bool IsClosed => closed;
+
+        public bool Gated { get; set; }
+
+        public void SetAcceptance(uint messageId, Func<bool> onAccepted)
+        {
+            accepted = onAccepted ?? throw new ArgumentNullException(nameof(onAccepted));
+            acceptanceId = messageId;
+            accepts = true;
+        }
 
         public bool TryRead(uint messageId, ReadOnlyMemory<byte> payload, ReliableChannel reliable)
         {
@@ -68,6 +81,12 @@ namespace Fomoxa.Networking.Sessions
 
             if (messageId == protocol.LeaveCodec.MessageId)
             {
+                if (Gated)
+                {
+                    refused = true;
+                    return;
+                }
+
                 leaving = true;
                 return;
             }
@@ -110,6 +129,13 @@ namespace Fomoxa.Networking.Sessions
             exception = failure;
             failure = null;
             return exception != null;
+        }
+
+        public bool TakeRefusal()
+        {
+            bool taken = refused;
+            refused = false;
+            return taken;
         }
 
         public bool TakeViolation()
@@ -206,9 +232,36 @@ namespace Fomoxa.Networking.Sessions
 
         private void Dispatch(ulong peerId, uint messageId, ReadOnlyMemory<byte> data)
         {
+            bool authenticating = false;
+            if (Gated)
+            {
+                authenticating = dispatcher.IsAuthenticationMessage(messageId);
+                if (!authenticating)
+                {
+                    if (!accepts || messageId != acceptanceId)
+                    {
+                        refused = true;
+                        return;
+                    }
+
+                    Gated = false;
+                    if (!accepted())
+                    {
+                        return;
+                    }
+                }
+            }
+
             try
             {
-                dispatcher.Dispatch(peerId, messageId, data);
+                if (authenticating)
+                {
+                    dispatcher.DispatchAuthentication(peerId, messageId, data);
+                }
+                else
+                {
+                    dispatcher.Dispatch(peerId, messageId, data);
+                }
             }
             catch (MessageDecodeException)
             {

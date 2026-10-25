@@ -26,7 +26,7 @@ namespace Fomoxa.Networking.Tests
 
             public Network(SessionLimits serverLimits = null)
             {
-                Server = new ServerSession(TestSchema(), new SessionConfig(), serverLimits ?? new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+                Server = new ServerSession(TestSchema(), new SessionConfig(), serverLimits ?? new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).SendingLocalPeer();
                 Server.Start(Listener);
             }
 
@@ -35,7 +35,7 @@ namespace Fomoxa.Networking.Tests
                 var received = new List<byte>();
                 var dispatcher = new MessageDispatcher(TestSchema());
                 dispatcher.Register(GreetingId, (peerId, payload) => received.Add(payload.Span[0]));
-                var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol());
+                var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol()).AcceptingLocalPeer();
                 client.Start(Listener.Connect(), Now);
                 Clients.Add(client);
                 Received.Add(received);

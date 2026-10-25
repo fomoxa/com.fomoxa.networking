@@ -58,6 +58,8 @@ namespace Fomoxa.Networking.Tests
             public void CloseGracefully() => inner.CloseGracefully();
 
             public void Dispose() => inner.Dispose();
+
+            public void RestartCount() => dataFrames = 0;
         }
 
         private sealed class Host
@@ -78,12 +80,14 @@ namespace Fomoxa.Networking.Tests
                 serverDispatcher.Register(OrderId, (peerId, payload) => ServerOrders.Add(payload.Span[0]));
                 serverDispatcher.Register(PositionId, (peerId, payload) => ServerPositions.Add(payload.Span[0]));
                 clientDispatcher.Register(OrderId, (peerId, payload) => ClientOrders.Add(payload.Span[0]));
-                Server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, Protocol());
-                Client = new ClientSession(HostSchema(), new SessionConfig(), new SessionLimits(), clientDispatcher, Protocol());
+                Server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, Protocol()).SendingLocalPeer();
+                Client = new ClientSession(HostSchema(), new SessionConfig(), new SessionLimits(), clientDispatcher, Protocol()).AcceptingLocalPeer();
                 Server.OnRemoteConnectionState += args => PeerId = args.PeerId;
                 Server.Start(Listener);
-                Client.Start(new DroppingTransport(Listener.Connect(), dropClientDataFrame), Now);
+                var dropping = new DroppingTransport(Listener.Connect(), dropClientDataFrame);
+                Client.Start(dropping, Now);
                 Step(20);
+                dropping.RestartCount();
             }
 
             public void Step(int count)
@@ -134,7 +138,7 @@ namespace Fomoxa.Networking.Tests
         {
             var listener = new LoopbackListener(64);
             var dropped = new List<ReceiveDroppedArgs>();
-            var server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(HostSchema()), Protocol());
+            var server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(HostSchema()), Protocol()).SendingLocalPeer();
             server.OnReceiveDropped += dropped.Add;
             server.Start(listener);
             using var client = FomoxaConnection.Connect(listener.Connect(), HostSchema(), new SessionConfig(), TimeSpan.Zero);

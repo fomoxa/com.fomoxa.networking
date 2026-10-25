@@ -49,6 +49,7 @@ namespace Fomoxa.Networking.Objects
             this.sceneHost = sceneHost;
             MessageDispatcher dispatcher = session.Dispatcher;
             dispatcher.Register(protocol.LocalPeerCodec.MessageId, OnLocalPeer);
+            session.SetAcceptance(protocol.LocalPeerCodec.MessageId);
             dispatcher.Register(protocol.SpawnCodec.MessageId, OnSpawn);
             dispatcher.Register(protocol.SceneSpawnCodec.MessageId, OnSceneSpawn);
             dispatcher.Register(protocol.DespawnCodec.MessageId, OnDespawn);

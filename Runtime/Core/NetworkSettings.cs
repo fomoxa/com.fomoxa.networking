@@ -34,6 +34,8 @@ namespace Fomoxa.Networking
 
         public TimeSpan CloseTimeout { get; set; } = TimeSpan.FromSeconds(1);
 
+        public TimeSpan AuthenticationTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
         public bool LogSendDropped { get; set; } = true;
 
         public bool LogReceiveDropped { get; set; } = true;

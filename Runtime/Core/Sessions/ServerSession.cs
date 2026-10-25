@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Fomoxa.Net;
 using Fomoxa.Net.Transports;
 using Fomoxa.Networking.Messaging;
@@ -25,6 +26,8 @@ namespace Fomoxa.Networking.Sessions
 
         private FomoxaServer server;
         private PeerStartHandler peerStart;
+        private Action<ServerAuthenticationContext> authenticating;
+        private Peer delivering;
         private TimeSpan lastNow;
 
         public ServerSession(Schema schema, SessionConfig config, SessionLimits limits, MessageDispatcher dispatcher, SessionProtocol protocol)
@@ -173,11 +176,7 @@ namespace Fomoxa.Networking.Sessions
                 switch (raised.Kind)
                 {
                     case FomoxaEventKind.Ready:
-                        if (StartPeer(peer))
-                        {
-                            RaisePeer(peer.Id, ConnectionState.Started, StopReason.None, default, 0);
-                        }
-
+                        Authenticate(peer);
                         break;
                     case FomoxaEventKind.Message:
                         Receive(peer, raised.MessageId, raised.Payload, now);
@@ -213,8 +212,13 @@ namespace Fomoxa.Networking.Sessions
                     continue;
                 }
 
+                if (peer.State == ConnectionState.Authenticating && !peer.Closing && lastNow >= peer.AuthenticationDeadline)
+                {
+                    BeginClose(peer, SessionCloseReason.AuthenticationTimeout, StopReason.AuthenticationTimeout);
+                }
+
                 peer.Discarded += peer.Outbox.Flush(peer.Sender, lastNow, peer.Id, OnSendDropped);
-                if (peer.Closing && (peer.Outbox.Queue.Count == 0 || lastNow >= peer.CloseDeadline))
+                if (peer.Closing && (peer.Outbox.ActiveCount == 0 || lastNow >= peer.CloseDeadline))
                 {
                     Disconnect(peer, peer.CloseStopReason);
                 }
@@ -278,6 +282,45 @@ namespace Fomoxa.Networking.Sessions
             peerStart = handler ?? throw new ArgumentNullException(nameof(handler));
         }
 
+        internal void SetAuthenticatingHandler(Action<ServerAuthenticationContext> handler)
+        {
+            authenticating = handler;
+        }
+
+        internal SendResult SendAuthentication(ServerAuthenticationContext context, uint messageId, ReadOnlySpan<byte> payload)
+        {
+            if (!TryAuthenticating(context, out Peer peer))
+            {
+                return SendResult.NotConnected;
+            }
+
+            return SendResults.From(peer.Outbox.EnqueueAuthentication(messageId, payload));
+        }
+
+        internal bool Accept(ServerAuthenticationContext context)
+        {
+            if (!TryAuthenticating(context, out Peer peer))
+            {
+                return false;
+            }
+
+            Admit(peer);
+            return true;
+        }
+
+        internal bool Reject(ServerAuthenticationContext context)
+        {
+            if (!TryAuthenticating(context, out Peer peer))
+            {
+                return false;
+            }
+
+            BeginClose(peer, SessionCloseReason.AuthenticationFailed, StopReason.AuthenticationFailed);
+            return true;
+        }
+
+        internal ServerAuthenticationContext AuthenticationContextOf(ulong peerId) => peers[peerId].Authentication;
+
         internal void EnqueueObjectMessage(ulong peerId, uint messageId, ReadOnlySpan<byte> payload)
         {
             if (peers.TryGetValue(peerId, out Peer peer) && !peer.Closing)
@@ -316,22 +359,112 @@ namespace Fomoxa.Networking.Sessions
             }
         }
 
+        private void Authenticate(Peer peer)
+        {
+            peer.State = ConnectionState.Authenticating;
+            peer.Outbox.Gate();
+            peer.AuthenticationDeadline = limits.AuthenticationTimeout > TimeSpan.Zero
+                ? lastNow + limits.AuthenticationTimeout
+                : TimeSpan.MaxValue;
+            peer.AuthenticationCancellation = new CancellationTokenSource();
+            peer.Authentication = new ServerAuthenticationContext(this, peer.Id, peer.AuthenticationCancellation.Token);
+            RaisePeer(peer.Id, ConnectionState.Authenticating, StopReason.None, default, 0);
+            if (!IsServing(peer) || peer.Closing)
+            {
+                return;
+            }
+
+            if (authenticating == null)
+            {
+                Admit(peer);
+                return;
+            }
+
+            try
+            {
+                authenticating(peer.Authentication);
+            }
+            catch (Exception exception)
+            {
+                EndByHandler(peer, 0, exception);
+            }
+        }
+
+        private bool TryAuthenticating(ServerAuthenticationContext context, out Peer peer)
+        {
+            if (!peers.TryGetValue(context.PeerId, out peer) || peer.Authentication != context || peer.Closing)
+            {
+                return false;
+            }
+
+            if (peer.State == ConnectionState.Started)
+            {
+                throw new InvalidOperationException($"peer {context.PeerId} is already started");
+            }
+
+            return true;
+        }
+
+        private void Admit(Peer peer)
+        {
+            if (delivering == peer)
+            {
+                inbox.Gated = false;
+            }
+
+            if (!StartPeer(peer))
+            {
+                return;
+            }
+
+            RaisePeer(peer.Id, ConnectionState.Started, StopReason.None, default, 0);
+            Exception exception = CancelAuthentication(peer);
+            if (exception != null)
+            {
+                EndByHandler(peer, 0, exception);
+            }
+        }
+
+        private static Exception CancelAuthentication(Peer peer)
+        {
+            CancellationTokenSource cancellation = peer.AuthenticationCancellation;
+            if (cancellation == null || cancellation.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            try
+            {
+                cancellation.Cancel();
+                return null;
+            }
+            catch (Exception exception)
+            {
+                return exception;
+            }
+        }
+
+        private void ReportCancellationFailure(Peer peer)
+        {
+            Exception exception = CancelAuthentication(peer);
+            if (exception != null)
+            {
+                OnHandlerException?.Invoke(new HandlerExceptionArgs(peer.Id, 0, exception));
+            }
+        }
+
         private bool StartPeer(Peer peer)
         {
             peer.State = ConnectionState.Started;
-            if (peerStart == null)
-            {
-                return true;
-            }
-
             OutgoingQueue queue = peer.Outbox.Queue;
             queue.MoveAllTo(heldMessages);
+            peer.Outbox.OpenGate(true);
             bool started;
-            uint failedMessageId;
-            Exception exception;
+            uint failedMessageId = 0;
+            Exception exception = null;
             try
             {
-                started = peerStart(peer.Id, out failedMessageId, out exception);
+                started = peerStart == null || peerStart(peer.Id, out failedMessageId, out exception);
             }
             finally
             {
@@ -357,6 +490,8 @@ namespace Fomoxa.Networking.Sessions
                 return;
             }
 
+            delivering = peer;
+            inbox.Gated = peer.State == ConnectionState.Authenticating;
             for (int index = 0; index < inbox.Count && IsDelivering(peer); index++)
             {
                 inbox.Deliver(index, peer.Id, reliable, now);
@@ -365,6 +500,7 @@ namespace Fomoxa.Networking.Sessions
                 }
             }
 
+            delivering = null;
             inbox.Release();
             if (inbox.TakeFailure(out uint failedMessageId, out Exception exception))
             {
@@ -377,13 +513,20 @@ namespace Fomoxa.Networking.Sessions
                     Disconnect(peer, StopReason.InvalidFragment);
                 }
             }
+            else if (inbox.TakeRefusal())
+            {
+                if (IsServing(peer))
+                {
+                    Disconnect(peer, StopReason.UnauthenticatedMessage);
+                }
+            }
             else if (inbox.TakeLeave() && IsServing(peer))
             {
                 Disconnect(peer, StopReason.PeerClosed);
             }
         }
 
-        private bool IsDelivering(Peer peer) => IsServing(peer) && !inbox.HasFailed;
+        private bool IsDelivering(Peer peer) => IsServing(peer) && !peer.Closing && !inbox.HasFailed;
 
         private bool IsServing(Peer peer) =>
             State == ServerState.Started && peers.TryGetValue(peer.Id, out Peer current) && current == peer;
@@ -403,7 +546,8 @@ namespace Fomoxa.Networking.Sessions
             peer.CloseStopReason = stopReason;
             peer.CloseDeadline = lastNow + limits.CloseTimeout;
             close.Reason = (byte)reason;
-            peer.Outbox.EnqueueUnbounded(protocol.CloseCodec.MessageId, protocol.CloseCodec.Encode(close).Span);
+            peer.Outbox.EnqueueActiveUnbounded(protocol.CloseCodec.MessageId, protocol.CloseCodec.Encode(close).Span);
+            ReportCancellationFailure(peer);
         }
 
         private void Disconnect(Peer peer, StopReason reason)
@@ -437,9 +581,10 @@ namespace Fomoxa.Networking.Sessions
 
         private void End(Peer peer, StopReason reason, HandshakeFailure failure)
         {
-            int total = peer.Discarded + peer.Outbox.Queue.Clear();
+            int total = peer.Discarded + peer.Outbox.Clear();
             peers.Remove(peer.Id);
             RaisePeer(peer.Id, ConnectionState.Stopped, reason, failure, total);
+            ReportCancellationFailure(peer);
         }
 
         private void RaisePeer(ulong peerId, ConnectionState state, StopReason reason, HandshakeFailure failure, int discardedMessages)
@@ -477,6 +622,12 @@ namespace Fomoxa.Networking.Sessions
             public StopReason CloseStopReason { get; set; }
 
             public TimeSpan CloseDeadline { get; set; }
+
+            public TimeSpan AuthenticationDeadline { get; set; }
+
+            public ServerAuthenticationContext Authentication { get; set; }
+
+            public CancellationTokenSource AuthenticationCancellation { get; set; }
 
             public bool Accepts => State == ConnectionState.Started && !Closing;
         }

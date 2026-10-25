@@ -15,6 +15,7 @@ namespace Fomoxa.Networking.Sessions
     {
         Stopped,
         Starting,
+        Authenticating,
         Started,
     }
 
@@ -32,6 +33,9 @@ namespace Fomoxa.Networking.Sessions
         PhysicsBackendMismatch,
         InvalidFragment,
         ServerClosed,
+        UnauthenticatedMessage,
+        AuthenticationFailed,
+        AuthenticationTimeout,
     }
 
     public enum SessionCloseReason : byte
@@ -39,6 +43,8 @@ namespace Fomoxa.Networking.Sessions
         Unspecified = 0,
         HandlerException = 1,
         Kicked = 2,
+        AuthenticationFailed = 3,
+        AuthenticationTimeout = 4,
     }
 
     public readonly struct ServerConnectionStateArgs
@@ -143,5 +149,7 @@ namespace Fomoxa.Networking.Sessions
         public int ReliableWindow { get; set; } = 1024;
 
         public TimeSpan CloseTimeout { get; set; } = TimeSpan.FromSeconds(1);
+
+        public TimeSpan AuthenticationTimeout { get; set; } = TimeSpan.FromSeconds(30);
     }
 }

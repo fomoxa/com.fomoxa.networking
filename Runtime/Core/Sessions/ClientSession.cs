@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Fomoxa.Net;
 using Fomoxa.Net.Transports;
 using Fomoxa.Networking.Messaging;
@@ -26,6 +27,9 @@ namespace Fomoxa.Networking.Sessions
         private TimeSpan lastNow;
         private int discarded;
         private Action stopped;
+        private Action<ClientAuthenticationContext> authenticating;
+        private ClientAuthenticationContext authentication;
+        private CancellationTokenSource authenticationCancellation;
 
         public ClientSession(Schema schema, SessionConfig config, SessionLimits limits, MessageDispatcher dispatcher, SessionProtocol protocol)
         {
@@ -136,7 +140,7 @@ namespace Fomoxa.Networking.Sessions
                 switch (raised.Kind)
                 {
                     case FomoxaEventKind.Ready:
-                        ChangeState(ConnectionState.Started, StopReason.None, default, 0);
+                        Authenticate();
                         break;
                     case FomoxaEventKind.Message:
                         Receive(raised.MessageId, raised.Payload, now);
@@ -192,6 +196,33 @@ namespace Fomoxa.Networking.Sessions
             stopped = handler ?? throw new ArgumentNullException(nameof(handler));
         }
 
+        internal void SetAcceptance(uint messageId)
+        {
+            inbox.SetAcceptance(messageId, Accept);
+        }
+
+        internal void SetAuthenticatingHandler(Action<ClientAuthenticationContext> handler)
+        {
+            authenticating = handler;
+        }
+
+        internal ClientAuthenticationContext AuthenticationContext => authentication;
+
+        internal SendResult SendAuthentication(ClientAuthenticationContext context, uint messageId, ReadOnlySpan<byte> payload)
+        {
+            if (context != authentication || State == ConnectionState.Stopped)
+            {
+                return SendResult.NotConnected;
+            }
+
+            if (State == ConnectionState.Started)
+            {
+                throw new InvalidOperationException("the client session is already started");
+            }
+
+            return SendResults.From(outbox.EnqueueAuthentication(messageId, payload));
+        }
+
         internal void Abort(StopReason reason)
         {
             if (State == ConnectionState.Stopped)
@@ -230,11 +261,56 @@ namespace Fomoxa.Networking.Sessions
                 connection.Close();
                 End(StopReason.InvalidFragment, default);
             }
+            else if (inbox.TakeRefusal() && State != ConnectionState.Stopped)
+            {
+                connection.Close();
+                End(StopReason.UnauthenticatedMessage, default);
+            }
             else if (inbox.TakeClose(out SessionCloseReason closeReason) && State != ConnectionState.Stopped)
             {
                 connection.Close();
                 End(StopReason.ServerClosed, default, closeReason);
             }
+        }
+
+        private void Authenticate()
+        {
+            outbox.Gate();
+            inbox.Gated = true;
+            authenticationCancellation = new CancellationTokenSource();
+            authentication = new ClientAuthenticationContext(this, authenticationCancellation.Token);
+            ChangeState(ConnectionState.Authenticating, StopReason.None, default, 0);
+            if (State != ConnectionState.Authenticating || authenticating == null)
+            {
+                return;
+            }
+
+            try
+            {
+                authenticating(authentication);
+            }
+            catch (Exception exception)
+            {
+                EndByHandler(0, exception);
+            }
+        }
+
+        private bool Accept()
+        {
+            outbox.OpenGate(false);
+            ChangeState(ConnectionState.Started, StopReason.None, default, 0);
+            if (State != ConnectionState.Started)
+            {
+                return false;
+            }
+
+            Exception exception = CancelAuthentication(authenticationCancellation);
+            if (exception != null)
+            {
+                EndByHandler(0, exception);
+            }
+
+            return State == ConnectionState.Started;
         }
 
         private bool IsDelivering() => State != ConnectionState.Stopped && !inbox.HasFailed && !inbox.IsClosed;
@@ -288,7 +364,10 @@ namespace Fomoxa.Networking.Sessions
 
         private void End(StopReason reason, HandshakeFailure failure, SessionCloseReason closeReason = SessionCloseReason.Unspecified)
         {
-            int total = discarded + outbox.Queue.Clear();
+            int total = discarded + outbox.Clear();
+            CancellationTokenSource cancellation = authenticationCancellation;
+            authentication = null;
+            authenticationCancellation = null;
             connector?.Dispose();
             connection?.Dispose();
             connector = null;
@@ -298,6 +377,29 @@ namespace Fomoxa.Networking.Sessions
             discarded = 0;
             ChangeState(ConnectionState.Stopped, reason, failure, total, closeReason);
             stopped?.Invoke();
+            Exception exception = CancelAuthentication(cancellation);
+            if (exception != null)
+            {
+                OnHandlerException?.Invoke(new HandlerExceptionArgs(0, 0, exception));
+            }
+        }
+
+        private static Exception CancelAuthentication(CancellationTokenSource cancellation)
+        {
+            if (cancellation == null || cancellation.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            try
+            {
+                cancellation.Cancel();
+                return null;
+            }
+            catch (Exception exception)
+            {
+                return exception;
+            }
         }
 
         private void ChangeState(ConnectionState state, StopReason reason, HandshakeFailure failure, int discardedMessages, SessionCloseReason closeReason = SessionCloseReason.Unspecified)

@@ -16,6 +16,10 @@ namespace Fomoxa.Networking.Sessions
         private readonly ReliableAck ack = new ReliableAck();
         private readonly FragmentStart fragmentStart = new FragmentStart();
         private readonly FragmentPart fragmentPart = new FragmentPart();
+        private readonly List<QueuedMessage> leftovers = new List<QueuedMessage>();
+        private readonly List<QueuedMessage> held = new List<QueuedMessage>();
+        private OutgoingQueue authentication;
+        private bool gated;
         private byte[] splitting;
         private int splitOffset;
 
@@ -40,7 +44,63 @@ namespace Fomoxa.Networking.Sessions
 
         public ReliableChannel Reliable => reliable;
 
-        public EnqueueResult Enqueue(uint messageId, ReadOnlySpan<byte> payload)
+        public bool IsGated => gated;
+
+        public int ActiveCount => Active?.Count ?? 0;
+
+        private OutgoingQueue Active => gated ? authentication : queue;
+
+        public EnqueueResult Enqueue(uint messageId, ReadOnlySpan<byte> payload) => Enqueue(queue, messageId, payload);
+
+        public EnqueueResult EnqueueAuthentication(uint messageId, ReadOnlySpan<byte> payload) =>
+            Enqueue(AuthenticationQueue(), messageId, payload);
+
+        public EnqueueResult EnqueueActiveUnbounded(uint messageId, ReadOnlySpan<byte> payload) =>
+            EnqueueUnbounded(gated ? AuthenticationQueue() : queue, messageId, payload);
+
+        public void Gate()
+        {
+            gated = true;
+        }
+
+        public void OpenGate(bool keepLeftovers)
+        {
+            gated = false;
+            if (authentication == null)
+            {
+                return;
+            }
+
+            leftovers.Clear();
+            if (keepLeftovers)
+            {
+                authentication.MoveAllTo(leftovers);
+            }
+            else if (splitting != null && authentication.Count > 0 && ReferenceEquals(HeadOf(authentication).Payload, splitting))
+            {
+                leftovers.Add(HeadOf(authentication));
+            }
+
+            authentication = null;
+            if (leftovers.Count == 0)
+            {
+                return;
+            }
+
+            held.Clear();
+            queue.MoveAllTo(held);
+            queue.AppendAll(leftovers);
+            queue.AppendAll(held);
+            leftovers.Clear();
+            held.Clear();
+        }
+
+        public int Clear() => queue.Clear() + (authentication?.Clear() ?? 0);
+
+        private OutgoingQueue AuthenticationQueue() =>
+            authentication ??= new OutgoingQueue(queue.Capacity, queue.ByteCapacity);
+
+        private EnqueueResult Enqueue(OutgoingQueue target, uint messageId, ReadOnlySpan<byte> payload)
         {
             bool isReliable = protocol.Channels.IsReliable(messageId);
             if (isReliable && CannotReassemble(SeqHeader.Length + payload.Length))
@@ -49,13 +109,15 @@ namespace Fomoxa.Networking.Sessions
             }
 
             Span<byte> header = stackalloc byte[SeqHeader.Length];
-            return queue.Enqueue(messageId, isReliable ? header : Span<byte>.Empty, payload);
+            return target.Enqueue(messageId, isReliable ? header : Span<byte>.Empty, payload);
         }
 
-        public EnqueueResult EnqueueUnbounded(uint messageId, ReadOnlySpan<byte> payload)
+        public EnqueueResult EnqueueUnbounded(uint messageId, ReadOnlySpan<byte> payload) => EnqueueUnbounded(queue, messageId, payload);
+
+        private EnqueueResult EnqueueUnbounded(OutgoingQueue target, uint messageId, ReadOnlySpan<byte> payload)
         {
             Span<byte> header = stackalloc byte[SeqHeader.Length];
-            return queue.EnqueueUnbounded(messageId, protocol.Channels.IsReliable(messageId) ? header : Span<byte>.Empty, payload);
+            return target.EnqueueUnbounded(messageId, protocol.Channels.IsReliable(messageId) ? header : Span<byte>.Empty, payload);
         }
 
         public EnqueueResult EnqueueToObject(uint messageId, uint objectId, byte behaviourIndex, ReadOnlySpan<byte> body)
@@ -105,8 +167,14 @@ namespace Fomoxa.Networking.Sessions
             }
 
             reliable.CollectDue(now, entries);
+            OutgoingQueue active = Active;
+            if (active == null)
+            {
+                return;
+            }
+
             int tentative = 0;
-            foreach (QueuedMessage message in queue)
+            foreach (QueuedMessage message in active)
             {
                 if (!protocol.Channels.IsReliable(message.MessageId))
                 {
@@ -213,12 +281,12 @@ namespace Fomoxa.Networking.Sessions
                             case OutgoingKind.Fragment:
                                 return FlushOutcome.Stop;
                             default:
-                                queue.TryDropNext(out uint messageId, out int payloadLength);
+                                Active.TryDropNext(out uint messageId, out int payloadLength);
                                 dropped?.Invoke(new SendDroppedArgs(peerId, messageId, payloadLength, SendStatus.TooLarge));
                                 return FlushOutcome.Rebuild;
                         }
                     case SendStatus.Closed:
-                        discarded = queue.Clear();
+                        discarded = Active?.Clear() ?? 0;
                         return FlushOutcome.Stop;
                     default:
                         return FlushOutcome.Stop;
@@ -230,12 +298,12 @@ namespace Fomoxa.Networking.Sessions
 
         private bool DropUnsplittableHead(ulong peerId, Action<SendDroppedArgs> dropped)
         {
-            if (queue.Count == 0 || !IsUnsplittable(HeadOfQueue()))
+            if (ActiveCount == 0 || !IsUnsplittable(HeadOfQueue()))
             {
                 return false;
             }
 
-            queue.TryDropNext(out uint messageId, out int payloadLength);
+            Active.TryDropNext(out uint messageId, out int payloadLength);
             dropped?.Invoke(new SendDroppedArgs(peerId, messageId, payloadLength, SendStatus.TooLarge));
             return true;
         }
@@ -258,7 +326,7 @@ namespace Fomoxa.Networking.Sessions
                         break;
                     default:
                         QueuedMessage sent = HeadOfQueue();
-                        queue.Dequeue(1);
+                        Active.Dequeue(1);
                         if (protocol.Channels.IsReliable(sent.MessageId))
                         {
                             reliable.Track(sent.MessageId, sent.Payload, now);
@@ -280,14 +348,16 @@ namespace Fomoxa.Networking.Sessions
                 return;
             }
 
-            queue.Dequeue(1);
+            Active.Dequeue(1);
             splitting = null;
             splitOffset = 0;
         }
 
-        private QueuedMessage HeadOfQueue()
+        private QueuedMessage HeadOfQueue() => HeadOf(Active);
+
+        private static QueuedMessage HeadOf(OutgoingQueue source)
         {
-            foreach (QueuedMessage message in queue)
+            foreach (QueuedMessage message in source)
             {
                 return message;
             }

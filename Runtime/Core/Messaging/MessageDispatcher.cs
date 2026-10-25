@@ -20,6 +20,7 @@ namespace Fomoxa.Networking.Messaging
         private readonly Schema schema;
         private readonly Dictionary<uint, PayloadHandler> handlers = new Dictionary<uint, PayloadHandler>();
         private readonly Dictionary<uint, ObjectPayloadHandler> objectHandlers = new Dictionary<uint, ObjectPayloadHandler>();
+        private readonly Dictionary<uint, PayloadHandler> authenticationHandlers = new Dictionary<uint, PayloadHandler>();
 
         public MessageDispatcher(Schema schema)
         {
@@ -52,6 +53,24 @@ namespace Fomoxa.Networking.Messaging
 
         public bool IsObjectMessage(uint messageId) => objectHandlers.ContainsKey(messageId);
 
+        internal void RegisterAuthentication(uint messageId, PayloadHandler handler)
+        {
+            if (handler == null)
+            {
+                throw new ArgumentNullException(nameof(handler));
+            }
+
+            EnsureRegistrable(messageId);
+            authenticationHandlers.Add(messageId, handler);
+        }
+
+        internal void ClearAuthentication() => authenticationHandlers.Clear();
+
+        internal bool IsAuthenticationMessage(uint messageId) => authenticationHandlers.ContainsKey(messageId);
+
+        internal void DispatchAuthentication(ulong peerId, uint messageId, ReadOnlyMemory<byte> data) =>
+            authenticationHandlers[messageId](peerId, data);
+
         public bool Dispatch(ulong peerId, uint messageId, ReadOnlyMemory<byte> data)
         {
             if (objectHandlers.TryGetValue(messageId, out ObjectPayloadHandler objectHandler))
@@ -81,7 +100,7 @@ namespace Fomoxa.Networking.Messaging
                 throw new HandlerRegistrationException($"message id 0x{messageId:X8} is not declared in the schema");
             }
 
-            if (handlers.ContainsKey(messageId) || objectHandlers.ContainsKey(messageId))
+            if (handlers.ContainsKey(messageId) || objectHandlers.ContainsKey(messageId) || authenticationHandlers.ContainsKey(messageId))
             {
                 throw new HandlerRegistrationException($"message id 0x{messageId:X8} already has a handler");
             }

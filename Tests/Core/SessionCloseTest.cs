@@ -51,7 +51,7 @@ namespace Fomoxa.Networking.Tests
 
                     ServerOrders.Add(payload.Span[0]);
                 });
-                Server = new ServerSession(HostSchema(), new SessionConfig(), limits ?? new SessionLimits(), dispatcher, TestBundles.Protocol(Channels()));
+                Server = new ServerSession(HostSchema(), new SessionConfig(), limits ?? new SessionLimits(), dispatcher, TestBundles.Protocol(Channels())).SendingLocalPeer();
                 Server.OnRemoteConnectionState += args =>
                 {
                     if (args.State == ConnectionState.Started)
@@ -72,7 +72,7 @@ namespace Fomoxa.Networking.Tests
             {
                 var dispatcher = new MessageDispatcher(HostSchema());
                 dispatcher.Register(OrderId, (peerId, payload) => ClientOrders.Add(payload.Span[0]));
-                Client = new ClientSession(HostSchema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol(Channels()));
+                Client = new ClientSession(HostSchema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol(Channels())).AcceptingLocalPeer();
                 Client.OnClientConnectionState += args =>
                 {
                     if (args.State == ConnectionState.Stopped)

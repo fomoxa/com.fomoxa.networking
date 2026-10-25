@@ -25,6 +25,8 @@ namespace Fomoxa.Unity
         [SerializeField] private int byteCapacity = 1024 * 1024;
         [SerializeField] private int reliableWindow = 1024;
         [SerializeField] private float closeTimeoutSeconds = 1f;
+        [SerializeField] private float authenticationTimeoutSeconds = 30f;
+        [SerializeField] private NetworkAuthenticator authenticator;
         [SerializeField] private bool logSendDropped = true;
         [SerializeField] private bool logReceiveDropped = true;
         [SerializeField] private int maxReconnectRetries = -1;
@@ -119,6 +121,7 @@ namespace Fomoxa.Unity
                 ByteCapacity = byteCapacity,
                 ReliableWindow = reliableWindow,
                 CloseTimeout = TimeSpan.FromSeconds(closeTimeoutSeconds),
+                AuthenticationTimeout = TimeSpan.FromSeconds(authenticationTimeoutSeconds),
                 LogSendDropped = logSendDropped,
                 LogReceiveDropped = logReceiveDropped,
                 MaxReconnectRetries = maxReconnectRetries,
@@ -161,6 +164,11 @@ namespace Fomoxa.Unity
             var backends = new NetworkBackends(serverBackend, serverScenes, clientBackend, new UnityClientSceneHost(Scenes, clientBackend), predictionBackend);
             runtime = new NetworkRuntime(Registry, settings, TransportManager.Factory, backends, () => MonotonicClock.Now, UnityNetworkLog.Instance);
             ServerManager.ObserverRule = observerRule != null ? observerRule : null;
+            if (authenticator != null)
+            {
+                ServerManager.Authenticator = authenticator;
+                ClientManager.Authenticator = authenticator;
+            }
             ServerManager.Entities.OnUnspawning += EndHostShare;
             serverBackend.Physics = physics;
             predictionBackend.Physics = physics;

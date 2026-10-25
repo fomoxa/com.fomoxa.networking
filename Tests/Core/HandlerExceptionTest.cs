@@ -50,7 +50,7 @@ namespace Fomoxa.Networking.Tests
         {
             var listener = new LoopbackListener(64);
             var received = new List<(ulong PeerId, byte Value)>();
-            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), FailingDispatcher(received), TestBundles.Protocol());
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), FailingDispatcher(received), TestBundles.Protocol()).SendingLocalPeer();
             var exceptions = new List<HandlerExceptionArgs>();
             var stopped = new List<ConnectionStateArgs>();
             server.OnHandlerException += exceptions.Add;
@@ -99,12 +99,12 @@ namespace Fomoxa.Networking.Tests
         public void ClientStopsWithHandlerExceptionAndSkipsTheRestOfTheBundle()
         {
             var listener = new LoopbackListener(64);
-            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).SendingLocalPeer();
             ulong peerId = 0;
             server.OnRemoteConnectionState += args => peerId = args.PeerId;
             server.Start(listener);
             var received = new List<(ulong PeerId, byte Value)>();
-            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), FailingDispatcher(received), TestBundles.Protocol());
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), FailingDispatcher(received), TestBundles.Protocol()).AcceptingLocalPeer();
             var exceptions = new List<HandlerExceptionArgs>();
             var states = new List<ConnectionStateArgs>();
             client.OnHandlerException += exceptions.Add;
@@ -116,6 +116,7 @@ namespace Fomoxa.Networking.Tests
                 now += TimeSpan.FromMilliseconds(16);
                 server.Tick(now);
                 client.Tick(now);
+                server.Flush();
             }
 
             Assert.AreEqual(ConnectionState.Started, client.State);
@@ -143,7 +144,7 @@ namespace Fomoxa.Networking.Tests
         {
             const byte Undecodable = 0xEE;
             var listener = new LoopbackListener(64);
-            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).SendingLocalPeer();
             ulong peerId = 0;
             server.OnRemoteConnectionState += args => peerId = args.PeerId;
             server.Start(listener);
@@ -158,7 +159,7 @@ namespace Fomoxa.Networking.Tests
 
                 received.Add(payload.Span[0]);
             });
-            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol());
+            var client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol()).AcceptingLocalPeer();
             var exceptions = new List<HandlerExceptionArgs>();
             var dropped = new List<ReceiveDroppedArgs>();
             client.OnHandlerException += exceptions.Add;
@@ -170,6 +171,7 @@ namespace Fomoxa.Networking.Tests
                 now += TimeSpan.FromMilliseconds(16);
                 server.Tick(now);
                 client.Tick(now);
+                server.Flush();
             }
 
             server.Send(peerId, GreetingId, new byte[] { 1 });
@@ -192,13 +194,13 @@ namespace Fomoxa.Networking.Tests
         public void HandlerThatStopsTheClientBeforeThrowingEndsTheSessionOnce()
         {
             var listener = new LoopbackListener(64);
-            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+            var server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).SendingLocalPeer();
             ulong peerId = 0;
             server.OnRemoteConnectionState += args => peerId = args.PeerId;
             server.Start(listener);
             var received = new List<(ulong PeerId, byte Value)>();
             ClientSession client = null;
-            client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), FailingDispatcher(received, () => client.Stop()), TestBundles.Protocol());
+            client = new ClientSession(TestSchema(), new SessionConfig(), new SessionLimits(), FailingDispatcher(received, () => client.Stop()), TestBundles.Protocol()).AcceptingLocalPeer();
             var exceptions = new List<HandlerExceptionArgs>();
             var stopped = new List<ConnectionStateArgs>();
             client.OnHandlerException += exceptions.Add;
@@ -216,6 +218,7 @@ namespace Fomoxa.Networking.Tests
                 now += TimeSpan.FromMilliseconds(16);
                 server.Tick(now);
                 client.Tick(now);
+                server.Flush();
             }
 
             server.Send(peerId, GreetingId, new[] { Failing });

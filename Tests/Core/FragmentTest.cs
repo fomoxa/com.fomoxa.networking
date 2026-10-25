@@ -136,8 +136,8 @@ namespace Fomoxa.Networking.Tests
             {
                 var serverDispatcher = new MessageDispatcher(HostSchema());
                 serverDispatcher.Register(OrderId, (peerId, payload) => ServerOrders.Add(payload.ToArray()));
-                Server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol(Channels(), UdpBudget));
-                Client = new ClientSession(HostSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(HostSchema()), TestBundles.Protocol(Channels(), UdpBudget));
+                Server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), serverDispatcher, TestBundles.Protocol(Channels(), UdpBudget)).SendingLocalPeer();
+                Client = new ClientSession(HostSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(HostSchema()), TestBundles.Protocol(Channels(), UdpBudget)).AcceptingLocalPeer();
                 Server.OnRemoteConnectionState += args =>
                 {
                     if (args.State == ConnectionState.Stopped)

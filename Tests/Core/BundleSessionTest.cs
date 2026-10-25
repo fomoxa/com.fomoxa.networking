@@ -39,7 +39,7 @@ namespace Fomoxa.Networking.Tests
                     onGreeting?.Invoke(Server, peerId, payload);
                 });
                 dispatcher.RegisterObject(ObjectCallId, (peerId, objectId, behaviourIndex, body) => ServerReceived.Add(body.ToArray()));
-                Server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol());
+                Server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), dispatcher, TestBundles.Protocol()).SendingLocalPeer();
                 Server.OnReceiveDropped += Dropped.Add;
                 Server.Start(Listener);
                 Client = FomoxaConnection.Connect(Listener.Connect(), HostSchema(), new SessionConfig(), Now);
@@ -153,7 +153,7 @@ namespace Fomoxa.Networking.Tests
         public void MessagesSentInOneTickTravelInOneFrame()
         {
             var listener = new LoopbackListener(64);
-            var server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(HostSchema()), TestBundles.Protocol());
+            var server = new ServerSession(HostSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(HostSchema()), TestBundles.Protocol()).SendingLocalPeer();
             server.Start(listener);
             using var client = FomoxaConnection.Connect(listener.Connect(), HostSchema(), new SessionConfig(), TimeSpan.Zero);
             TimeSpan now = TimeSpan.Zero;

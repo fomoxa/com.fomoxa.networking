@@ -20,6 +20,7 @@ namespace Fomoxa.Networking
         private readonly StateProtocol stateProtocol;
         private readonly IServerSceneHost sceneHost;
         private readonly NetworkLog log;
+        private IServerAuthenticator authenticator;
 
         internal ServerManager(
             Schema schema,
@@ -50,6 +51,7 @@ namespace Fomoxa.Networking
             Dispatcher = new MessageDispatcher(schema);
             session = new ServerSession(schema, sessionConfig, limits, Dispatcher, protocol);
             session.OnHandlerException += RaiseHandlerException;
+            Authentication = new ServerAuthentication(session);
             Objects = new ServerObjects(session, objectProtocol, objectId => Entities.ReadSpawnData(objectId), sceneProtocol);
             Clock = new ServerClock(session, clockProtocol);
             Inputs = new ServerInputs(session, Objects, inputProtocol, Clock);
@@ -113,6 +115,41 @@ namespace Fomoxa.Networking
         }
 
         public ObserverGroups Groups => Entities.Groups;
+
+        public IServerAuthenticator Authenticator
+        {
+            get => authenticator;
+            set
+            {
+                if (session.State != ServerState.Stopped)
+                {
+                    throw new InvalidOperationException("the authenticator can only change while the server is stopped");
+                }
+
+                Dispatcher.ClearAuthentication();
+                authenticator = null;
+                session.SetAuthenticatingHandler(null);
+                if (value == null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    value.RegisterServer(Authentication);
+                }
+                catch
+                {
+                    Dispatcher.ClearAuthentication();
+                    throw;
+                }
+
+                authenticator = value;
+                session.SetAuthenticatingHandler(value.OnServerAuthenticating);
+            }
+        }
+
+        internal ServerAuthentication Authentication { get; }
 
         public NetworkScenes Scenes { get; }
 

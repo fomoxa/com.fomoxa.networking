@@ -24,6 +24,7 @@ namespace Fomoxa.Networking
         private readonly StateProtocol stateProtocol;
         private readonly TimeManager timeManager;
         private readonly ClientClock clock;
+        private IClientAuthenticator authenticator;
 
         internal ClientManager(
             Schema schema,
@@ -62,6 +63,7 @@ namespace Fomoxa.Networking
             Dispatcher = new MessageDispatcher(schema);
             session = new ClientSession(schema, sessionConfig, limits, Dispatcher, protocol);
             session.OnHandlerException += RaiseHandlerException;
+            Authentication = new ClientAuthentication(session);
             Entities = new ClientEntities(this, session, Dispatcher, channels, stateProtocol, transformProtocol, rpcIds, serverManager.Entities, entityBackend, log);
             Prediction = new ClientPrediction(Entities, session, Dispatcher, inputProtocol, predictionBackend, log);
             session.OnClientConnectionState += PrepareSceneObjectsWhenStarted;
@@ -107,6 +109,41 @@ namespace Fomoxa.Networking
         public ConnectionState State => session.State;
 
         public bool IsReplaying => Prediction.IsReplaying;
+
+        public IClientAuthenticator Authenticator
+        {
+            get => authenticator;
+            set
+            {
+                if (session.State != ConnectionState.Stopped)
+                {
+                    throw new InvalidOperationException("the authenticator can only change while the client is stopped");
+                }
+
+                Dispatcher.ClearAuthentication();
+                authenticator = null;
+                session.SetAuthenticatingHandler(null);
+                if (value == null)
+                {
+                    return;
+                }
+
+                try
+                {
+                    value.RegisterClient(Authentication);
+                }
+                catch
+                {
+                    Dispatcher.ClearAuthentication();
+                    throw;
+                }
+
+                authenticator = value;
+                session.SetAuthenticatingHandler(value.OnClientAuthenticating);
+            }
+        }
+
+        internal ClientAuthentication Authentication { get; }
 
         public TimeSpan Rtt => connectedLocally ? TimeSpan.Zero : clock.Estimator.Rtt;
 

@@ -63,9 +63,9 @@ namespace Fomoxa.Networking.Tests
             public TimeSpan Now = TimeSpan.Zero;
             public int ConnectorsCreated;
 
-            public Harness(ReconnectPolicy policy, Schema clientSchema = null, MessageDispatcher clientDispatcher = null)
+            public Harness(ReconnectPolicy policy, Schema clientSchema = null, MessageDispatcher clientDispatcher = null, bool acceptsLocalPeer = true)
             {
-                Server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+                Server = new ServerSession(TestSchema(), new SessionConfig(), new SessionLimits(), new MessageDispatcher(TestSchema()), TestBundles.Protocol()).SendingLocalPeer();
                 Server.OnRemoteConnectionState += args =>
                 {
                     if (args.State == ConnectionState.Started)
@@ -75,6 +75,10 @@ namespace Fomoxa.Networking.Tests
                 };
                 Server.Start(Listener);
                 Session = new ClientSession(clientSchema ?? TestSchema(), new SessionConfig(), new SessionLimits(), clientDispatcher ?? new MessageDispatcher(TestSchema()), TestBundles.Protocol());
+                if (acceptsLocalPeer)
+                {
+                    Session.AcceptingLocalPeer();
+                }
                 Client = new ClientReconnector(Session, policy);
                 Client.OnClientConnectionState += States.Add;
             }
@@ -240,6 +244,19 @@ namespace Fomoxa.Networking.Tests
             Assert.AreEqual(1, host.ConnectorsCreated);
             Assert.AreEqual(StopReason.ServerClosed, host.Stops()[0].Reason);
             Assert.AreEqual(SessionCloseReason.Kicked, host.Stops()[0].CloseReason);
+            Assert.IsFalse(host.Stops()[0].WillRetry);
+            Assert.AreEqual(ConnectionState.Stopped, host.Session.State);
+        }
+
+        [Test]
+        public void AMessageOutsideTheAuthenticationGateIsNotRetried()
+        {
+            var host = new Harness(new ReconnectPolicy { Interval = Step }, acceptsLocalPeer: false);
+            host.Client.Start(host.Loopback, host.Now);
+            host.Run(40);
+
+            Assert.AreEqual(1, host.ConnectorsCreated);
+            Assert.AreEqual(StopReason.UnauthenticatedMessage, host.Stops()[0].Reason);
             Assert.IsFalse(host.Stops()[0].WillRetry);
             Assert.AreEqual(ConnectionState.Stopped, host.Session.State);
         }

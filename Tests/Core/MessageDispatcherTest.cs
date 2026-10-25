@@ -109,6 +109,53 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void AnAuthenticationIdIsNeitherAPlainMessageNorAnObjectMessage()
+        {
+            var authenticationFirst = new MessageDispatcher(SchemaWithOneMessage());
+            authenticationFirst.RegisterAuthentication(DeclaredId, (peerId, payload) => { });
+            var plainFirst = new MessageDispatcher(SchemaWithOneMessage());
+            plainFirst.Register(DeclaredId, (peerId, payload) => { });
+            var objectFirst = new MessageDispatcher(SchemaWithOneMessage());
+            objectFirst.RegisterObject(DeclaredId, (peerId, objectId, behaviourIndex, body) => { });
+
+            Assert.Throws<HandlerRegistrationException>(() => authenticationFirst.Register(DeclaredId, (peerId, payload) => { }));
+            Assert.Throws<HandlerRegistrationException>(() => authenticationFirst.RegisterObject(DeclaredId, (peerId, objectId, behaviourIndex, body) => { }));
+            Assert.Throws<HandlerRegistrationException>(() => authenticationFirst.RegisterAuthentication(DeclaredId, (peerId, payload) => { }));
+            Assert.Throws<HandlerRegistrationException>(() => plainFirst.RegisterAuthentication(DeclaredId, (peerId, payload) => { }));
+            Assert.Throws<HandlerRegistrationException>(() => objectFirst.RegisterAuthentication(DeclaredId, (peerId, payload) => { }));
+            Assert.Throws<HandlerRegistrationException>(() => authenticationFirst.RegisterAuthentication(UndeclaredId, (peerId, payload) => { }));
+        }
+
+        [Test]
+        public void AnAuthenticationHandlerIsReachedOnlyThroughItsOwnDispatch()
+        {
+            var dispatcher = new MessageDispatcher(SchemaWithOneMessage());
+            var seen = new System.Collections.Generic.List<(ulong PeerId, byte[] Payload)>();
+            dispatcher.RegisterAuthentication(DeclaredId, (peerId, payload) => seen.Add((peerId, payload.ToArray())));
+
+            Assert.IsTrue(dispatcher.IsAuthenticationMessage(DeclaredId));
+            Assert.IsFalse(dispatcher.IsAuthenticationMessage(ObjectCallId));
+            Assert.IsFalse(dispatcher.Dispatch(3, DeclaredId, new byte[] { 1 }));
+            dispatcher.DispatchAuthentication(4, DeclaredId, new byte[] { 2 });
+
+            Assert.AreEqual(1, seen.Count);
+            Assert.AreEqual(4, seen[0].PeerId);
+            Assert.AreEqual(new byte[] { 2 }, seen[0].Payload);
+        }
+
+        [Test]
+        public void ClearingTheAuthenticationHandlersFreesTheirIds()
+        {
+            var dispatcher = new MessageDispatcher(SchemaWithOneMessage());
+            dispatcher.RegisterAuthentication(DeclaredId, (peerId, payload) => { });
+
+            dispatcher.ClearAuthentication();
+
+            Assert.IsFalse(dispatcher.IsAuthenticationMessage(DeclaredId));
+            Assert.DoesNotThrow(() => dispatcher.Register(DeclaredId, (peerId, payload) => { }));
+        }
+
+        [Test]
         public void ObjectHandlerForAnIdOutsideTheSchemaIsRejected()
         {
             var dispatcher = new MessageDispatcher(SchemaWithOneMessage());
