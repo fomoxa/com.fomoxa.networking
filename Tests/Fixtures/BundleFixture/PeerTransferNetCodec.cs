@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/PeerTransfer.cs
 // model: PeerTransfer
 // codec: net
-// fingerprint: sha256:7ec90e78362176cfd030695ffba7687839d50f9eaba8f90fdbeeb0477cc5cb63
+// fingerprint: sha256:389f08ce5ffd51b9fdaac4e519f14a40ec775c375482efeebb7b8b8fafe9bc3d
 // fomoxac-version: 0.2.2
-// generated-at: 2026-10-25T18:35:08Z
+// generated-at: 2026-10-25T21:10:41Z
 
 namespace BundleFixture
 {
@@ -17,6 +17,7 @@ namespace BundleFixture
 /// <item><description><c>Address</c>: <c>string</c></description></item>
 /// <item><description><c>Port</c>: <c>u16</c></description></item>
 /// <item><description><c>Ticket</c>: <c>bytes</c></description></item>
+/// <item><description><c>Connection</c>: <c>bytes</c></description></item>
 /// </list>
 /// </remarks>
 public static class PeerTransferNetCodec
@@ -29,7 +30,7 @@ public static class PeerTransferNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0x7EC90E78362176CF;
+    public const ulong Fingerprint = 0x389F08CE5FFD51B9;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.PeerTransfer value)
@@ -37,6 +38,7 @@ public static class PeerTransferNetCodec
         writer.WriteString(value.Address);
         writer.WriteU16(value.Port);
         writer.WriteBytes(value.Ticket);
+        writer.WriteBytes(value.Connection);
     }
 
     /// <summary>Reads the <c>net</c> fields into <paramref name="value"/>, in declaration order.</summary>
@@ -71,6 +73,16 @@ public static class PeerTransferNetCodec
             reader.ReadBytes(ref ticketValue);
         }
         value.Ticket = ticketValue;
+        var connectionValue = value.Connection;
+        if (reader.FieldAbsent())
+        {
+            connectionValue = System.Array.Empty<byte>();
+        }
+        else
+        {
+            reader.ReadBytes(ref connectionValue);
+        }
+        value.Connection = connectionValue;
     }
 }
 

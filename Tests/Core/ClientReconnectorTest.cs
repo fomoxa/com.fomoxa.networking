@@ -285,7 +285,7 @@ namespace Fomoxa.Networking.Tests
         public void ATransferConnectsAtOnceToTheRedirectedTarget()
         {
             var host = new Harness(new ReconnectPolicy { Interval = TimeSpan.FromSeconds(5) });
-            host.Session.SetTransferringHandler((address, port) => host.Client.Redirect(host.Failing));
+            host.Session.SetTransferringHandler((address, port, connection) => host.Client.Redirect(host.Failing));
             host.Client.Start(host.Loopback, host.Now);
             host.Run(20);
 
@@ -310,7 +310,7 @@ namespace Fomoxa.Networking.Tests
         public void ATransferIsFollowedEvenWhenRetriesAreUsedUp()
         {
             var host = new Harness(new ReconnectPolicy { MaxRetries = 0, Interval = Step });
-            host.Session.SetTransferringHandler((address, port) => host.Client.Redirect(host.Failing));
+            host.Session.SetTransferringHandler((address, port, connection) => host.Client.Redirect(host.Failing));
             host.Client.Start(host.Loopback, host.Now);
             host.Run(20);
 
@@ -325,7 +325,7 @@ namespace Fomoxa.Networking.Tests
         public void StopInTheStoppedHandlerCancelsTheTransfer()
         {
             var host = new Harness(new ReconnectPolicy { Interval = Step });
-            host.Session.SetTransferringHandler((address, port) => host.Client.Redirect(host.Failing));
+            host.Session.SetTransferringHandler((address, port, connection) => host.Client.Redirect(host.Failing));
             host.Client.OnClientConnectionState += args =>
             {
                 if (args.Reason == StopReason.Transferred)
@@ -348,7 +348,7 @@ namespace Fomoxa.Networking.Tests
         public void ATransferOfAClientStartedWithoutRetryIsNotFollowed()
         {
             var host = new Harness(new ReconnectPolicy { Interval = Step });
-            host.Session.SetTransferringHandler((address, port) => host.Client.Redirect(host.Failing));
+            host.Session.SetTransferringHandler((address, port, connection) => host.Client.Redirect(host.Failing));
             host.Client.StartWithoutRetry(host.Listener.Connect(), host.Now);
             host.Run(20);
 

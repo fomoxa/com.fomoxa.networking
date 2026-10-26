@@ -131,6 +131,9 @@ namespace BundleFixture
             registry.SetCodec(SessionCloseNetAdapter.Instance);
             registry.SetCodec(PeerTransferNetAdapter.Instance);
             registry.SetCodec(TransferTicketNetAdapter.Instance);
+            registry.SetCodec(ConnectTokenNetAdapter.Instance);
+            registry.SetCodec(ConnectTokenSecretNetAdapter.Instance);
+            registry.SetCodec(ConnectionGrantNetAdapter.Instance);
             registry.SetCodec(SceneFileNetAdapter.Instance);
             registry.SetCodec(CollectionChangesNetAdapter.Instance);
             registry.SetCodec(CollectionContentNetAdapter.Instance);

@@ -255,7 +255,10 @@ namespace Fomoxa.Networking.Sessions
             return true;
         }
 
-        public bool Transfer(ulong peerId, string address, ushort port, ReadOnlyMemory<byte> ticket)
+        public bool Transfer(ulong peerId, string address, ushort port, ReadOnlyMemory<byte> ticket) =>
+            Transfer(peerId, address, port, ticket, ReadOnlyMemory<byte>.Empty);
+
+        public bool Transfer(ulong peerId, string address, ushort port, ReadOnlyMemory<byte> ticket, ReadOnlyMemory<byte> connection)
         {
             if (address == null)
             {
@@ -275,6 +278,7 @@ namespace Fomoxa.Networking.Sessions
             transfer.Address = address;
             transfer.Port = port;
             transfer.Ticket = ticket;
+            transfer.Connection = connection;
             try
             {
                 peer.Outbox.EnqueueActiveUnbounded(protocol.TransferCodec.MessageId, protocol.TransferCodec.Encode(transfer).Span);
@@ -282,6 +286,7 @@ namespace Fomoxa.Networking.Sessions
             finally
             {
                 transfer.Ticket = default;
+                transfer.Connection = default;
             }
 
             BeginClose(peer, SessionCloseReason.Transferred, StopReason.Transferred);
@@ -403,7 +408,7 @@ namespace Fomoxa.Networking.Sessions
                 ? lastNow + limits.AuthenticationTimeout
                 : TimeSpan.MaxValue;
             peer.AuthenticationCancellation = new CancellationTokenSource();
-            peer.Authentication = new ServerAuthenticationContext(this, peer.Id, peer.AuthenticationCancellation.Token);
+            peer.Authentication = new ServerAuthenticationContext(this, peer.Id, peer.AuthenticationCancellation.Token, peer.ConnectionData);
             RaisePeer(peer.Id, ConnectionState.Authenticating, StopReason.None, default, 0);
             if (!IsServing(peer) || peer.Closing)
             {
@@ -602,6 +607,7 @@ namespace Fomoxa.Networking.Sessions
                 BundleOf(owner.Listener));
             var peer = new Peer(peerId, outbox, (messageId, payload) => owner.Send(peerId, messageId, payload));
             peer.ListenerIndex = owner.Listener is CompositeListener composite && composite.TryTakeAcceptedListener(out int listenerIndex) ? listenerIndex : -1;
+            peer.ConnectionData = owner.Listener is CompositeListener withData && withData.TryTakeAcceptedConnectionData(out ReadOnlyMemory<byte> data) ? data : ReadOnlyMemory<byte>.Empty;
             peers.Add(peerId, peer);
             RaisePeer(peerId, ConnectionState.Starting, StopReason.None, default, 0);
         }
@@ -667,6 +673,8 @@ namespace Fomoxa.Networking.Sessions
             public CancellationTokenSource AuthenticationCancellation { get; set; }
 
             public int ListenerIndex { get; set; }
+
+            public ReadOnlyMemory<byte> ConnectionData { get; set; }
 
             public bool Accepts => State == ConnectionState.Started && !Closing;
         }

@@ -10,6 +10,7 @@ namespace Fomoxa.Networking.Transports
         private readonly int[] budgets;
         private readonly Queue<int> acceptedBudgets = new Queue<int>();
         private readonly Queue<int> acceptedListeners = new Queue<int>();
+        private readonly Queue<ReadOnlyMemory<byte>> acceptedConnectionData = new Queue<ReadOnlyMemory<byte>>();
         private int nextIndex;
 
         public CompositeListener(params IListenerTransport[] listeners)
@@ -47,6 +48,7 @@ namespace Fomoxa.Networking.Transports
                 {
                     RecordBudget(index);
                     acceptedListeners.Enqueue(index);
+                    RecordConnectionData(index, outcome.Transport);
                 }
 
                 if (outcome.Status == AcceptStatus.Accepted || outcome.Status == AcceptStatus.Progress)
@@ -87,12 +89,34 @@ namespace Fomoxa.Networking.Transports
             return true;
         }
 
+        public bool TryTakeAcceptedConnectionData(out ReadOnlyMemory<byte> data)
+        {
+            if (acceptedConnectionData.Count == 0)
+            {
+                data = default;
+                return false;
+            }
+
+            data = acceptedConnectionData.Dequeue();
+            return true;
+        }
+
         public void Dispose()
         {
             foreach (IListenerTransport listener in listeners)
             {
                 listener.Dispose();
             }
+        }
+
+        private void RecordConnectionData(int index, ITransport transport)
+        {
+            if (listeners[index] is CompositeListener inner)
+            {
+                inner.TryTakeAcceptedConnectionData(out _);
+            }
+
+            acceptedConnectionData.Enqueue(transport is IConnectionData connection ? connection.ConnectionData : ReadOnlyMemory<byte>.Empty);
         }
 
         private void RecordBudget(int index)

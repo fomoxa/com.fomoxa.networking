@@ -9,16 +9,19 @@ namespace Fomoxa.Networking
     {
         private readonly ServerSession session;
 
-        internal ServerAuthenticationContext(ServerSession session, ulong peerId, CancellationToken cancellationToken)
+        internal ServerAuthenticationContext(ServerSession session, ulong peerId, CancellationToken cancellationToken, ReadOnlyMemory<byte> connectionData)
         {
             this.session = session;
             PeerId = peerId;
             CancellationToken = cancellationToken;
+            ConnectionData = connectionData;
         }
 
         public ulong PeerId { get; }
 
         public CancellationToken CancellationToken { get; }
+
+        public ReadOnlyMemory<byte> ConnectionData { get; }
 
         public SendResult Send<T>(IMessageCodec<T> codec, T value)
         {

@@ -198,7 +198,37 @@ namespace Fomoxa.Networking
             }
 
             Entities.ConnectedLocally = false;
+            if (transport is IConnectionTransportFactory connections && connections.RequiresConnection)
+            {
+                throw new InvalidOperationException("the transport encrypts and needs a connection from ConnectTokens.Issue; call StartConnection(address, port, connection)");
+            }
+
             reconnector.Start(() => transport.CreateConnector(address, port), clockSource());
+        }
+
+        public void StartConnection(string address, ushort port, ReadOnlyMemory<byte> connection)
+        {
+            if (session.State != ConnectionState.Stopped)
+            {
+                throw new InvalidOperationException("the client is already running");
+            }
+
+            session.ForgetTransferTicket();
+            if (serverManager.State == ServerState.Started)
+            {
+                Entities.ConnectedLocally = true;
+                reconnector.StartWithoutRetry(serverManager.LocalListener.Connect(), clockSource());
+                return;
+            }
+
+            if (!(transport is IConnectionTransportFactory connections) || !connections.CanUseConnection(connection))
+            {
+                throw new ArgumentException("the transport does not take this connection; a connection is for an encrypted transport and comes from ConnectTokens.Issue", nameof(connection));
+            }
+
+            Entities.ConnectedLocally = false;
+            byte[] kept = connection.ToArray();
+            reconnector.Start(() => connections.CreateConnector(address, port, kept), clockSource());
         }
 
         public void StopConnection() => reconnector.Stop();
@@ -347,10 +377,32 @@ namespace Fomoxa.Networking
             clock.Estimator.SetTickRate(Objects.ServerTickRate);
         }
 
-        private void Transfer(string address, ushort port)
+        private void Transfer(string address, ushort port, ReadOnlyMemory<byte> connection)
         {
             OnTransferring?.Invoke(new TransferringArgs(address, port));
-            reconnector.Redirect(() => transport.CreateConnector(address, port));
+            var connections = transport as IConnectionTransportFactory;
+            if (connection.IsEmpty && connections != null && connections.RequiresConnection)
+            {
+                log.Error($"Fomoxa did not follow the transfer to {address}:{port}: the transport encrypts and the server sent no connection");
+                reconnector.Abandon();
+                return;
+            }
+
+            if (connection.IsEmpty)
+            {
+                reconnector.Redirect(() => transport.CreateConnector(address, port));
+                return;
+            }
+
+            if (connections == null || !connections.CanUseConnection(connection))
+            {
+                log.Error($"Fomoxa did not follow the transfer to {address}:{port}: the transport does not take the connection the server sent");
+                reconnector.Abandon();
+                return;
+            }
+
+            byte[] kept = connection.ToArray();
+            reconnector.Redirect(() => connections.CreateConnector(address, port, kept));
         }
 
         private void RestoreTickRateWhenStopped(ConnectionStateArgs args)

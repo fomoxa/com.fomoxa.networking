@@ -428,6 +428,42 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void RemoteClientConnectsOverEncryptedUdpWithTokensSetAfterAwake()
+        {
+            var tokens = new ConnectTokens(TestRegistry(), new byte[ConnectTokens.KeyLength]);
+            var serverUdp = new GameObject("Encrypted server").AddComponent<EncryptedUdpNetworkTransport>();
+            serverUdp.Registry = TestRegistry();
+            var clientUdp = new GameObject("Encrypted client").AddComponent<EncryptedUdpNetworkTransport>();
+            clientUdp.Registry = TestRegistry();
+            extraObjects.Add(serverUdp.gameObject);
+            extraObjects.Add(clientUdp.gameObject);
+            NetworkManager server = Create(transport: serverUdp);
+            NetworkManager client = Create(transport: clientUdp);
+            serverUdp.Tokens = tokens;
+            serverUdp.Target = "pod-a";
+            server.ServerManager.StartConnection(0);
+
+            client.ClientManager.StartConnection("127.0.0.1", server.ServerManager.Port, tokens.Issue("pod-a", ReadOnlyMemory<byte>.Empty));
+            RunInRealTime(() => client.ClientManager.State == ConnectionState.Started && server.ServerManager.PeerCount == 1, server, client);
+
+            Assert.AreEqual(ConnectionState.Started, client.ClientManager.State);
+            Assert.AreEqual(1, server.ServerManager.PeerCount);
+        }
+
+        [Test]
+        public void AnEncryptedUdpManagerNeedsAConnectionToStartAndTokensToListen()
+        {
+            var udp = new GameObject("Encrypted").AddComponent<EncryptedUdpNetworkTransport>();
+            udp.Registry = TestRegistry();
+            extraObjects.Add(udp.gameObject);
+            NetworkManager manager = Create(transport: udp);
+
+            Assert.Throws<InvalidOperationException>(() => manager.ClientManager.StartConnection("127.0.0.1", 7777));
+            Assert.Throws<InvalidOperationException>(() => manager.ServerManager.StartConnection(0));
+            Assert.Throws<ArgumentException>(() => manager.ClientManager.StartConnection("127.0.0.1", 7777, new byte[] { 1 }));
+        }
+
+        [Test]
         public void RemoteClientConnectsOverWebSocketAndSendsAMessage()
         {
             var webSocket = new GameObject("WebSocket").AddComponent<WebSocketNetworkTransport>();

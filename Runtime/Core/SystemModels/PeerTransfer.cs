@@ -19,5 +19,9 @@ namespace Fomoxa.Networking.Messaging
         [Network("bytes")]
         [Codec("net")]
         public ReadOnlyMemory<byte> Ticket { get; set; }
+
+        [Network("bytes")]
+        [Codec("net")]
+        public ReadOnlyMemory<byte> Connection { get; set; }
     }
 }

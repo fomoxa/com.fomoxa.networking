@@ -23,4 +23,18 @@ namespace Fomoxa.Networking.Transports
     {
         ConnectStatus Poll(out ITransport transport);
     }
+
+    public interface IConnectionTransportFactory : ITransportFactory
+    {
+        bool RequiresConnection { get; }
+
+        bool CanUseConnection(ReadOnlyMemory<byte> connection);
+
+        ITransportConnector CreateConnector(string address, ushort port, ReadOnlyMemory<byte> connection);
+    }
+
+    public interface IConnectionData
+    {
+        ReadOnlyMemory<byte> ConnectionData { get; }
+    }
 }

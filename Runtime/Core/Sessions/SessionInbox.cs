@@ -236,6 +236,7 @@ namespace Fomoxa.Networking.Sessions
             {
                 protocol.TransferCodec.Decode(data, ref transfer);
                 transfer.Ticket = transfer.Ticket.ToArray();
+                transfer.Connection = transfer.Connection.ToArray();
                 transferred = true;
             }
             catch (MessageDecodeException)

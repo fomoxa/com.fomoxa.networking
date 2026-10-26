@@ -4,7 +4,7 @@ using Fomoxa.Net.Transports;
 
 namespace Fomoxa.Networking.Transports
 {
-    public sealed class MultiTransportFactory : ITransportFactory
+    public sealed class MultiTransportFactory : IConnectionTransportFactory
     {
         private readonly ITransportFactory[] factories;
         private readonly ushort[] ports;
@@ -64,7 +64,17 @@ namespace Fomoxa.Networking.Transports
             return new CompositeListener(listeners, budgets);
         }
 
+        public bool RequiresConnection => factories[0] is IConnectionTransportFactory first && first.RequiresConnection;
+
         public ITransportConnector CreateConnector(string address, ushort port) =>
             factories[0].CreateConnector(address, port);
+
+        public bool CanUseConnection(ReadOnlyMemory<byte> connection) =>
+            factories[0] is IConnectionTransportFactory first && first.CanUseConnection(connection);
+
+        public ITransportConnector CreateConnector(string address, ushort port, ReadOnlyMemory<byte> connection) =>
+            factories[0] is IConnectionTransportFactory first
+                ? first.CreateConnector(address, port, connection)
+                : throw new ArgumentException("the first transport does not take a connection", nameof(connection));
     }
 }

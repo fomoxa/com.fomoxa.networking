@@ -96,6 +96,9 @@ namespace Fomoxa.Unity.Editor
             "StringValue",
             "PeerTransfer",
             "TransferTicket",
+            "ConnectToken",
+            "ConnectTokenSecret",
+            "ConnectionGrant",
         };
 
         private static readonly Regex ModelLine = new Regex(@"^// model: (\S+)\r?$", RegexOptions.Multiline);

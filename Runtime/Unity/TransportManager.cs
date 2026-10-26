@@ -18,7 +18,7 @@ namespace Fomoxa.Unity
 
         public ITransportFactory Factory { get; }
 
-        private sealed class ListenerGuard : ITransportFactory
+        private sealed class ListenerGuard : IConnectionTransportFactory
         {
             private readonly ITransportFactory inner;
 
@@ -28,6 +28,8 @@ namespace Fomoxa.Unity
             }
 
             public int FrameBudget => inner.FrameBudget;
+
+            public bool RequiresConnection => inner is IConnectionTransportFactory connections && connections.RequiresConnection;
 
             public IListenerTransport CreateListener(ushort port, out ushort boundPort)
             {
@@ -40,6 +42,14 @@ namespace Fomoxa.Unity
             }
 
             public ITransportConnector CreateConnector(string address, ushort port) => inner.CreateConnector(address, port);
+
+            public bool CanUseConnection(ReadOnlyMemory<byte> connection) =>
+                inner is IConnectionTransportFactory connections && connections.CanUseConnection(connection);
+
+            public ITransportConnector CreateConnector(string address, ushort port, ReadOnlyMemory<byte> connection) =>
+                inner is IConnectionTransportFactory connections
+                    ? connections.CreateConnector(address, port, connection)
+                    : throw new ArgumentException("the transport does not take a connection", nameof(connection));
         }
     }
 }

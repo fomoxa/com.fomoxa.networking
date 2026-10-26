@@ -1,3 +1,4 @@
+using System;
 using Fomoxa.Net.Transports;
 using Fomoxa.Networking.Transports;
 using NUnit.Framework;
@@ -26,6 +27,61 @@ namespace Fomoxa.Networking.Tests
             public void Dispose()
             {
             }
+        }
+
+        private sealed class DataTransport : ITransport, IConnectionData
+        {
+            public DataTransport(byte[] data)
+            {
+                ConnectionData = data;
+            }
+
+            public ReadOnlyMemory<byte> ConnectionData { get; }
+
+            public TransportKind Kind => TransportKind.Message;
+
+            public SendOutcome Send(ReadOnlySpan<byte> bytes) => SendOutcome.Ok;
+
+            public ReceiveOutcome Receive(Span<byte> buffer) => ReceiveOutcome.WouldBlock;
+
+            public void CloseGracefully()
+            {
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
+        [Test]
+        public void EachAcceptedTransportLeavesItsConnectionDataInAcceptOrder()
+        {
+            var withData = new ScriptedListener(AcceptOutcome.Accepted(new DataTransport(new byte[] { 7 })));
+            var loopback = new LoopbackListener(8);
+            var composite = new CompositeListener(withData, loopback);
+            loopback.Connect();
+
+            composite.Accept();
+            composite.Accept();
+
+            Assert.IsTrue(composite.TryTakeAcceptedConnectionData(out ReadOnlyMemory<byte> first));
+            Assert.IsTrue(composite.TryTakeAcceptedConnectionData(out ReadOnlyMemory<byte> second));
+            Assert.IsFalse(composite.TryTakeAcceptedConnectionData(out _));
+            CollectionAssert.AreEqual(new byte[] { 7 }, first.ToArray());
+            Assert.IsTrue(second.IsEmpty);
+        }
+
+        [Test]
+        public void AnOuterListenerTakesTheConnectionDataOfAnInnerOne()
+        {
+            var inner = new CompositeListener(new ScriptedListener(AcceptOutcome.Accepted(new DataTransport(new byte[] { 7 }))));
+            var outer = new CompositeListener(inner);
+
+            outer.Accept();
+
+            Assert.IsFalse(inner.TryTakeAcceptedConnectionData(out _));
+            Assert.IsTrue(outer.TryTakeAcceptedConnectionData(out ReadOnlyMemory<byte> data));
+            CollectionAssert.AreEqual(new byte[] { 7 }, data.ToArray());
         }
 
         [Test]

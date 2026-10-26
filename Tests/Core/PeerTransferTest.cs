@@ -74,7 +74,7 @@ namespace Fomoxa.Networking.Tests
                 ClientSession client = Client;
                 Client.OnClientConnectionState += ClientStates.Add;
                 Client.OnReceiveDropped += ClientDropped.Add;
-                Client.SetTransferringHandler((address, port) =>
+                Client.SetTransferringHandler((address, port, connection) =>
                 {
                     Transfers.Add($"{address}:{port} {client.State}");
                     OnTransferring?.Invoke(address, port);

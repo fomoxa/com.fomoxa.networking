@@ -30,7 +30,7 @@ namespace Fomoxa.Networking.Sessions
         private Action<ClientAuthenticationContext> authenticating;
         private ClientAuthenticationContext authentication;
         private CancellationTokenSource authenticationCancellation;
-        private Action<string, ushort> transferring;
+        private Action<string, ushort, ReadOnlyMemory<byte>> transferring;
         private ReadOnlyMemory<byte> transferTicket;
 
         public ClientSession(Schema schema, SessionConfig config, SessionLimits limits, MessageDispatcher dispatcher, SessionProtocol protocol)
@@ -204,7 +204,7 @@ namespace Fomoxa.Networking.Sessions
             inbox.SetAcceptance(messageId, Accept);
         }
 
-        internal void SetTransferringHandler(Action<string, ushort> handler)
+        internal void SetTransferringHandler(Action<string, ushort, ReadOnlyMemory<byte>> handler)
         {
             transferring = handler;
         }
@@ -293,7 +293,7 @@ namespace Fomoxa.Networking.Sessions
         private void Transfer(PeerTransfer target)
         {
             transferTicket = target.Ticket;
-            transferring?.Invoke(target.Address, target.Port);
+            transferring?.Invoke(target.Address, target.Port, target.Connection);
             if (State == ConnectionState.Stopped)
             {
                 return;

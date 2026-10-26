@@ -74,6 +74,12 @@ namespace Fomoxa.Networking.Sessions
             }
         }
 
+        public void Abandon()
+        {
+            connectorSource = null;
+            retryAt = null;
+        }
+
         public void Stop()
         {
             connectorSource = null;

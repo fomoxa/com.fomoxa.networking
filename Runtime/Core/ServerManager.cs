@@ -225,7 +225,10 @@ namespace Fomoxa.Networking
         public bool Kick(ulong peerId) => session.Kick(peerId);
 
         public bool Transfer(ulong peerId, string address, ushort port, ReadOnlyMemory<byte> ticket) =>
-            session.Transfer(peerId, address, port, ticket);
+            session.Transfer(peerId, address, port, ticket, ReadOnlyMemory<byte>.Empty);
+
+        public bool Transfer(ulong peerId, string address, ushort port, ReadOnlyMemory<byte> ticket, ReadOnlyMemory<byte> connection) =>
+            session.Transfer(peerId, address, port, ticket, connection);
 
         public void Spawn(INetworkEntity networkObject, ulong ownerId = 0)
         {
