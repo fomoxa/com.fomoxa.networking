@@ -27,7 +27,9 @@ namespace Fomoxa.Networking.Transports
         public ITransportConnector CreateConnector(string address, ushort port)
         {
             Endpoint endpoint = Parse(address, port, Settings.Path);
-            return new WebSocketConnector(new HostResolver(endpoint.Host), endpoint.Port, endpoint.Target, endpoint.HostHeader, Settings);
+            return endpoint.Secure
+                ? new WebSocketConnector(new HostResolver(endpoint.Host), endpoint.Port, endpoint.Target, endpoint.HostHeader, Settings, endpoint.Host, Settings.Tls)
+                : new WebSocketConnector(new HostResolver(endpoint.Host), endpoint.Port, endpoint.Target, endpoint.HostHeader, Settings);
         }
 
         public static string UrlFor(string address, ushort port, string path)
@@ -54,35 +56,32 @@ namespace Fomoxa.Networking.Transports
                 throw new ArgumentException("a WebSocket address is a host name, an IP address or a ws:// URL", nameof(address));
             }
 
-            if (address.StartsWith("wss://", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new NotSupportedException("the native WebSocket transport does not do TLS; connect with ws:// or put a TLS-terminating proxy in front of the server for browser clients");
-            }
-
-            if (!address.StartsWith("ws://", StringComparison.OrdinalIgnoreCase))
+            bool secure = address.StartsWith("wss://", StringComparison.OrdinalIgnoreCase);
+            if (!secure && !address.StartsWith("ws://", StringComparison.OrdinalIgnoreCase))
             {
                 string literalHost = IPAddress.TryParse(address, out IPAddress literal) && literal.AddressFamily == AddressFamily.InterNetworkV6
                     ? $"[{address}]"
                     : address;
-                return new Endpoint(address, port, path, $"{literalHost}:{port}");
+                return new Endpoint(address, port, path, $"{literalHost}:{port}", false);
             }
 
             if (!Uri.TryCreate(address, UriKind.Absolute, out Uri uri) || uri.Host.Length == 0 || uri.Fragment.Length > 0)
             {
-                throw new ArgumentException($"'{address}' is not a valid ws:// URL", nameof(address));
+                throw new ArgumentException($"'{address}' is not a valid {(secure ? "wss" : "ws")}:// URL", nameof(address));
             }
 
-            return new Endpoint(uri.DnsSafeHost, (ushort)uri.Port, uri.PathAndQuery, uri.Authority);
+            return new Endpoint(uri.DnsSafeHost, (ushort)uri.Port, uri.PathAndQuery, uri.Authority, secure);
         }
 
         internal readonly struct Endpoint
         {
-            public Endpoint(string host, ushort port, string target, string hostHeader)
+            public Endpoint(string host, ushort port, string target, string hostHeader, bool secure)
             {
                 Host = host;
                 Port = port;
                 Target = target;
                 HostHeader = hostHeader;
+                Secure = secure;
             }
 
             public string Host { get; }
@@ -92,6 +91,8 @@ namespace Fomoxa.Networking.Transports
             public string Target { get; }
 
             public string HostHeader { get; }
+
+            public bool Secure { get; }
         }
     }
 }

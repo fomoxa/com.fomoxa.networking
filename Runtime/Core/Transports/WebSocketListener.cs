@@ -184,6 +184,11 @@ namespace Fomoxa.Networking.Transports
             {
                 while (responseSent < response.Length)
                 {
+                    if (!socket.Poll(0, SelectMode.SelectWrite))
+                    {
+                        return HandshakeStatus.Pending;
+                    }
+
                     int sent = socket.Send(new ReadOnlySpan<byte>(response, responseSent, response.Length - responseSent), SocketFlags.None, out SocketError error);
                     if (error == SocketError.WouldBlock || (error == SocketError.Success && sent <= 0))
                     {

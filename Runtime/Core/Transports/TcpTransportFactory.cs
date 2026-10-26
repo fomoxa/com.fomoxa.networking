@@ -1,3 +1,4 @@
+using System;
 using System.Net;
 using System.Net.Sockets;
 using Fomoxa.Net;
@@ -7,6 +8,13 @@ namespace Fomoxa.Networking.Transports
 {
     public sealed class TcpTransportFactory : ITransportFactory
     {
+        public TcpTransportFactory(TlsSettings tls = null)
+        {
+            Tls = tls;
+        }
+
+        public TlsSettings Tls { get; }
+
         public int FrameBudget => FomoxaWire.MaxDataFrameSize;
 
         public IListenerTransport CreateListener(ushort port, out ushort boundPort)
@@ -17,7 +25,7 @@ namespace Fomoxa.Networking.Transports
         }
 
         public ITransportConnector CreateConnector(string address, ushort port) =>
-            new TcpConnector(address, port);
+            Tls == null ? new TcpConnector(address, port) : (ITransportConnector)new TlsTcpConnector(new HostResolver(address), port, address, Tls);
     }
 
     internal sealed class TcpConnector : ITransportConnector
@@ -42,5 +50,76 @@ namespace Fomoxa.Networking.Transports
         }
 
         public void Dispose() => connector.Dispose();
+    }
+
+    internal sealed class TlsTcpConnector : ITransportConnector, ITlsRejection
+    {
+        private readonly SocketConnector connector;
+        private readonly string host;
+        private readonly TlsSettings settings;
+        private TlsChannel channel;
+        private TimeSpan started;
+        private bool finished;
+
+        public TlsTcpConnector(IHostResolver resolver, ushort port, string host, TlsSettings settings)
+        {
+            connector = new SocketConnector(resolver, port);
+            this.host = host ?? throw new ArgumentNullException(nameof(host));
+            this.settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        }
+
+        public string TlsRejection { get; private set; }
+
+        public ConnectStatus Poll(out ITransport transport)
+        {
+            transport = null;
+            if (finished)
+            {
+                return ConnectStatus.Failed;
+            }
+
+            if (channel == null)
+            {
+                ConnectStatus connected = connector.Poll(out Socket socket);
+                if (connected != ConnectStatus.Connected)
+                {
+                    return connected == ConnectStatus.Failed ? Fail() : ConnectStatus.Pending;
+                }
+
+                channel = new TlsChannel(socket, host, settings);
+                started = settings.Clock();
+            }
+
+            switch (channel.Handshake())
+            {
+                case TlsHandshakeStatus.Completed:
+                    transport = new TlsTcpTransport(channel);
+                    channel = null;
+                    finished = true;
+                    return ConnectStatus.Connected;
+                case TlsHandshakeStatus.Rejected:
+                    TlsRejection = channel.Rejection;
+                    Dispose();
+                    return ConnectStatus.TlsRejected;
+                case TlsHandshakeStatus.Failed:
+                    return Fail();
+                default:
+                    return settings.Clock() - started > settings.HandshakeTimeout ? Fail() : ConnectStatus.Pending;
+            }
+        }
+
+        public void Dispose()
+        {
+            finished = true;
+            connector.Dispose();
+            channel?.Dispose();
+            channel = null;
+        }
+
+        private ConnectStatus Fail()
+        {
+            Dispose();
+            return ConnectStatus.Failed;
+        }
     }
 }

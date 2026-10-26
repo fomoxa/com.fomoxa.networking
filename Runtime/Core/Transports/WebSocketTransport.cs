@@ -22,7 +22,7 @@ namespace Fomoxa.Networking.Transports
         private const int MaxPendingControlBytes = 64 * 1024;
         private const ushort NormalClosure = 1000;
 
-        private readonly Socket socket;
+        private readonly IByteStream stream;
         private readonly bool masksOutgoing;
         private readonly RandomNumberGenerator random;
         private readonly byte[] maskKey = new byte[4];
@@ -42,11 +42,14 @@ namespace Fomoxa.Networking.Transports
         private bool released;
 
         public WebSocketTransport(Socket socket, bool masksOutgoing, ReadOnlySpan<byte> alreadyReceived)
+            : this(new SocketByteStream(socket ?? throw new ArgumentNullException(nameof(socket))), masksOutgoing, alreadyReceived)
         {
-            this.socket = socket ?? throw new ArgumentNullException(nameof(socket));
+        }
+
+        public WebSocketTransport(IByteStream stream, bool masksOutgoing, ReadOnlySpan<byte> alreadyReceived)
+        {
+            this.stream = stream ?? throw new ArgumentNullException(nameof(stream));
             this.masksOutgoing = masksOutgoing;
-            socket.Blocking = false;
-            socket.NoDelay = true;
             if (masksOutgoing)
             {
                 random = RandomNumberGenerator.Create();
@@ -145,7 +148,7 @@ namespace Fomoxa.Networking.Transports
 
             released = true;
             random?.Dispose();
-            socket.Dispose();
+            stream.Dispose();
         }
 
         private FrameStatus TakeFrame(Span<byte> buffer, out ReceiveOutcome delivered)
@@ -331,7 +334,7 @@ namespace Fomoxa.Networking.Transports
                 EnsureInbound(inbound.Length - inboundStart + 1);
             }
 
-            int read = socket.Receive(new Span<byte>(inbound, inboundEnd, inbound.Length - inboundEnd), SocketFlags.None, out SocketError error);
+            int read = stream.Receive(new Span<byte>(inbound, inboundEnd, inbound.Length - inboundEnd), out SocketError error);
             if (error == SocketError.WouldBlock)
             {
                 return false;
@@ -413,7 +416,7 @@ namespace Fomoxa.Networking.Transports
         {
             while (outboundStart < outboundEnd)
             {
-                int sent = socket.Send(new ReadOnlySpan<byte>(outbound, outboundStart, outboundEnd - outboundStart), SocketFlags.None, out SocketError error);
+                int sent = stream.Send(new ReadOnlySpan<byte>(outbound, outboundStart, outboundEnd - outboundStart), out SocketError error);
                 if (error != SocketError.Success && error != SocketError.WouldBlock)
                 {
                     errored = true;

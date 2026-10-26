@@ -37,6 +37,7 @@ namespace Fomoxa.Networking.Sessions
         AuthenticationFailed,
         AuthenticationTimeout,
         Transferred,
+        TlsRejected,
     }
 
     public enum SessionCloseReason : byte

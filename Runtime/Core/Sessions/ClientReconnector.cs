@@ -134,6 +134,7 @@ namespace Fomoxa.Networking.Sessions
             && args.Reason != StopReason.InvalidFragment
             && args.Reason != StopReason.ServerClosed
             && args.Reason != StopReason.UnauthenticatedMessage
+            && args.Reason != StopReason.TlsRejected
             && (args.Reason != StopReason.HandshakeFailed || args.Failure == HandshakeFailure.Timeout)
             && (policy.MaxRetries < 0 || retries < policy.MaxRetries);
     }

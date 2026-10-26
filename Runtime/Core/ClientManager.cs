@@ -63,6 +63,7 @@ namespace Fomoxa.Networking
             Dispatcher = new MessageDispatcher(schema);
             session = new ClientSession(schema, sessionConfig, limits, Dispatcher, protocol);
             session.OnHandlerException += RaiseHandlerException;
+            session.OnTlsRejected += rejection => log.Error($"Fomoxa stopped the client: {rejection}");
             Authentication = new ClientAuthentication(session);
             Entities = new ClientEntities(this, session, Dispatcher, channels, stateProtocol, transformProtocol, rpcIds, serverManager.Entities, entityBackend, log);
             Prediction = new ClientPrediction(Entities, session, Dispatcher, inputProtocol, predictionBackend, log);

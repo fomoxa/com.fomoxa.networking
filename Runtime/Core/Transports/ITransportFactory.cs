@@ -8,6 +8,7 @@ namespace Fomoxa.Networking.Transports
         Pending,
         Connected,
         Failed,
+        TlsRejected,
     }
 
     public interface ITransportFactory
@@ -31,6 +32,11 @@ namespace Fomoxa.Networking.Transports
         bool CanUseConnection(ReadOnlyMemory<byte> connection);
 
         ITransportConnector CreateConnector(string address, ushort port, ReadOnlyMemory<byte> connection);
+    }
+
+    public interface ITlsRejection
+    {
+        string TlsRejection { get; }
     }
 
     public interface IConnectionData

@@ -43,6 +43,71 @@ namespace Fomoxa.Networking.Tests
             Assert.Throws<InvalidOperationException>(() => rig.Client.StartConnection("game.example", 7000));
         }
 
+        [Test]
+        public void ATlsRejectionStopsTheClientWithoutRetryAndLogsTheReason()
+        {
+            var rig = new Rig();
+            rig.Factory.Next = () => new RejectingConnector("the TLS server game.example was rejected: pin mismatch");
+            var stops = new List<ConnectionStateArgs>();
+            rig.Client.OnClientConnectionState += args =>
+            {
+                if (args.State == ConnectionState.Stopped)
+                {
+                    stops.Add(args);
+                }
+            };
+
+            rig.Client.StartConnection("game.example", 443);
+            rig.Run(100);
+
+            Assert.AreEqual(1, stops.Count);
+            Assert.AreEqual(StopReason.TlsRejected, stops[0].Reason);
+            Assert.IsFalse(stops[0].WillRetry);
+            Assert.AreEqual(1, rig.Factory.Connectors.Count);
+            CollectionAssert.AreEqual(new[] { "Fomoxa stopped the client: the TLS server game.example was rejected: pin mismatch" }, rig.Errors);
+        }
+
+        [Test]
+        public void AConnectorWithoutAReasonStillStopsWithTlsRejected()
+        {
+            var rig = new Rig();
+            rig.Factory.Next = () => new RejectingConnector(null);
+            var stops = new List<StopReason>();
+            rig.Client.OnClientConnectionState += args =>
+            {
+                if (args.State == ConnectionState.Stopped)
+                {
+                    stops.Add(args.Reason);
+                }
+            };
+
+            rig.Client.StartConnection("game.example", 443);
+            rig.Run(3);
+
+            CollectionAssert.AreEqual(new[] { StopReason.TlsRejected }, stops);
+            CollectionAssert.AreEqual(new[] { "Fomoxa stopped the client: the TLS server was rejected" }, rig.Errors);
+        }
+
+        private sealed class RejectingConnector : ITransportConnector, ITlsRejection
+        {
+            public RejectingConnector(string rejection)
+            {
+                TlsRejection = rejection;
+            }
+
+            public string TlsRejection { get; }
+
+            public ConnectStatus Poll(out ITransport transport)
+            {
+                transport = null;
+                return ConnectStatus.TlsRejected;
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+
         private sealed class Rig
         {
             public readonly Factory Factory = new Factory();
@@ -54,7 +119,7 @@ namespace Fomoxa.Networking.Tests
             public Rig()
             {
                 MessageChannels channels = TestObjects.Channels();
-                var log = new NetworkLog(exception => throw exception, message => { });
+                var log = new NetworkLog(exception => throw exception, message => { }, Errors.Add);
                 Server = new ServerManager(
                     TestObjects.Schema(),
                     new SessionLimits(),
@@ -102,6 +167,8 @@ namespace Fomoxa.Networking.Tests
 
             public int ClockReads { get; private set; }
 
+            public List<string> Errors { get; } = new List<string>();
+
             public void Run(int steps)
             {
                 for (int step = 0; step < steps; step++)
@@ -119,6 +186,8 @@ namespace Fomoxa.Networking.Tests
         {
             public List<string> Connectors { get; } = new List<string>();
 
+            public Func<ITransportConnector> Next { get; set; }
+
             public int FrameBudget => FomoxaWire.MaxDataFrameSize;
 
             public IListenerTransport CreateListener(ushort port, out ushort boundPort)
@@ -130,7 +199,7 @@ namespace Fomoxa.Networking.Tests
             public ITransportConnector CreateConnector(string address, ushort port)
             {
                 Connectors.Add($"{address}:{port}");
-                return new PendingConnector();
+                return Next?.Invoke() ?? new PendingConnector();
             }
         }
 

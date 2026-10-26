@@ -258,7 +258,7 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
-        public void AddressesAreHostsOrWsUrlsAndWssIsNotSupported()
+        public void AddressesAreHostsOrWsOrWssUrls()
         {
             WebSocketTransportFactory.Endpoint byHost = WebSocketTransportFactory.Parse("game.example", 7777, "/ws");
             Assert.AreEqual(("game.example", (ushort)7777, "/ws", "game.example:7777"), (byHost.Host, byHost.Port, byHost.Target, byHost.HostHeader));
@@ -268,7 +268,9 @@ namespace Fomoxa.Networking.Tests
             Assert.AreEqual(("game.example", (ushort)80, "/fomoxa?room=2", "game.example"), (byUrl.Host, byUrl.Port, byUrl.Target, byUrl.HostHeader));
             WebSocketTransportFactory.Endpoint withPort = WebSocketTransportFactory.Parse("WS://10.0.0.2:9000/", 1, "/ws");
             Assert.AreEqual(("10.0.0.2", (ushort)9000, "/", "10.0.0.2:9000"), (withPort.Host, withPort.Port, withPort.Target, withPort.HostHeader));
-            Assert.Throws<NotSupportedException>(() => new WebSocketTransportFactory().CreateConnector("wss://game.example/", 1));
+            WebSocketTransportFactory.Endpoint secure = WebSocketTransportFactory.Parse("wss://game.example/fomoxa", 7777, "/ws");
+            Assert.AreEqual(("game.example", (ushort)443, "/fomoxa", "game.example", true), (secure.Host, secure.Port, secure.Target, secure.HostHeader, secure.Secure));
+            Assert.IsFalse(byUrl.Secure || byHost.Secure);
             Assert.AreEqual("ws://[::1]:7777/ws", WebSocketTransportFactory.UrlFor("::1", 7777, "/ws"));
             Assert.AreEqual("wss://game.example/fomoxa", WebSocketTransportFactory.UrlFor("wss://game.example/fomoxa", 7777, "/ws"));
             Assert.Throws<ArgumentException>(() => WebSocketTransportFactory.UrlFor("wss://", 1, "/"));

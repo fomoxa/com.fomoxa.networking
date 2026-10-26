@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Threading;
 using System;
@@ -20,6 +22,7 @@ namespace Fomoxa.Unity.Tests
     {
         private const uint GreetingId = 0x2000_0001;
         private const double FrameSeconds = 1.0 / 30;
+        private const int TlsRecordHandshake = 0x16;
 
         private readonly List<NetworkManager> created = new List<NetworkManager>();
         private readonly List<GameObject> extraObjects = new List<GameObject>();
@@ -461,6 +464,79 @@ namespace Fomoxa.Unity.Tests
             Assert.Throws<InvalidOperationException>(() => manager.ClientManager.StartConnection("127.0.0.1", 7777));
             Assert.Throws<InvalidOperationException>(() => manager.ServerManager.StartConnection(0));
             Assert.Throws<ArgumentException>(() => manager.ClientManager.StartConnection("127.0.0.1", 7777, new byte[] { 1 }));
+        }
+
+        [Test]
+        public void ATcpTransportReadsItsTlsSwitchAndSettingsWhenTheClientConnects()
+        {
+            var tcp = new GameObject("Tcp").AddComponent<TcpNetworkTransport>();
+            extraObjects.Add(tcp.gameObject);
+            NetworkManager client = Create(transport: tcp);
+            var stops = new List<ConnectionStateArgs>();
+            client.ClientManager.OnClientConnectionState += args =>
+            {
+                if (args.State == ConnectionState.Stopped)
+                {
+                    stops.Add(args);
+                }
+            };
+
+            Assert.AreNotEqual(TlsRecordHandshake, FirstByteSent(client, "127.0.0.1"));
+            client.ClientManager.StopConnection();
+            tcp.UseTls = true;
+            tcp.Tls.HandshakeTimeout = TimeSpan.FromMilliseconds(200);
+            stops.Clear();
+
+            Assert.AreEqual(TlsRecordHandshake, FirstByteSent(client, "127.0.0.1"));
+            RunInRealTime(() => stops.Count > 0, client);
+            Assert.AreEqual(StopReason.TransportError, stops[0].Reason);
+            Assert.IsTrue(stops[0].WillRetry);
+            client.ClientManager.StopConnection();
+        }
+
+        [Test]
+        public void AWebSocketTransportOpensTlsForWssAndCountsItInTheHandshakeTimeout()
+        {
+            var webSocket = new GameObject("WebSocket").AddComponent<WebSocketNetworkTransport>();
+            extraObjects.Add(webSocket.gameObject);
+            var serialized = new SerializedObject(webSocket);
+            serialized.FindProperty("handshakeTimeoutSeconds").floatValue = 0.2f;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            NetworkManager client = Create(transport: webSocket);
+            var stops = new List<ConnectionStateArgs>();
+            client.ClientManager.OnClientConnectionState += args =>
+            {
+                if (args.State == ConnectionState.Stopped)
+                {
+                    stops.Add(args);
+                }
+            };
+
+            Assert.AreEqual(TlsRecordHandshake, FirstByteSent(client, "wss://127.0.0.1:{0}/"));
+            RunInRealTime(() => stops.Count > 0, client);
+            Assert.AreEqual(StopReason.TransportError, stops[0].Reason);
+            Assert.IsTrue(stops[0].WillRetry);
+            client.ClientManager.StopConnection();
+        }
+
+        private static int FirstByteSent(NetworkManager client, string address)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            try
+            {
+                ushort port = (ushort)((IPEndPoint)listener.LocalEndpoint).Port;
+                client.ClientManager.StartConnection(string.Format(address, port), port);
+                RunInRealTime(listener.Pending, client);
+                using TcpClient accepted = listener.AcceptTcpClient();
+                RunInRealTime(() => accepted.Available > 0, client);
+                var first = new byte[1];
+                return accepted.GetStream().Read(first, 0, 1) == 1 ? first[0] : -1;
+            }
+            finally
+            {
+                listener.Stop();
+            }
         }
 
         [Test]

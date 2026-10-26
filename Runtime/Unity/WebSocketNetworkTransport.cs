@@ -13,6 +13,8 @@ namespace Fomoxa.Unity
         [SerializeField] private string[] allowedOrigins = Array.Empty<string>();
         [SerializeField] private int maxBufferedBytes = 1024 * 1024;
 
+        public TlsSettings Tls { get; } = new TlsSettings();
+
         public override ITransportFactory CreateFactory()
         {
             var settings = new WebSocketSettings
@@ -20,6 +22,7 @@ namespace Fomoxa.Unity
                 Path = path,
                 MaxHandshakeBytes = maxHandshakeBytes,
                 HandshakeTimeout = TimeSpan.FromSeconds(handshakeTimeoutSeconds),
+                Tls = Tls,
             };
             settings.AllowedOrigins.AddRange(allowedOrigins);
             return RunsInBrowser

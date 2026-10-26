@@ -9,6 +9,7 @@ namespace Fomoxa.Networking.Transports
         private string path = "/";
         private int maxHandshakeBytes = 8 * 1024;
         private TimeSpan handshakeTimeout = TimeSpan.FromSeconds(5);
+        private TlsSettings tls = new TlsSettings();
 
         public string Path
         {
@@ -31,6 +32,12 @@ namespace Fomoxa.Networking.Transports
         }
 
         public List<string> AllowedOrigins { get; } = new List<string>();
+
+        public TlsSettings Tls
+        {
+            get => tls;
+            set => tls = value ?? throw new ArgumentNullException(nameof(value));
+        }
 
         internal Func<TimeSpan> Clock { get; set; } = () => MonotonicClock.Now;
     }

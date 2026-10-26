@@ -52,6 +52,8 @@ namespace Fomoxa.Networking.Sessions
 
         public event Action<HandlerExceptionArgs> OnHandlerException;
 
+        public event Action<string> OnTlsRejected;
+
         public ConnectionState State { get; private set; } = ConnectionState.Stopped;
 
         internal MessageDispatcher Dispatcher => dispatcher;
@@ -126,7 +128,15 @@ namespace Fomoxa.Networking.Sessions
                     return;
                 }
 
+                ITransportConnector finished = connector;
                 connector = null;
+                if (status == ConnectStatus.TlsRejected)
+                {
+                    OnTlsRejected?.Invoke((finished as ITlsRejection)?.TlsRejection ?? "the TLS server was rejected");
+                    End(StopReason.TlsRejected, default);
+                    return;
+                }
+
                 if (status == ConnectStatus.Failed)
                 {
                     End(StopReason.TransportError, default);
