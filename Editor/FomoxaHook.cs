@@ -9,11 +9,16 @@ namespace Fomoxa.Unity.Editor
     [InitializeOnLoad]
     public static class FomoxaHook
     {
+        private static readonly List<string> compilerErrors = new List<string>();
         private static bool compilationFailed;
 
         static FomoxaHook()
         {
-            CompilationPipeline.compilationStarted += context => compilationFailed = false;
+            CompilationPipeline.compilationStarted += context =>
+            {
+                compilationFailed = false;
+                compilerErrors.Clear();
+            };
             CompilationPipeline.assemblyCompilationFinished += OnAssemblyCompiled;
             CompilationPipeline.compilationFinished += OnCompilationFinished;
             EditorApplication.delayCall += RunAfterCompilation;
@@ -39,7 +44,7 @@ namespace Fomoxa.Unity.Editor
                 if (message.type == CompilerMessageType.Error)
                 {
                     compilationFailed = true;
-                    return;
+                    compilerErrors.Add(message.message);
                 }
             }
         }
@@ -90,6 +95,19 @@ namespace Fomoxa.Unity.Editor
             }
 
             string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+            FomoxaSourceResult sources = FomoxaSourceSteps.Prepare(
+                new FomoxaCompilation(projectRoot, settings.GeneratedFolder, compilationFailed, compilerErrors.ToArray()));
+            if (!sources.Succeeded)
+            {
+                Debug.LogError("[Fomoxa] " + sources.Error);
+                return;
+            }
+
+            if (sources.Warnings != null)
+            {
+                Debug.LogWarning("[Fomoxa] " + sources.Warnings);
+            }
+
             FomoxaGenerateResult result = FomoxaGenerator.Run(
                 projectRoot,
                 settings.ModelsFolder,
@@ -97,7 +115,8 @@ namespace Fomoxa.Unity.Editor
                 FomoxacBinary.PathForThisEditor(),
                 FomoxaSystemModels.SourcePathForThisEditor(),
                 channels,
-                rpcs);
+                rpcs,
+                sources.SourceFolders);
 
             if (!result.Succeeded)
             {

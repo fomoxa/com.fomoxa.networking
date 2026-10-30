@@ -97,6 +97,28 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ExtraSourceFoldersJoinTheSingleRun()
+        {
+            Directory.CreateDirectory(Path.Combine(projectRoot, "Extra"));
+            File.WriteAllText(Path.Combine(projectRoot, "Extra", "Position.cs"), TwoCodecModel);
+
+            FomoxaGenerateResult result = FomoxaGenerator.Run(
+                projectRoot,
+                "Models",
+                "Generated",
+                FomoxacBinary.PathForThisEditor(),
+                FomoxaSystemModels.SourcePathForThisEditor(),
+                new ChannelDeclaration[0],
+                new RpcDeclaration[0],
+                new[] { "Extra" });
+
+            Assert.IsTrue(result.Succeeded, result.Error);
+            StringAssert.Contains("src = [\"Models\", \"FomoxaSystemModels\", \"Generated/RpcModels\", \"Extra\"]", Read("fomoxa.toml"));
+            StringAssert.Contains("public const uint MessageId", Read("Generated", "PositionWideCodec.cs"));
+            StringAssert.Contains("public const uint MessageId", Read("Generated", "GreetingNetCodec.cs"));
+        }
+
+        [Test]
         public void FirstRunWritesTheTomlTheCodecsAndTheRegistration()
         {
             FomoxaGenerateResult result = Generate();

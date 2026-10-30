@@ -115,7 +115,18 @@ namespace Fomoxa.Unity.Editor
             string fomoxacPath,
             string systemModelsSource,
             IReadOnlyList<ChannelDeclaration> channels,
-            IReadOnlyList<RpcDeclaration> rpcs)
+            IReadOnlyList<RpcDeclaration> rpcs) =>
+            Run(projectRoot, modelsFolder, generatedFolder, fomoxacPath, systemModelsSource, channels, rpcs, Array.Empty<string>());
+
+        public static FomoxaGenerateResult Run(
+            string projectRoot,
+            string modelsFolder,
+            string generatedFolder,
+            string fomoxacPath,
+            string systemModelsSource,
+            IReadOnlyList<ChannelDeclaration> channels,
+            IReadOnlyList<RpcDeclaration> rpcs,
+            IReadOnlyList<string> extraSourceFolders)
         {
             if (channels == null)
             {
@@ -125,6 +136,11 @@ namespace Fomoxa.Unity.Editor
             if (rpcs == null)
             {
                 throw new ArgumentNullException(nameof(rpcs));
+            }
+
+            if (extraSourceFolders == null)
+            {
+                throw new ArgumentNullException(nameof(extraSourceFolders));
             }
 
             if (string.IsNullOrWhiteSpace(modelsFolder) || string.IsNullOrWhiteSpace(generatedFolder))
@@ -159,7 +175,7 @@ namespace Fomoxa.Unity.Editor
             }
 
             changed |= rpcModelsChanged;
-            changed |= WriteIfChanged(tomlPath, Toml(modelsFolder, generatedFolder));
+            changed |= WriteIfChanged(tomlPath, Toml(modelsFolder, generatedFolder, extraSourceFolders));
 
             if (!RunFomoxac(fomoxacPath, projectRoot, out string warnings, out string error))
             {
@@ -291,9 +307,9 @@ namespace Fomoxa.Unity.Editor
             }
         }
 
-        private static string Toml(string modelsFolder, string generatedFolder) =>
+        private static string Toml(string modelsFolder, string generatedFolder, IReadOnlyList<string> extraSourceFolders) =>
             TomlMarker + "\n"
-            + $"src = [{TomlString(modelsFolder)}, {TomlString(SystemModelsFolder)}, {TomlString(generatedFolder.TrimEnd('/', '\\') + "/" + RpcModelsFolder)}]\n"
+            + $"src = [{string.Join(", ", new[] { modelsFolder, SystemModelsFolder, generatedFolder.TrimEnd('/', '\\') + "/" + RpcModelsFolder }.Concat(extraSourceFolders).Select(TomlString))}]\n"
             + $"out = {TomlString(generatedFolder)}\n"
             + "net_schema = true\n";
 
