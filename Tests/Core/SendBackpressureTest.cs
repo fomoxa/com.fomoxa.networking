@@ -111,17 +111,22 @@ namespace Fomoxa.Networking.Tests
             {
                 while (last == TransportSignal.Ok && accepted < MostBytes)
                 {
-                    last = transport.Send(chunk).Signal;
+                    SendOutcome outcome = transport.Send(chunk);
+                    last = outcome.Signal;
                     if (last == TransportSignal.Ok)
                     {
                         accepted += chunk.Length;
+                    }
+                    else if (last == TransportSignal.Partial)
+                    {
+                        accepted += outcome.Count;
                     }
                 }
             }) { IsBackground = true };
             filling.Start();
 
             Assert.IsTrue(filling.Join(Limit), "a send blocked the calling thread");
-            Assert.AreEqual(TransportSignal.WouldBlock, last);
+            Assert.That(last, Is.EqualTo(TransportSignal.WouldBlock).Or.EqualTo(TransportSignal.Partial));
             return accepted;
         }
 
