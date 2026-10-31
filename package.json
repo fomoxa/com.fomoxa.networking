@@ -1,6 +1,6 @@
 {
   "name": "com.fomoxa.networking",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "Fomoxa Networking",
   "description": "Networking built on the Fomoxa protocol: a .NET core with Unity integration.",
   "unity": "6000.5",

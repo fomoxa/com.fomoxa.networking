@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.1.0 |
+| Version | 0.2.0 |
 | Unity | 6000.5 or later |
 | Code generation | Windows x64 and Linux x64 Editors |
 | License | Apache-2.0 |
@@ -12,10 +12,12 @@
 ## Features
 
 - UDP, TCP and WebSocket transports, and one server listening on several of them at once.
+- Encrypted UDP with connect grants, the same encrypted datagrams over WebSocket for WebGL, and client TLS on TCP and WebSocket.
+- Authentication before a peer starts, kicks with a reason, and transfers of a client to another server.
 - Host mode over an in-process connection.
 - Network objects from prefabs or placed in scenes, with ownership and per-client visibility.
 - RPCs from client to server and from server to clients, declared with attributes.
-- Per-behaviour state with delta encoding, `NetworkTransform` with interpolation and teleport, `NetworkAnimator`.
+- Per-behaviour state with delta encoding, synchronized lists, dictionaries and sets, `NetworkTransform` with interpolation and teleport, `NetworkAnimator`.
 - Network scenes, loaded for every client or for chosen clients.
 - Client-side prediction with reconciliation and replay, including rollback of Unity 3D and 2D physics.
 - WebGL clients through the browser's WebSocket.
@@ -107,7 +109,7 @@ The console backend for a server without Unity ships as source in `Standalone~`,
 
 ## Not included
 
-The package has no lockstep mode, match recording, matchmaking, relay or encryption. The bundled `fomoxac` code generator has no macOS build, so code generation does not run in the macOS Editor.
+The package has no lockstep mode, match recording, matchmaking or relay. Running many servers behind a directory and a gateway takes the separate [`com.fomoxa.rpc`](https://github.com/fomoxa/com.fomoxa.rpc) package and the [Fomoxa gateway](https://github.com/fomoxa/gateway). The bundled `fomoxac` code generator has no macOS build, so code generation does not run in the macOS Editor.
 
 ## License
 
