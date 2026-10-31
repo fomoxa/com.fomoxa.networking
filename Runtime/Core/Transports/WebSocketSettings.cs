@@ -40,5 +40,17 @@ namespace Fomoxa.Networking.Transports
         }
 
         internal Func<TimeSpan> Clock { get; set; } = () => MonotonicClock.Now;
+
+        internal Fomoxa.Net.WebSockets.WebSocketSettings ForPackage()
+        {
+            var settings = new Fomoxa.Net.WebSockets.WebSocketSettings
+            {
+                Path = Path,
+                MaxHandshakeBytes = MaxHandshakeBytes,
+                HandshakeTimeout = HandshakeTimeout,
+            };
+            settings.AllowedOrigins.AddRange(AllowedOrigins);
+            return settings;
+        }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Net.Sockets;
 using Fomoxa.Net.Transports;
+using Fomoxa.Net.WebSockets;
 
 namespace Fomoxa.Networking.Transports
 {
@@ -8,16 +9,13 @@ namespace Fomoxa.Networking.Transports
     {
         private readonly SocketConnector connector;
         private readonly WebSocketSettings settings;
+        private readonly string target;
+        private readonly string host;
         private readonly string tlsHost;
         private readonly TlsSettings tls;
-        private readonly string key;
-        private readonly byte[] request;
-        private readonly byte[] response;
-        private IByteStream stream;
         private TlsChannel handshaking;
+        private WebSocketClientHandshake upgrading;
         private TimeSpan started;
-        private int requestSent;
-        private int used;
         private bool finished;
 
         public WebSocketConnector(IHostResolver resolver, ushort port, string target, string host, WebSocketSettings settings)
@@ -29,11 +27,10 @@ namespace Fomoxa.Networking.Transports
         {
             connector = new SocketConnector(resolver, port);
             this.settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            this.target = target;
+            this.host = host;
             this.tlsHost = tlsHost;
             this.tls = tls;
-            key = WebSocketHandshake.NewKey();
-            request = WebSocketHandshake.Request(target, host, key);
-            response = new byte[settings.MaxHandshakeBytes];
         }
 
         public string TlsRejection { get; private set; }
@@ -46,7 +43,7 @@ namespace Fomoxa.Networking.Transports
                 return ConnectStatus.Failed;
             }
 
-            if (stream == null && handshaking == null)
+            if (handshaking == null && upgrading == null)
             {
                 ConnectStatus connected = connector.Poll(out Socket socket);
                 if (connected != ConnectStatus.Connected)
@@ -57,7 +54,7 @@ namespace Fomoxa.Networking.Transports
                 started = settings.Clock();
                 if (tls == null)
                 {
-                    stream = new SocketByteStream(socket);
+                    upgrading = Upgrade(new SocketByteStream(socket));
                 }
                 else
                 {
@@ -70,7 +67,7 @@ namespace Fomoxa.Networking.Transports
                 switch (handshaking.Handshake())
                 {
                     case TlsHandshakeStatus.Completed:
-                        stream = handshaking;
+                        upgrading = Upgrade(handshaking);
                         handshaking = null;
                         break;
                     case TlsHandshakeStatus.Rejected:
@@ -89,12 +86,18 @@ namespace Fomoxa.Networking.Transports
                 return Fail();
             }
 
-            if (!WriteRequest())
+            switch (upgrading.Poll(out WebSocketTransport upgraded))
             {
-                return finished ? ConnectStatus.Failed : ConnectStatus.Pending;
+                case WebSocketConnectStatus.Connected:
+                    transport = upgraded;
+                    upgrading = null;
+                    finished = true;
+                    return ConnectStatus.Connected;
+                case WebSocketConnectStatus.Failed:
+                    return Fail();
+                default:
+                    return ConnectStatus.Pending;
             }
-
-            return ReadResponse(out transport);
         }
 
         public void Dispose()
@@ -103,65 +106,13 @@ namespace Fomoxa.Networking.Transports
             connector.Dispose();
             handshaking?.Dispose();
             handshaking = null;
-            stream?.Dispose();
-            stream = null;
+            upgrading?.Dispose();
+            upgrading = null;
         }
+
+        private WebSocketClientHandshake Upgrade(IByteStream stream) => new WebSocketClientHandshake(stream, target, host, settings.ForPackage());
 
         private bool TimedOut() => settings.Clock() - started > settings.HandshakeTimeout;
-
-        private bool WriteRequest()
-        {
-            while (requestSent < request.Length)
-            {
-                int sent = stream.Send(new ReadOnlySpan<byte>(request, requestSent, request.Length - requestSent), out SocketError error);
-                if (error == SocketError.WouldBlock || (error == SocketError.Success && sent <= 0))
-                {
-                    return false;
-                }
-
-                if (error != SocketError.Success)
-                {
-                    Fail();
-                    return false;
-                }
-
-                requestSent += sent;
-            }
-
-            return true;
-        }
-
-        private ConnectStatus ReadResponse(out ITransport transport)
-        {
-            transport = null;
-            int read = stream.Receive(new Span<byte>(response, used, response.Length - used), out SocketError error);
-            if (error == SocketError.WouldBlock)
-            {
-                return ConnectStatus.Pending;
-            }
-
-            if (error != SocketError.Success || read == 0)
-            {
-                return Fail();
-            }
-
-            used += read;
-            int headerEnd = WebSocketHandshake.HeaderEnd(response, used);
-            if (headerEnd < 0)
-            {
-                return used == response.Length ? Fail() : ConnectStatus.Pending;
-            }
-
-            if (!WebSocketHandshake.AcceptsResponse(response, headerEnd, key))
-            {
-                return Fail();
-            }
-
-            transport = new WebSocketTransport(stream, true, new ReadOnlySpan<byte>(response, headerEnd, used - headerEnd));
-            stream = null;
-            finished = true;
-            return ConnectStatus.Connected;
-        }
 
         private ConnectStatus Fail()
         {

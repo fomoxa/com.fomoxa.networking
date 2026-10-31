@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
+using Fomoxa.Net.WebSockets;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Tls;
 using Org.BouncyCastle.Tls.Crypto;

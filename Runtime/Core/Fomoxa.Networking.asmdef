@@ -9,7 +9,8 @@
     "precompiledReferences": [
         "BouncyCastle.Cryptography.dll",
         "Fomoxa.Attributes.dll",
-        "Fomoxa.Net.dll"
+        "Fomoxa.Net.dll",
+        "Fomoxa.Net.WebSockets.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],

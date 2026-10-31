@@ -13,6 +13,7 @@ using Fomoxa.Networking.Sessions;
 using Fomoxa.Networking.Transports;
 using NUnit.Framework;
 using Org.BouncyCastle.Tls;
+using WebSocketAddress = Fomoxa.Net.WebSockets.WebSocketAddress;
 
 namespace Fomoxa.Networking.Tests
 {
@@ -401,11 +402,36 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void TheWebSocketHandshakeTimeoutCoversTheHttpUpgradeAfterTls()
+        {
+            using var backend = new BackendListener();
+            using var proxy = new TlsTestProxy(backend.Port, Leaf, Middle);
+            TimeSpan now = TimeSpan.Zero;
+            var settings = new WebSocketSettings { HandshakeTimeout = TimeSpan.FromSeconds(3), Clock = () => now, Tls = Trusting(Root) };
+            using ITransportConnector connector = new WebSocketTransportFactory(settings).CreateConnector($"wss://localhost:{proxy.Port}/", 0);
+
+            Assert.AreEqual(ConnectStatus.Pending, PollFor(connector, TimeSpan.FromMilliseconds(300)));
+            using Socket upgrade = backend.Accept();
+            var clock = Stopwatch.StartNew();
+            while (upgrade.Available == 0 && clock.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                Assert.AreEqual(ConnectStatus.Pending, connector.Poll(out _));
+                Thread.Sleep(1);
+            }
+
+            Assert.Greater(upgrade.Available, 0, "the upgrade request did not reach the backend");
+            now = TimeSpan.FromSeconds(3);
+            Assert.AreEqual(ConnectStatus.Pending, connector.Poll(out _));
+            now = TimeSpan.FromSeconds(3.001);
+            Assert.AreEqual(ConnectStatus.Failed, connector.Poll(out _));
+        }
+
+        [Test]
         public void AWssAddressUsesTlsAndPort443ByDefault()
         {
-            WebSocketTransportFactory.Endpoint secure = WebSocketTransportFactory.Parse("wss://game.example.com/play?room=1", 7000, "/");
-            WebSocketTransportFactory.Endpoint plain = WebSocketTransportFactory.Parse("ws://game.example.com/play", 7000, "/");
-            WebSocketTransportFactory.Endpoint bare = WebSocketTransportFactory.Parse("game.example.com", 7000, "/play");
+            WebSocketAddress secure = WebSocketAddress.Parse("wss://game.example.com/play?room=1", 7000, "/");
+            WebSocketAddress plain = WebSocketAddress.Parse("ws://game.example.com/play", 7000, "/");
+            WebSocketAddress bare = WebSocketAddress.Parse("game.example.com", 7000, "/play");
 
             Assert.IsTrue(secure.Secure);
             Assert.AreEqual(443, secure.Port);
@@ -414,9 +440,9 @@ namespace Fomoxa.Networking.Tests
             Assert.IsFalse(plain.Secure);
             Assert.AreEqual(80, plain.Port);
             Assert.IsFalse(bare.Secure);
-            Assert.AreEqual(7000, WebSocketTransportFactory.Parse("wss://[::1]:7000/", 0, "/").Port);
-            Assert.AreEqual("::1", WebSocketTransportFactory.Parse("wss://[::1]:7000/", 0, "/").Host);
-            Assert.Throws<ArgumentException>(() => WebSocketTransportFactory.Parse("wss://", 0, "/"));
+            Assert.AreEqual(7000, WebSocketAddress.Parse("wss://[::1]:7000/", 0, "/").Port);
+            Assert.AreEqual("::1", WebSocketAddress.Parse("wss://[::1]:7000/", 0, "/").Host);
+            Assert.Throws<ArgumentException>(() => WebSocketAddress.Parse("wss://", 0, "/"));
             Assert.Throws<ArgumentNullException>(() => new WebSocketSettings().Tls = null);
             Assert.IsInstanceOf<ITlsRejection>(new WebSocketTransportFactory().CreateConnector("wss://127.0.0.1:1/", 0));
         }

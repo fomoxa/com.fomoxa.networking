@@ -16,7 +16,8 @@
     "precompiledReferences": [
         "nunit.framework.dll",
         "BouncyCastle.Cryptography.dll",
-        "Fomoxa.Net.dll"
+        "Fomoxa.Net.dll",
+        "Fomoxa.Net.WebSockets.dll"
     ],
     "autoReferenced": false,
     "defineConstraints": [

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,8 @@ using Fomoxa.Net;
 using Fomoxa.Net.Transports;
 using Fomoxa.Networking.Transports;
 using NUnit.Framework;
+using WebSocketAddress = Fomoxa.Net.WebSockets.WebSocketAddress;
+using WebSocketTransport = Fomoxa.Net.WebSockets.WebSocketTransport;
 
 namespace Fomoxa.Networking.Tests
 {
@@ -154,7 +157,7 @@ namespace Fomoxa.Networking.Tests
             StringAssert.StartsWith("GET /play HTTP/1.1\r\n", request);
             StringAssert.Contains($"Host: 127.0.0.1:{port}\r\n", request);
             string key = request.Split(new[] { "\r\n" }, StringSplitOptions.None).First(line => line.StartsWith("Sec-WebSocket-Key: ")).Substring(19);
-            byte[] response = Encoding.ASCII.GetBytes($"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {WebSocketHandshake.AcceptFor(key)}\r\n\r\n");
+            byte[] response = Encoding.ASCII.GetBytes($"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {AcceptFor(key)}\r\n\r\n");
             stream.Write(response, 0, response.Length);
             Assert.AreEqual(ConnectStatus.Connected, PollConnector(connector, () => true, out ITransport client));
             using (client)
@@ -231,44 +234,24 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
-        public void AHandshakeThatDoesNotFinishInTimeIsDropped()
-        {
-            var now = TimeSpan.Zero;
-            var settings = new WebSocketSettings { HandshakeTimeout = TimeSpan.FromSeconds(5), Clock = () => now };
-            using var listener = (WebSocketListener)new WebSocketTransportFactory(settings).CreateListener(0, out ushort port);
-            using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            socket.Connect(IPAddress.Loopback, port);
-            socket.Send(Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\n"));
-            Wait(() => listener.Accept().Status == AcceptStatus.Progress || listener.PendingCount == 1);
-            Assert.AreEqual(1, listener.PendingCount);
-
-            now = TimeSpan.FromSeconds(6);
-            listener.Accept();
-
-            Assert.AreEqual(0, listener.PendingCount);
-            socket.ReceiveTimeout = 5000;
-            Assert.AreEqual(0, socket.Receive(new byte[16]));
-        }
-
-        [Test]
         public void TheConnectorFailsOnAWrongAcceptKeyAndOnANonUpgradeStatus()
         {
-            Assert.AreEqual(ConnectStatus.Failed, ConnectToScriptedServer(key => $"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {WebSocketHandshake.AcceptFor("other")}\r\n\r\n"));
+            Assert.AreEqual(ConnectStatus.Failed, ConnectToScriptedServer(key => $"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {AcceptFor("other")}\r\n\r\n"));
             Assert.AreEqual(ConnectStatus.Failed, ConnectToScriptedServer(key => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"));
         }
 
         [Test]
         public void AddressesAreHostsOrWsOrWssUrls()
         {
-            WebSocketTransportFactory.Endpoint byHost = WebSocketTransportFactory.Parse("game.example", 7777, "/ws");
+            WebSocketAddress byHost = WebSocketAddress.Parse("game.example", 7777, "/ws");
             Assert.AreEqual(("game.example", (ushort)7777, "/ws", "game.example:7777"), (byHost.Host, byHost.Port, byHost.Target, byHost.HostHeader));
-            WebSocketTransportFactory.Endpoint byIpv6 = WebSocketTransportFactory.Parse("::1", 7777, "/");
+            WebSocketAddress byIpv6 = WebSocketAddress.Parse("::1", 7777, "/");
             Assert.AreEqual("[::1]:7777", byIpv6.HostHeader);
-            WebSocketTransportFactory.Endpoint byUrl = WebSocketTransportFactory.Parse("ws://game.example/fomoxa?room=2", 7777, "/ws");
+            WebSocketAddress byUrl = WebSocketAddress.Parse("ws://game.example/fomoxa?room=2", 7777, "/ws");
             Assert.AreEqual(("game.example", (ushort)80, "/fomoxa?room=2", "game.example"), (byUrl.Host, byUrl.Port, byUrl.Target, byUrl.HostHeader));
-            WebSocketTransportFactory.Endpoint withPort = WebSocketTransportFactory.Parse("WS://10.0.0.2:9000/", 1, "/ws");
+            WebSocketAddress withPort = WebSocketAddress.Parse("WS://10.0.0.2:9000/", 1, "/ws");
             Assert.AreEqual(("10.0.0.2", (ushort)9000, "/", "10.0.0.2:9000"), (withPort.Host, withPort.Port, withPort.Target, withPort.HostHeader));
-            WebSocketTransportFactory.Endpoint secure = WebSocketTransportFactory.Parse("wss://game.example/fomoxa", 7777, "/ws");
+            WebSocketAddress secure = WebSocketAddress.Parse("wss://game.example/fomoxa", 7777, "/ws");
             Assert.AreEqual(("game.example", (ushort)443, "/fomoxa", "game.example", true), (secure.Host, secure.Port, secure.Target, secure.HostHeader, secure.Secure));
             Assert.IsFalse(byUrl.Secure || byHost.Secure);
             Assert.AreEqual("ws://[::1]:7777/ws", WebSocketTransportFactory.UrlFor("::1", 7777, "/ws"));
@@ -437,6 +420,12 @@ namespace Fomoxa.Networking.Tests
                 Assert.Less(clock.Elapsed, Limit, "timed out");
                 Thread.Sleep(1);
             }
+        }
+
+        private static string AcceptFor(string key)
+        {
+            using var sha1 = SHA1.Create();
+            return Convert.ToBase64String(sha1.ComputeHash(Encoding.ASCII.GetBytes(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
         }
 
         private static byte[] Pattern(int length)
