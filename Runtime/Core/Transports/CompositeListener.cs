@@ -11,6 +11,7 @@ namespace Fomoxa.Networking.Transports
         private readonly Queue<int> acceptedBudgets = new Queue<int>();
         private readonly Queue<int> acceptedListeners = new Queue<int>();
         private readonly Queue<ReadOnlyMemory<byte>> acceptedConnectionData = new Queue<ReadOnlyMemory<byte>>();
+        private readonly Queue<IGatewayArrival> acceptedArrivals = new Queue<IGatewayArrival>();
         private int nextIndex;
 
         public CompositeListener(params IListenerTransport[] listeners)
@@ -101,6 +102,18 @@ namespace Fomoxa.Networking.Transports
             return true;
         }
 
+        internal bool TryTakeAcceptedArrival(out IGatewayArrival arrival)
+        {
+            if (acceptedArrivals.Count == 0)
+            {
+                arrival = null;
+                return false;
+            }
+
+            arrival = acceptedArrivals.Dequeue();
+            return true;
+        }
+
         public void Dispose()
         {
             foreach (IListenerTransport listener in listeners)
@@ -114,9 +127,11 @@ namespace Fomoxa.Networking.Transports
             if (listeners[index] is CompositeListener inner)
             {
                 inner.TryTakeAcceptedConnectionData(out _);
+                inner.TryTakeAcceptedArrival(out _);
             }
 
             acceptedConnectionData.Enqueue(transport is IConnectionData connection ? connection.ConnectionData : ReadOnlyMemory<byte>.Empty);
+            acceptedArrivals.Enqueue(transport as IGatewayArrival);
         }
 
         private void RecordBudget(int index)

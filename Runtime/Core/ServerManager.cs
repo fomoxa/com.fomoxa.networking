@@ -104,6 +104,8 @@ namespace Fomoxa.Networking
 
         public int FrameBudgetOf(ulong peerId) => session.FrameBudgetOf(peerId);
 
+        public bool ArrivedOverWebSocket(ulong peerId) => session.ArrivedOverWebSocket(peerId);
+
         public ushort Port { get; private set; }
 
         public IReadOnlyDictionary<uint, INetworkEntity> Spawned => Entities.Representations;

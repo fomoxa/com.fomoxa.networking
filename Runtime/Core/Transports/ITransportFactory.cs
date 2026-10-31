@@ -43,4 +43,9 @@ namespace Fomoxa.Networking.Transports
     {
         ReadOnlyMemory<byte> ConnectionData { get; }
     }
+
+    internal interface IGatewayArrival
+    {
+        bool ArrivedOverWebSocket { get; }
+    }
 }

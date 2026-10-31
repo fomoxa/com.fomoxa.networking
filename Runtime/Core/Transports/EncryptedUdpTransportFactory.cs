@@ -50,7 +50,7 @@ namespace Fomoxa.Networking.Transports
 
         public bool RequiresConnection => true;
 
-        public bool CanUseConnection(ReadOnlyMemory<byte> connection) => TryReadConnection(connection, out _, out _);
+        public bool CanUseConnection(ReadOnlyMemory<byte> connection) => TryReadConnection(grantCodec, tokenCodec, connection, out _, out _);
 
         public IListenerTransport CreateListener(ushort port, out ushort boundPort)
         {
@@ -69,7 +69,7 @@ namespace Fomoxa.Networking.Transports
 
         public ITransportConnector CreateConnector(string address, ushort port, ReadOnlyMemory<byte> connection)
         {
-            if (!TryReadConnection(connection, out ConnectionGrant grant, out ulong sessionId))
+            if (!TryReadConnection(grantCodec, tokenCodec, connection, out ConnectionGrant grant, out ulong sessionId))
             {
                 throw new ArgumentException("the connection is not a connection issued by ConnectTokens", nameof(connection));
             }
@@ -77,7 +77,7 @@ namespace Fomoxa.Networking.Transports
             return new EncryptedUdpConnector(new HostResolver(address), port, sessionId, grant);
         }
 
-        private bool TryReadConnection(ReadOnlyMemory<byte> connection, out ConnectionGrant grant, out ulong sessionId)
+        internal static bool TryReadConnection(IMessageCodec<ConnectionGrant> grantCodec, IMessageCodec<ConnectToken> tokenCodec, ReadOnlyMemory<byte> connection, out ConnectionGrant grant, out ulong sessionId)
         {
             sessionId = 0;
             if (!ConnectTokens.TryReadGrant(grantCodec, connection, out grant)
@@ -142,7 +142,7 @@ namespace Fomoxa.Networking.Transports
                 var remote = new IPEndPoint(addresses[0], port);
                 Socket socket = UdpSockets.Create(remote.AddressFamily);
                 socket.Bind(new IPEndPoint(UdpSockets.AnyAddress(remote.AddressFamily), 0));
-                transport = new EncryptedUdpTransport(socket, remote, sessionId, grant);
+                transport = new EncryptedDatagramTransport(new UdpDatagramLink(socket, remote), sessionId, grant);
                 return ConnectStatus.Connected;
             }
             catch (SocketException)

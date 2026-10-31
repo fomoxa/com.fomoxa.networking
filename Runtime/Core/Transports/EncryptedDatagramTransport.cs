@@ -8,10 +8,86 @@ using Org.BouncyCastle.Crypto.Parameters;
 
 namespace Fomoxa.Networking.Transports
 {
-    internal sealed class EncryptedUdpTransport : ITransport
+    internal interface IDatagramLink : IDisposable
+    {
+        SendOutcome Send(byte[] datagram, int length);
+
+        UdpReceiveStatus Receive(byte[] buffer, out int count);
+
+        void CloseGracefully();
+    }
+
+    internal sealed class UdpDatagramLink : IDatagramLink
     {
         private readonly Socket socket;
         private readonly IPEndPoint peer;
+
+        public UdpDatagramLink(Socket socket, IPEndPoint peer)
+        {
+            this.socket = socket;
+            this.peer = peer;
+        }
+
+        public SendOutcome Send(byte[] datagram, int length) => UdpSockets.SendTo(socket, datagram, length, peer);
+
+        public UdpReceiveStatus Receive(byte[] buffer, out int count)
+        {
+            UdpReceiveStatus status = UdpSockets.ReceiveFrom(socket, buffer, out count, out EndPoint from);
+            return status == UdpReceiveStatus.Received && !peer.Equals(from) ? UdpReceiveStatus.Discard : status;
+        }
+
+        public void CloseGracefully()
+        {
+        }
+
+        public void Dispose() => socket.Dispose();
+    }
+
+    internal sealed class MessageDatagramLink : IDatagramLink
+    {
+        private readonly ITransport transport;
+        private byte[] oversized;
+
+        public MessageDatagramLink(ITransport transport)
+        {
+            this.transport = transport;
+        }
+
+        public SendOutcome Send(byte[] datagram, int length) => transport.Send(new ReadOnlySpan<byte>(datagram, 0, length));
+
+        public UdpReceiveStatus Receive(byte[] buffer, out int count)
+        {
+            count = 0;
+            ReceiveOutcome outcome = transport.Receive(buffer);
+            switch (outcome.Signal)
+            {
+                case TransportSignal.Ok:
+                    count = outcome.Count;
+                    return UdpReceiveStatus.Received;
+                case TransportSignal.WouldBlock:
+                    return UdpReceiveStatus.WouldBlock;
+                case TransportSignal.NeedCapacity:
+                    if (oversized == null || oversized.Length < outcome.Count)
+                    {
+                        oversized = new byte[outcome.Count];
+                    }
+
+                    return transport.Receive(oversized).Signal == TransportSignal.Ok ? UdpReceiveStatus.Discard : UdpReceiveStatus.Error;
+                case TransportSignal.Closed:
+                    return UdpReceiveStatus.Closed;
+                default:
+                    return UdpReceiveStatus.Error;
+            }
+        }
+
+        public void CloseGracefully() => transport.CloseGracefully();
+
+        public void Dispose() => transport.Dispose();
+    }
+
+    internal sealed class EncryptedDatagramTransport : ITransport
+    {
+        private readonly IDatagramLink link;
         private readonly ulong sessionId;
         private readonly byte[] token;
         private readonly byte[] attempt = new byte[EncryptedDatagram.AttemptSize];
@@ -27,10 +103,9 @@ namespace Fomoxa.Networking.Transports
         private bool established;
         private bool released;
 
-        public EncryptedUdpTransport(Socket socket, IPEndPoint peer, ulong sessionId, ConnectionGrant grant)
+        public EncryptedDatagramTransport(IDatagramLink link, ulong sessionId, ConnectionGrant grant)
         {
-            this.socket = socket;
-            this.peer = peer;
+            this.link = link;
             this.sessionId = sessionId;
             token = grant.Token.ToArray();
             using (RandomNumberGenerator random = RandomNumberGenerator.Create())
@@ -69,7 +144,7 @@ namespace Fomoxa.Networking.Transports
 
             bytes.CopyTo(plain);
             int sealedLength = cipher.Seal(sendKey, sequence, datagram, headerSize, plain, 0, bytes.Length, datagram, headerSize);
-            return UdpSockets.SendTo(socket, datagram, headerSize + sealedLength, peer);
+            return link.Send(datagram, headerSize + sealedLength);
         }
 
         public ReceiveOutcome Receive(Span<byte> buffer)
@@ -81,7 +156,7 @@ namespace Fomoxa.Networking.Transports
 
             while (openedLength < 0)
             {
-                UdpReceiveStatus status = UdpSockets.ReceiveFrom(socket, datagram, out int count, out EndPoint from);
+                UdpReceiveStatus status = link.Receive(datagram, out int count);
                 if (status == UdpReceiveStatus.WouldBlock)
                 {
                     return ReceiveOutcome.WouldBlock;
@@ -97,7 +172,7 @@ namespace Fomoxa.Networking.Transports
                     return ReceiveOutcome.Error;
                 }
 
-                if (status == UdpReceiveStatus.Received && peer.Equals(from))
+                if (status == UdpReceiveStatus.Received)
                 {
                     TryOpen(count);
                 }
@@ -116,6 +191,10 @@ namespace Fomoxa.Networking.Transports
 
         public void CloseGracefully()
         {
+            if (!released)
+            {
+                link.CloseGracefully();
+            }
         }
 
         public void Dispose()
@@ -126,7 +205,7 @@ namespace Fomoxa.Networking.Transports
             }
 
             released = true;
-            socket.Dispose();
+            link.Dispose();
         }
 
         private void TryOpen(int count)

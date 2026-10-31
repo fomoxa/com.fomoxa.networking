@@ -63,9 +63,10 @@ namespace Fomoxa.Networking.Transports
             var source = (IPEndPoint)from;
             IPEndPoint client = source;
             IPEndPoint gateway = null;
+            bool overWebSocket = false;
             if (behindGateway)
             {
-                if (!GatewayEnvelope.TryRead(wrappedIn, count, out client))
+                if (!GatewayEnvelope.TryRead(wrappedIn, count, out client, out overWebSocket))
                 {
                     return AcceptOutcome.Progress;
                 }
@@ -85,7 +86,7 @@ namespace Fomoxa.Networking.Transports
             byte kind = datagram[EncryptedDatagram.KindOffset];
             if (kind == EncryptedDatagram.DataKind)
             {
-                known?.Open(EncryptedDatagram.DataHeaderSize, count, client, gateway);
+                known?.Open(EncryptedDatagram.DataHeaderSize, count, client, gateway, overWebSocket);
                 return AcceptOutcome.Progress;
             }
 
@@ -101,11 +102,11 @@ namespace Fomoxa.Networking.Transports
             Buffer.BlockCopy(datagram, attemptOffset, attempt, 0, attempt.Length);
             if (known != null && known.IsAttempt(token, attempt))
             {
-                known.Open(headerSize, count, client, gateway);
+                known.Open(headerSize, count, client, gateway, overWebSocket);
                 return AcceptOutcome.Progress;
             }
 
-            return Connect(sessionId, known, token, attempt, headerSize, count, client, gateway);
+            return Connect(sessionId, known, token, attempt, headerSize, count, client, gateway, overWebSocket);
         }
 
         public void Dispose()
@@ -143,7 +144,7 @@ namespace Fomoxa.Networking.Transports
                 return UdpSockets.SendTo(socket, outgoing, length, peer.Client);
             }
 
-            GatewayEnvelope.Write(wrappedOut, peer.Client);
+            GatewayEnvelope.Write(wrappedOut, peer.Client, peer.ArrivedOverWebSocket);
             Buffer.BlockCopy(outgoing, 0, wrappedOut, GatewayEnvelope.Length, length);
             return UdpSockets.SendTo(socket, wrappedOut, GatewayEnvelope.Length + length, peer.Gateway);
         }
@@ -171,7 +172,7 @@ namespace Fomoxa.Networking.Transports
             }
         }
 
-        private AcceptOutcome Connect(ulong sessionId, EncryptedUdpPeer known, byte[] token, byte[] attempt, int headerSize, int count, IPEndPoint client, IPEndPoint gateway)
+        private AcceptOutcome Connect(ulong sessionId, EncryptedUdpPeer known, byte[] token, byte[] attempt, int headerSize, int count, IPEndPoint client, IPEndPoint gateway, bool overWebSocket)
         {
             if (!tokens.TryOpen(token, target, out OpenedConnectToken openedToken)
                 || openedToken.SessionId != sessionId
@@ -187,6 +188,7 @@ namespace Fomoxa.Networking.Transports
                 sessionId,
                 client,
                 gateway,
+                overWebSocket,
                 token,
                 attempt,
                 openedToken.Nonce,
@@ -205,7 +207,7 @@ namespace Fomoxa.Networking.Transports
         }
     }
 
-    internal sealed class EncryptedUdpPeer : ITransport, IConnectionData
+    internal sealed class EncryptedUdpPeer : ITransport, IConnectionData, IGatewayArrival
     {
         internal const int QueueCeiling = 64;
 
@@ -219,12 +221,13 @@ namespace Fomoxa.Networking.Transports
         private ulong nextSequence;
         private bool released;
 
-        public EncryptedUdpPeer(EncryptedUdpListener owner, ulong sessionId, IPEndPoint client, IPEndPoint gateway, byte[] token, byte[] attempt, byte[] tokenNonce, KeyParameter receiveKey, KeyParameter sendKey, byte[] data)
+        public EncryptedUdpPeer(EncryptedUdpListener owner, ulong sessionId, IPEndPoint client, IPEndPoint gateway, bool overWebSocket, byte[] token, byte[] attempt, byte[] tokenNonce, KeyParameter receiveKey, KeyParameter sendKey, byte[] data)
         {
             this.owner = owner;
             SessionId = sessionId;
             Client = client;
             Gateway = gateway;
+            ArrivedOverWebSocket = overWebSocket;
             this.token = token;
             this.attempt = attempt;
             this.tokenNonce = tokenNonce;
@@ -242,6 +245,8 @@ namespace Fomoxa.Networking.Transports
         internal IPEndPoint Client { get; private set; }
 
         internal IPEndPoint Gateway { get; private set; }
+
+        public bool ArrivedOverWebSocket { get; private set; }
 
         internal KeyParameter ReceiveKey { get; }
 
@@ -295,7 +300,7 @@ namespace Fomoxa.Networking.Transports
 
         internal ulong NextSequence() => nextSequence++;
 
-        internal void Open(int headerSize, int count, IPEndPoint client, IPEndPoint gateway)
+        internal void Open(int headerSize, int count, IPEndPoint client, IPEndPoint gateway, bool overWebSocket)
         {
             if (released || !owner.TryOpen(this, headerSize, count, out ReadOnlyMemory<byte> frame))
             {
@@ -304,6 +309,7 @@ namespace Fomoxa.Networking.Transports
 
             Client = client;
             Gateway = gateway;
+            ArrivedOverWebSocket = overWebSocket;
             Enqueue(frame);
         }
 

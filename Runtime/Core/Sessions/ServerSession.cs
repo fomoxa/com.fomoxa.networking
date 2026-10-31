@@ -608,6 +608,7 @@ namespace Fomoxa.Networking.Sessions
             var peer = new Peer(peerId, outbox, (messageId, payload) => owner.Send(peerId, messageId, payload));
             peer.ListenerIndex = owner.Listener is CompositeListener composite && composite.TryTakeAcceptedListener(out int listenerIndex) ? listenerIndex : -1;
             peer.ConnectionData = owner.Listener is CompositeListener withData && withData.TryTakeAcceptedConnectionData(out ReadOnlyMemory<byte> data) ? data : ReadOnlyMemory<byte>.Empty;
+            peer.Arrival = owner.Listener is CompositeListener withArrival && withArrival.TryTakeAcceptedArrival(out IGatewayArrival arrival) ? arrival : null;
             peers.Add(peerId, peer);
             RaisePeer(peerId, ConnectionState.Starting, StopReason.None, default, 0);
         }
@@ -621,6 +622,9 @@ namespace Fomoxa.Networking.Sessions
 
         public int FrameBudgetOf(ulong peerId) =>
             peers.TryGetValue(peerId, out Peer peer) ? peer.Outbox.FrameBudget : 0;
+
+        public bool ArrivedOverWebSocket(ulong peerId) =>
+            peers.TryGetValue(peerId, out Peer peer) && peer.Arrival != null && peer.Arrival.ArrivedOverWebSocket;
 
         private void End(Peer peer, StopReason reason, HandshakeFailure failure)
         {
@@ -675,6 +679,8 @@ namespace Fomoxa.Networking.Sessions
             public int ListenerIndex { get; set; }
 
             public ReadOnlyMemory<byte> ConnectionData { get; set; }
+
+            public IGatewayArrival Arrival { get; set; }
 
             public bool Accepts => State == ConnectionState.Started && !Closing;
         }

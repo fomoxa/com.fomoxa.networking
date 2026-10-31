@@ -47,24 +47,48 @@ namespace Fomoxa.Networking.Tests
         public void TheEnvelopeHasTheBytesTheGatewayWrites()
         {
             var buffer = new byte[GatewayEnvelope.Length];
-            GatewayEnvelope.Write(buffer, new IPEndPoint(IPAddress.Parse("203.0.113.7"), 51000));
+            GatewayEnvelope.Write(buffer, new IPEndPoint(IPAddress.Parse("203.0.113.7"), 51000), false);
 
             CollectionAssert.AreEqual(new byte[] { 1, 4, 0xC7, 0x38, 203, 0, 113, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, buffer);
-            Assert.IsTrue(GatewayEnvelope.TryRead(buffer, buffer.Length, out IPEndPoint v4));
+            Assert.IsTrue(GatewayEnvelope.TryRead(buffer, buffer.Length, out IPEndPoint v4, out bool v4OverWebSocket));
             Assert.AreEqual(new IPEndPoint(IPAddress.Parse("203.0.113.7"), 51000), v4);
+            Assert.IsFalse(v4OverWebSocket);
 
             var v6 = new IPEndPoint(IPAddress.Parse("2001:db8::7"), 443);
-            GatewayEnvelope.Write(buffer, v6);
+            GatewayEnvelope.Write(buffer, v6, false);
             Assert.AreEqual(6, buffer[1]);
-            Assert.IsTrue(GatewayEnvelope.TryRead(buffer, buffer.Length, out IPEndPoint read));
+            Assert.IsTrue(GatewayEnvelope.TryRead(buffer, buffer.Length, out IPEndPoint read, out _));
             Assert.AreEqual(v6, read);
+        }
+
+        [Test]
+        public void AWebSocketClientHasItsOwnFamilyValues()
+        {
+            var buffer = new byte[GatewayEnvelope.Length];
+            var v4 = new IPEndPoint(IPAddress.Parse("203.0.113.7"), 51000);
+            var v6 = new IPEndPoint(IPAddress.Parse("2001:db8::7"), 443);
+
+            GatewayEnvelope.Write(buffer, v4, true);
+            CollectionAssert.AreEqual(new byte[] { 1, 0x84, 0xC7, 0x38, 203, 0, 113, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, buffer);
+            Assert.IsTrue(GatewayEnvelope.TryRead(buffer, buffer.Length, out IPEndPoint readV4, out bool v4OverWebSocket));
+            GatewayEnvelope.Write(buffer, v6, true);
+            byte v6Family = buffer[1];
+            Assert.IsTrue(GatewayEnvelope.TryRead(buffer, buffer.Length, out IPEndPoint readV6, out bool v6OverWebSocket));
+            buffer[1] = 0x85;
+
+            Assert.AreEqual(v4, readV4);
+            Assert.IsTrue(v4OverWebSocket);
+            Assert.AreEqual(0x86, v6Family);
+            Assert.AreEqual(v6, readV6);
+            Assert.IsTrue(v6OverWebSocket);
+            Assert.IsFalse(GatewayEnvelope.TryRead(buffer, buffer.Length, out _, out _));
         }
 
         [Test]
         public void ABrokenEnvelopeHasNoClient()
         {
             var good = new byte[GatewayEnvelope.Length];
-            GatewayEnvelope.Write(good, new IPEndPoint(IPAddress.Parse("203.0.113.7"), 51000));
+            GatewayEnvelope.Write(good, new IPEndPoint(IPAddress.Parse("203.0.113.7"), 51000), false);
             byte[] version = (byte[])good.Clone();
             version[0] = 2;
             byte[] family = (byte[])good.Clone();
@@ -72,10 +96,10 @@ namespace Fomoxa.Networking.Tests
             byte[] padding = (byte[])good.Clone();
             padding[19] = 1;
 
-            Assert.IsFalse(GatewayEnvelope.TryRead(good, 19, out _));
-            Assert.IsFalse(GatewayEnvelope.TryRead(version, version.Length, out _));
-            Assert.IsFalse(GatewayEnvelope.TryRead(family, family.Length, out _));
-            Assert.IsFalse(GatewayEnvelope.TryRead(padding, padding.Length, out _));
+            Assert.IsFalse(GatewayEnvelope.TryRead(good, 19, out _, out _));
+            Assert.IsFalse(GatewayEnvelope.TryRead(version, version.Length, out _, out _));
+            Assert.IsFalse(GatewayEnvelope.TryRead(family, family.Length, out _, out _));
+            Assert.IsFalse(GatewayEnvelope.TryRead(padding, padding.Length, out _, out _));
         }
 
         [Test]
@@ -96,9 +120,36 @@ namespace Fomoxa.Networking.Tests
                 gateway.Pump();
 
                 CollectionAssert.AreEqual(new byte[] { 4 }, ReceiveOne(peer));
-                Assert.IsTrue(GatewayEnvelope.TryRead(gateway.FromPod(0), gateway.FromPod(0).Length, out IPEndPoint addressed));
+                Assert.IsTrue(GatewayEnvelope.TryRead(gateway.FromPod(0), gateway.FromPod(0).Length, out IPEndPoint addressed, out _));
                 Assert.AreEqual(gateway.Client, addressed);
                 Assert.AreEqual(77UL, BitConverter.ToUInt64(gateway.FromPod(0), GatewayEnvelope.Length));
+            }
+        }
+
+        [Test]
+        public void APeerKnowsItArrivedOverWebSocketAndItsRepliesSaySo()
+        {
+            using (var udp = new GatewayStub(port))
+            using (var webSocket = new GatewayStub(port) { OverWebSocket = true })
+            {
+                ITransport udpClient = Connect(tokens.Issue("pod-a", 77, ReadOnlyMemory<byte>.Empty), udp.Port);
+                ITransport webSocketClient = Connect(tokens.Issue("pod-a", 78, ReadOnlyMemory<byte>.Empty), webSocket.Port);
+                udpClient.Send(Hello);
+                udp.Pump();
+                ITransport udpPeer = AcceptOne();
+                webSocketClient.Send(Hello);
+                webSocket.Pump();
+                ITransport webSocketPeer = AcceptOne();
+                udpPeer.Send(new byte[] { 1 });
+                webSocketPeer.Send(new byte[] { 2 });
+                udp.Pump();
+                webSocket.Pump();
+
+                Assert.IsFalse(((IGatewayArrival)udpPeer).ArrivedOverWebSocket);
+                Assert.IsTrue(((IGatewayArrival)webSocketPeer).ArrivedOverWebSocket);
+                Assert.IsFalse(udp.LastRepliedOverWebSocket);
+                Assert.IsTrue(webSocket.LastRepliedOverWebSocket);
+                CollectionAssert.AreEqual(new byte[] { 2 }, ReceiveOne(webSocketClient));
             }
         }
 
@@ -291,6 +342,10 @@ namespace Fomoxa.Networking.Tests
 
             public IPEndPoint Rewrite { get; set; }
 
+            public bool OverWebSocket { get; set; }
+
+            public bool LastRepliedOverWebSocket { get; private set; }
+
             public bool Hold { get; set; }
 
             public IPEndPoint LastAddressed { get; private set; }
@@ -329,8 +384,9 @@ namespace Fomoxa.Networking.Tests
                     IPEndPoint from = null;
                     byte[] bytes = back.Receive(ref from);
                     fromPod.Add(bytes);
-                    Assert.IsTrue(GatewayEnvelope.TryRead(bytes, bytes.Length, out IPEndPoint addressed));
+                    Assert.IsTrue(GatewayEnvelope.TryRead(bytes, bytes.Length, out IPEndPoint addressed, out bool repliedOverWebSocket));
                     LastAddressed = addressed;
+                    LastRepliedOverWebSocket = repliedOverWebSocket;
                     if (addressed.Equals(Client))
                     {
                         front.Send(bytes.Skip(GatewayEnvelope.Length).ToArray(), bytes.Length - GatewayEnvelope.Length, addressed);
@@ -349,7 +405,7 @@ namespace Fomoxa.Networking.Tests
             private void Send(byte[] datagram, IPEndPoint client)
             {
                 var wrapped = new byte[GatewayEnvelope.Length + datagram.Length];
-                GatewayEnvelope.Write(wrapped, client);
+                GatewayEnvelope.Write(wrapped, client, OverWebSocket);
                 Buffer.BlockCopy(datagram, 0, wrapped, GatewayEnvelope.Length, datagram.Length);
                 back.Send(wrapped, wrapped.Length, pod);
             }
