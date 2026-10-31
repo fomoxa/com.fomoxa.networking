@@ -14,18 +14,28 @@ namespace Fomoxa.Networking.Transports
         private readonly Socket socket;
         private readonly ConnectTokens tokens;
         private readonly string target;
+        private readonly bool behindGateway;
         private readonly Dictionary<ulong, EncryptedUdpPeer> sessions = new Dictionary<ulong, EncryptedUdpPeer>();
         private readonly DatagramCipher cipher = new DatagramCipher();
         private readonly byte[] datagram = new byte[EncryptedDatagram.MaxDatagram];
         private readonly byte[] outgoing = new byte[EncryptedDatagram.MaxDatagram];
         private readonly byte[] plain = new byte[EncryptedDatagram.MaxDatagram];
         private readonly byte[] opened = new byte[EncryptedDatagram.MaxDatagram];
+        private readonly byte[] wrappedIn;
+        private readonly byte[] wrappedOut;
         private bool released;
 
-        public EncryptedUdpListener(IPEndPoint local, ConnectTokens tokens, string target)
+        public EncryptedUdpListener(IPEndPoint local, ConnectTokens tokens, string target, bool behindGateway)
         {
             this.tokens = tokens;
             this.target = target;
+            this.behindGateway = behindGateway;
+            if (behindGateway)
+            {
+                wrappedIn = new byte[EncryptedDatagram.MaxDatagram];
+                wrappedOut = new byte[EncryptedDatagram.MaxDatagram];
+            }
+
             socket = UdpSockets.Create(local.AddressFamily);
             socket.Bind(local);
         }
@@ -39,7 +49,7 @@ namespace Fomoxa.Networking.Transports
                 return AcceptOutcome.Error;
             }
 
-            switch (UdpSockets.ReceiveFrom(socket, datagram, out int count, out EndPoint from))
+            switch (UdpSockets.ReceiveFrom(socket, behindGateway ? wrappedIn : datagram, out int count, out EndPoint from))
             {
                 case UdpReceiveStatus.WouldBlock:
                     return AcceptOutcome.Pending;
@@ -50,18 +60,32 @@ namespace Fomoxa.Networking.Transports
                     return AcceptOutcome.Error;
             }
 
+            var source = (IPEndPoint)from;
+            IPEndPoint client = source;
+            IPEndPoint gateway = null;
+            if (behindGateway)
+            {
+                if (!GatewayEnvelope.TryRead(wrappedIn, count, out client))
+                {
+                    return AcceptOutcome.Progress;
+                }
+
+                gateway = source;
+                count -= GatewayEnvelope.Length;
+                Buffer.BlockCopy(wrappedIn, GatewayEnvelope.Length, datagram, 0, count);
+            }
+
             if (count < EncryptedDatagram.DataOverhead)
             {
                 return AcceptOutcome.Progress;
             }
 
-            var address = (IPEndPoint)from;
             ulong sessionId = EncryptedDatagram.ReadSessionId(datagram);
             sessions.TryGetValue(sessionId, out EncryptedUdpPeer known);
             byte kind = datagram[EncryptedDatagram.KindOffset];
             if (kind == EncryptedDatagram.DataKind)
             {
-                known?.Open(EncryptedDatagram.DataHeaderSize, count, address);
+                known?.Open(EncryptedDatagram.DataHeaderSize, count, client, gateway);
                 return AcceptOutcome.Progress;
             }
 
@@ -77,11 +101,11 @@ namespace Fomoxa.Networking.Transports
             Buffer.BlockCopy(datagram, attemptOffset, attempt, 0, attempt.Length);
             if (known != null && known.IsAttempt(token, attempt))
             {
-                known.Open(headerSize, count, address);
+                known.Open(headerSize, count, client, gateway);
                 return AcceptOutcome.Progress;
             }
 
-            return Connect(sessionId, known, token, attempt, headerSize, count, address);
+            return Connect(sessionId, known, token, attempt, headerSize, count, client, gateway);
         }
 
         public void Dispose()
@@ -103,7 +127,8 @@ namespace Fomoxa.Networking.Transports
                 return SendOutcome.Closed;
             }
 
-            if (EncryptedDatagram.DataOverhead + bytes.Length > EncryptedDatagram.MaxDatagram)
+            int envelope = behindGateway ? GatewayEnvelope.Length : 0;
+            if (envelope + EncryptedDatagram.DataOverhead + bytes.Length > EncryptedDatagram.MaxDatagram)
             {
                 return SendOutcome.TooLarge;
             }
@@ -112,7 +137,15 @@ namespace Fomoxa.Networking.Transports
             EncryptedDatagram.WriteDataHeader(outgoing, peer.SessionId, EncryptedDatagram.DataKind, sequence);
             bytes.CopyTo(plain);
             int sealedLength = cipher.Seal(peer.SendKey, sequence, outgoing, EncryptedDatagram.DataHeaderSize, plain, 0, bytes.Length, outgoing, EncryptedDatagram.DataHeaderSize);
-            return UdpSockets.SendTo(socket, outgoing, EncryptedDatagram.DataHeaderSize + sealedLength, peer.Address);
+            int length = EncryptedDatagram.DataHeaderSize + sealedLength;
+            if (!behindGateway)
+            {
+                return UdpSockets.SendTo(socket, outgoing, length, peer.Client);
+            }
+
+            GatewayEnvelope.Write(wrappedOut, peer.Client);
+            Buffer.BlockCopy(outgoing, 0, wrappedOut, GatewayEnvelope.Length, length);
+            return UdpSockets.SendTo(socket, wrappedOut, GatewayEnvelope.Length + length, peer.Gateway);
         }
 
         internal bool TryOpen(EncryptedUdpPeer peer, int headerSize, int count, out ReadOnlyMemory<byte> frame)
@@ -138,7 +171,7 @@ namespace Fomoxa.Networking.Transports
             }
         }
 
-        private AcceptOutcome Connect(ulong sessionId, EncryptedUdpPeer known, byte[] token, byte[] attempt, int headerSize, int count, IPEndPoint address)
+        private AcceptOutcome Connect(ulong sessionId, EncryptedUdpPeer known, byte[] token, byte[] attempt, int headerSize, int count, IPEndPoint client, IPEndPoint gateway)
         {
             if (!tokens.TryOpen(token, target, out OpenedConnectToken openedToken)
                 || openedToken.SessionId != sessionId
@@ -152,7 +185,8 @@ namespace Fomoxa.Networking.Transports
             var created = new EncryptedUdpPeer(
                 this,
                 sessionId,
-                address,
+                client,
+                gateway,
                 token,
                 attempt,
                 openedToken.Nonce,
@@ -185,11 +219,12 @@ namespace Fomoxa.Networking.Transports
         private ulong nextSequence;
         private bool released;
 
-        public EncryptedUdpPeer(EncryptedUdpListener owner, ulong sessionId, IPEndPoint address, byte[] token, byte[] attempt, byte[] tokenNonce, KeyParameter receiveKey, KeyParameter sendKey, byte[] data)
+        public EncryptedUdpPeer(EncryptedUdpListener owner, ulong sessionId, IPEndPoint client, IPEndPoint gateway, byte[] token, byte[] attempt, byte[] tokenNonce, KeyParameter receiveKey, KeyParameter sendKey, byte[] data)
         {
             this.owner = owner;
             SessionId = sessionId;
-            Address = address;
+            Client = client;
+            Gateway = gateway;
             this.token = token;
             this.attempt = attempt;
             this.tokenNonce = tokenNonce;
@@ -204,7 +239,9 @@ namespace Fomoxa.Networking.Transports
 
         internal ulong SessionId { get; }
 
-        internal IPEndPoint Address { get; private set; }
+        internal IPEndPoint Client { get; private set; }
+
+        internal IPEndPoint Gateway { get; private set; }
 
         internal KeyParameter ReceiveKey { get; }
 
@@ -258,14 +295,15 @@ namespace Fomoxa.Networking.Transports
 
         internal ulong NextSequence() => nextSequence++;
 
-        internal void Open(int headerSize, int count, IPEndPoint from)
+        internal void Open(int headerSize, int count, IPEndPoint client, IPEndPoint gateway)
         {
             if (released || !owner.TryOpen(this, headerSize, count, out ReadOnlyMemory<byte> frame))
             {
                 return;
             }
 
-            Address = from;
+            Client = client;
+            Gateway = gateway;
             Enqueue(frame);
         }
 

@@ -9,11 +9,18 @@ namespace Fomoxa.Unity
     public sealed class EncryptedUdpNetworkTransport : NetworkTransport
     {
         [SerializeField] private string target = "";
+        [SerializeField] private bool behindGateway;
 
         public string Target
         {
             get => target;
             set => target = value;
+        }
+
+        public bool BehindGateway
+        {
+            get => behindGateway;
+            set => behindGateway = value;
         }
 
         public ConnectTokens Tokens { get; set; }
@@ -54,7 +61,7 @@ namespace Fomoxa.Unity
             {
                 EncryptedUdpTransportFactory server = owner.Tokens == null
                     ? client
-                    : new EncryptedUdpTransportFactory(registry, owner.Tokens, owner.target ?? "");
+                    : new EncryptedUdpTransportFactory(registry, owner.Tokens, owner.target ?? "", owner.behindGateway);
                 return server.CreateListener(port, out boundPort);
             }
 

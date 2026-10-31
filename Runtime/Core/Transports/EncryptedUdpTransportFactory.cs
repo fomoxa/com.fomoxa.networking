@@ -21,6 +21,11 @@ namespace Fomoxa.Networking.Transports
         }
 
         public EncryptedUdpTransportFactory(FomoxaRegistry registry, ConnectTokens tokens, string target)
+            : this(registry, tokens, target, false)
+        {
+        }
+
+        public EncryptedUdpTransportFactory(FomoxaRegistry registry, ConnectTokens tokens, string target, bool behindGateway)
         {
             if (registry == null)
             {
@@ -36,7 +41,10 @@ namespace Fomoxa.Networking.Transports
             tokenCodec = ConnectTokens.CodecOf<ConnectToken>(registry);
             this.tokens = tokens;
             this.target = target;
+            BehindGateway = behindGateway;
         }
+
+        public bool BehindGateway { get; }
 
         public int FrameBudget => DatagramBudget - EncryptedDatagram.DataOverhead;
 
@@ -51,7 +59,7 @@ namespace Fomoxa.Networking.Transports
                 throw new InvalidOperationException("an encrypted UDP listener needs the ConnectTokens and the target name of this server");
             }
 
-            var listener = new EncryptedUdpListener(new IPEndPoint(IPAddress.Any, port), tokens, target);
+            var listener = new EncryptedUdpListener(new IPEndPoint(IPAddress.Any, port), tokens, target, BehindGateway);
             boundPort = (ushort)listener.LocalEndPoint.Port;
             return listener;
         }
