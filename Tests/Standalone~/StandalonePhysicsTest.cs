@@ -659,13 +659,19 @@ namespace Fomoxa.Networking.Standalone.Tests
                 states[body.Value] = state;
             }
 
-            public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, out RayHit hit)
+            public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit)
             {
                 hit = default;
                 return false;
             }
 
-            public int Overlap(Vector3 center, float radius, BodyHandle[] results) => 0;
+            public bool ShapeCast(in BodyShape shape, Vector3 position, Quaternion rotation, Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit)
+            {
+                hit = default;
+                return false;
+            }
+
+            public int Overlap(in BodyShape shape, Vector3 position, Quaternion rotation, in QueryFilter filter, BodyHandle[] results) => 0;
 
             private sealed class Snapshot : PhysicsSnapshot
             {
@@ -749,13 +755,19 @@ namespace Fomoxa.Networking.Standalone.Tests
                 states[body.Value] = state;
             }
 
-            public bool Raycast(Vector2 origin, Vector2 direction, float maxDistance, out RayHit2D hit)
+            public bool Raycast(Vector2 origin, Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit)
             {
                 hit = default;
                 return false;
             }
 
-            public int Overlap(Vector2 center, float radius, BodyHandle[] results) => 0;
+            public bool ShapeCast(in BodyShape2D shape, Vector2 position, float rotation, Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit)
+            {
+                hit = default;
+                return false;
+            }
+
+            public int Overlap(in BodyShape2D shape, Vector2 position, float rotation, in QueryFilter filter, BodyHandle[] results) => 0;
 
             private sealed class Snapshot : PhysicsSnapshot
             {

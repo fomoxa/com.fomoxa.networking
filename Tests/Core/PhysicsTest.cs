@@ -15,6 +15,40 @@ namespace Fomoxa.Networking.Tests
     public sealed class PhysicsTest
     {
         [Test]
+        public void TheDefaultQueryFilterTakesEveryLayerAndTriggersAndExcludesNoBody()
+        {
+            QueryFilter all = QueryFilter.All;
+            var some = new QueryFilter(1 << 3, new BodyHandle(7), false);
+
+            Assert.AreEqual((-1, 0, true), (all.LayerMask, all.ExcludeBody.Value, all.IncludeTriggers));
+            Assert.AreEqual((8, 7, false), (some.LayerMask, some.ExcludeBody.Value, some.IncludeTriggers));
+        }
+
+        [Test]
+        public void TheShortQueriesUseTheDefaultFilterAndASphereOrACircle()
+        {
+            var world = new PointWorld();
+            var world2D = new PointWorld2D();
+
+            world.Raycast(Vector3.Zero, Vector3.UnitX, 10f, out _);
+            QueryFilter ray = world.LastFilter;
+            world.Overlap(new Vector3(1f, 2f, 3f), 0.5f, new BodyHandle[1]);
+            world2D.Raycast(Vector2.Zero, Vector2.UnitX, 10f, out _);
+            QueryFilter ray2D = world2D.LastFilter;
+            world2D.Overlap(new Vector2(1f, 2f), 0.5f, new BodyHandle[1]);
+
+            foreach (QueryFilter filter in new[] { ray, world.LastFilter, ray2D, world2D.LastFilter })
+            {
+                Assert.AreEqual((-1, 0, true), (filter.LayerMask, filter.ExcludeBody.Value, filter.IncludeTriggers));
+            }
+
+            Assert.AreEqual((ShapeKind.Sphere, 0.5f), (world.LastShape.Kind, world.LastShape.Radius));
+            Assert.AreEqual((new Vector3(1f, 2f, 3f), Quaternion.Identity), (world.LastPosition, world.LastRotation));
+            Assert.AreEqual((ShapeKind2D.Circle, 0.5f), (world2D.LastShape.Kind, world2D.LastShape.Radius));
+            Assert.AreEqual((new Vector2(1f, 2f), 0f), (world2D.LastPosition, world2D.LastRotation));
+        }
+
+        [Test]
         public void TheHistorySavesTheWorldAfterEachTickAndLoadsItBack()
         {
             var world = new PointWorld();
@@ -381,13 +415,35 @@ namespace Fomoxa.Networking.Tests
                 }
             }
 
-            public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, out RayHit hit)
+            public QueryFilter LastFilter { get; private set; } = new QueryFilter(0, new BodyHandle(-1), false);
+
+            public BodyShape LastShape { get; private set; }
+
+            public Vector3 LastPosition { get; private set; }
+
+            public Quaternion LastRotation { get; private set; }
+
+            public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit)
+            {
+                LastFilter = filter;
+                hit = default;
+                return false;
+            }
+
+            public bool ShapeCast(in BodyShape shape, Vector3 position, Quaternion rotation, Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit)
             {
                 hit = default;
                 return false;
             }
 
-            public int Overlap(Vector3 center, float radius, BodyHandle[] results) => 0;
+            public int Overlap(in BodyShape shape, Vector3 position, Quaternion rotation, in QueryFilter filter, BodyHandle[] results)
+            {
+                LastShape = shape;
+                LastPosition = position;
+                LastRotation = rotation;
+                LastFilter = filter;
+                return 0;
+            }
 
             private sealed class PointSnapshot : PhysicsSnapshot
             {
@@ -467,13 +523,35 @@ namespace Fomoxa.Networking.Tests
                 }
             }
 
-            public bool Raycast(Vector2 origin, Vector2 direction, float maxDistance, out RayHit2D hit)
+            public QueryFilter LastFilter { get; private set; } = new QueryFilter(0, new BodyHandle(-1), false);
+
+            public BodyShape2D LastShape { get; private set; }
+
+            public Vector2 LastPosition { get; private set; }
+
+            public float LastRotation { get; private set; } = float.NaN;
+
+            public bool Raycast(Vector2 origin, Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit)
+            {
+                LastFilter = filter;
+                hit = default;
+                return false;
+            }
+
+            public bool ShapeCast(in BodyShape2D shape, Vector2 position, float rotation, Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit)
             {
                 hit = default;
                 return false;
             }
 
-            public int Overlap(Vector2 center, float radius, BodyHandle[] results) => 0;
+            public int Overlap(in BodyShape2D shape, Vector2 position, float rotation, in QueryFilter filter, BodyHandle[] results)
+            {
+                LastShape = shape;
+                LastPosition = position;
+                LastRotation = rotation;
+                LastFilter = filter;
+                return 0;
+            }
 
             private sealed class PointSnapshot2D : PhysicsSnapshot
             {

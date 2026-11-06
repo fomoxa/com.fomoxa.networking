@@ -184,22 +184,110 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
-        public void QueriesFindRegisteredBodiesAndOverlapSkipsTriggers()
+        public void QueriesFindRegisteredBodiesAndOverlapTakesTriggers()
         {
             BodyHandle handle = world.Register(Rigid(new Vector2(5f, 0f), 1f));
             Rigid(new Vector2(5f, 5f), 1f);
-            Rigid(new Vector2(5f, 0.2f), 1f).GetComponent<Collider2D>().isTrigger = true;
+            Rigidbody2D triggerBody = Rigid(new Vector2(5f, 0.2f), 1f);
+            triggerBody.GetComponent<Collider2D>().isTrigger = true;
+            BodyHandle trigger = world.Register(triggerBody);
             world.Step(0f);
 
             Assert.IsTrue(world.Raycast(System.Numerics.Vector2.Zero, new System.Numerics.Vector2(1f, 0f), 100f, out RayHit2D hit));
             Assert.AreEqual(handle, hit.Body);
             Assert.AreEqual(4.5f, hit.Distance, 1e-3f);
             var results = new BodyHandle[4];
-            Assert.AreEqual(1, world.Overlap(new System.Numerics.Vector2(5f, 0f), 1f, results));
+            Assert.AreEqual(2, world.Overlap(new System.Numerics.Vector2(5f, 0f), 1f, results));
+            CollectionAssert.AreEquivalent(new[] { handle, trigger }, new[] { results[0], results[1] });
+            Assert.AreEqual(1, world.Overlap(BodyShape2D.Circle(1f), new System.Numerics.Vector2(5f, 0f), 0f, new QueryFilter(-1, default, false), results));
             Assert.AreEqual(handle, results[0]);
             Assert.IsTrue(world.Raycast(new System.Numerics.Vector2(0f, 5f), new System.Numerics.Vector2(1f, 0f), 100f, out RayHit2D unregistered));
             Assert.IsFalse(unregistered.Body.IsValid);
             Assert.IsFalse(world.Raycast(System.Numerics.Vector2.Zero, new System.Numerics.Vector2(-1f, 0f), 100f, out _));
+        }
+
+        [Test]
+        public void FiltersChooseLayersAndTriggersAndSkipABody()
+        {
+            BodyHandle trigger = Square(new Vector2(2f, 0f), 0, true);
+            BodyHandle near = Square(new Vector2(5f, 0f), 0, false);
+            BodyHandle far = Square(new Vector2(8f, 0f), 3, false);
+            world.Step(0f);
+            var solid = new QueryFilter(-1, default, false);
+            var results = new BodyHandle[4];
+
+            AssertRay(QueryFilter.All, trigger, 1.5f);
+            AssertRay(solid, near, 4.5f);
+            AssertRay(new QueryFilter(-1, near, false), far, 7.5f);
+            AssertRay(new QueryFilter(1 << 3, default, true), far, 7.5f);
+            Assert.IsFalse(world.Raycast(System.Numerics.Vector2.Zero, System.Numerics.Vector2.UnitX, 100f, new QueryFilter(1 << 4, default, true), out _));
+            BodyShape2D row = BodyShape2D.Box(new System.Numerics.Vector2(5f, 1f));
+            var middle = new System.Numerics.Vector2(5f, 0f);
+            Assert.AreEqual(3, world.Overlap(row, middle, 0f, QueryFilter.All, results));
+            Assert.AreEqual(2, world.Overlap(row, middle, 0f, solid, results));
+            Assert.AreEqual(1, world.Overlap(row, middle, 0f, new QueryFilter(1, near, true), results));
+            Assert.AreEqual(trigger, results[0]);
+            Assert.AreEqual(3, world.Overlap(System.Numerics.Vector2.Zero, 10f, results));
+        }
+
+        [Test]
+        public void ShapeCastsAndOverlapsTakeABoxACircleAndACapsule()
+        {
+            BodyHandle target = Square(new Vector2(5f, 0f), 0, false);
+            world.Step(0f);
+            var shapes = new[]
+            {
+                (BodyShape2D.Box(new System.Numerics.Vector2(0.5f, 0.5f)), 0f, 4f),
+                (BodyShape2D.Circle(0.5f), 0f, 4f),
+                (BodyShape2D.Capsule(0.5f, 0.5f), MathF.PI / 2f, 3.5f),
+            };
+            var results = new BodyHandle[4];
+
+            foreach ((BodyShape2D shape, float rotation, float distance) in shapes)
+            {
+                Assert.IsTrue(world.ShapeCast(shape, System.Numerics.Vector2.Zero, rotation, System.Numerics.Vector2.UnitX, 100f, QueryFilter.All, out RayHit2D hit), shape.Kind.ToString());
+                Assert.AreEqual(target, hit.Body);
+                Assert.AreEqual(distance, hit.Distance, 2e-2f, shape.Kind.ToString());
+                Assert.AreEqual(-1f, hit.Normal.X, 1e-3f);
+                Assert.AreEqual(1, world.Overlap(shape, new System.Numerics.Vector2(4.2f, 0f), rotation, QueryFilter.All, results), shape.Kind.ToString());
+                Assert.AreEqual(0, world.Overlap(shape, new System.Numerics.Vector2(4.2f, 2f), rotation, QueryFilter.All, results), shape.Kind.ToString());
+            }
+
+            BodyShape2D polygon = BodyShape2D.ConvexPolygon(new[] { System.Numerics.Vector2.Zero, System.Numerics.Vector2.UnitX, System.Numerics.Vector2.UnitY });
+            Assert.Throws<ArgumentException>(() => world.Overlap(polygon, System.Numerics.Vector2.Zero, 0f, QueryFilter.All, results));
+            Assert.Throws<ArgumentException>(() => world.ShapeCast(polygon, System.Numerics.Vector2.Zero, 0f, System.Numerics.Vector2.UnitX, 1f, QueryFilter.All, out _));
+        }
+
+        [Test]
+        public void AQueryStartingInsideAColliderHitsItAtDistanceZero()
+        {
+            BodyHandle inside = Square(Vector2.zero, 0, false);
+            BodyHandle beyond = Square(new Vector2(5f, 0f), 0, false);
+            world.Step(0f);
+            var origin = new System.Numerics.Vector2(0.1f, 0f);
+
+            Assert.IsTrue(world.Raycast(origin, System.Numerics.Vector2.UnitX, 100f, QueryFilter.All, out RayHit2D ray));
+            Assert.IsTrue(world.ShapeCast(BodyShape2D.Circle(0.2f), origin, 0f, System.Numerics.Vector2.UnitX, 100f, QueryFilter.All, out RayHit2D cast));
+            Assert.IsTrue(world.Raycast(origin, System.Numerics.Vector2.UnitX, 100f, new QueryFilter(-1, inside, true), out RayHit2D skipped));
+
+            Assert.AreEqual((inside, 0f), (ray.Body, ray.Distance));
+            Assert.AreEqual((inside, 0f), (cast.Body, cast.Distance));
+            Assert.AreEqual(beyond, skipped.Body);
+            Assert.AreEqual(4.4f, skipped.Distance, 1e-3f);
+        }
+
+        [Test]
+        public void QueriesSeeABodySetThisTickAndAfterLoad()
+        {
+            BodyHandle body = world.CreateBody(new BodyDesc2D(BodyKind.Dynamic, new[] { SquareCollider(0, false) }, new System.Numerics.Vector2(5f, 0f), 0f, 1f, new BodyMotion2D(BodyLocks2D.None, 0f, 0f, 0f)));
+            world.Step(0f);
+            PhysicsSnapshot snapshot = world.CreateSnapshot();
+            world.Save(snapshot);
+
+            world.SetBody(body, new BodyState2D { Position = new System.Numerics.Vector2(10f, 0f) });
+            AssertRay(QueryFilter.All, body, 9.5f);
+            world.Load(snapshot);
+            AssertRay(QueryFilter.All, body, 4.5f);
         }
 
         [Test]
@@ -368,6 +456,19 @@ namespace Fomoxa.Unity.Tests
         {
             Rigidbody2D rigidbody = Rigid(position, mass);
             return new PhysicsBody2D(world, world.Register(rigidbody));
+        }
+
+        private BodyHandle Square(Vector2 position, int layer, bool trigger) =>
+            world.CreateBody(new BodyDesc2D(BodyKind.Kinematic, new[] { SquareCollider(layer, trigger) }, position.ToNumerics(), 0f, 1f));
+
+        private static ColliderDesc2D SquareCollider(int layer, bool trigger) =>
+            new ColliderDesc2D(BodyShape2D.Box(new System.Numerics.Vector2(0.5f, 0.5f)), System.Numerics.Vector2.Zero, 0f, ColliderMaterial.Default, layer, trigger);
+
+        private void AssertRay(in QueryFilter filter, BodyHandle body, float distance)
+        {
+            Assert.IsTrue(world.Raycast(System.Numerics.Vector2.Zero, System.Numerics.Vector2.UnitX, 100f, filter, out RayHit2D hit));
+            Assert.AreEqual(body, hit.Body);
+            Assert.AreEqual(distance, hit.Distance, 1e-2f);
         }
 
         private Rigidbody2D Rigid(Vector2 position, float mass)

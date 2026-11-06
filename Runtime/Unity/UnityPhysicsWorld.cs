@@ -19,6 +19,7 @@ namespace Fomoxa.Unity
         private readonly List<Rigidbody> found = new List<Rigidbody>();
         private readonly HashSet<int> overlapped = new HashSet<int>();
         private Collider[] overlapBuffer = new Collider[64];
+        private RaycastHit[] castBuffer = new RaycastHit[64];
         private int nextHandle = 1;
 
         public UnityPhysicsWorld(Scene scene)
@@ -259,37 +260,73 @@ namespace Fomoxa.Unity
             }
         }
 
-        public bool Raycast(System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, float maxDistance, out RayHit hit)
+        public bool Raycast(System.Numerics.Vector3 origin, System.Numerics.Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit)
         {
-            if (!physicsScene.Raycast(origin.ToUnity(), direction.ToUnity().normalized, out RaycastHit unityHit, maxDistance))
+            Vector3 start = origin.ToUnity();
+            Vector3 along = direction.ToUnity().normalized;
+            if (along == Vector3.zero)
             {
                 hit = default;
                 return false;
             }
 
-            hit = new RayHit(HandleOf(unityHit.rigidbody), unityHit.point.ToNumerics(), unityHit.normal.ToNumerics(), unityHit.distance);
-            return true;
+            int inside = OverlapColliders(BodyShape.Sphere(0f), start, Quaternion.identity, filter);
+            if (StartsInside(inside, start, along, filter, out hit))
+            {
+                return true;
+            }
+
+            int count;
+            while ((count = physicsScene.Raycast(start, along, castBuffer, maxDistance, filter.LayerMask, TriggersOf(filter))) == castBuffer.Length)
+            {
+                castBuffer = new RaycastHit[castBuffer.Length * 2];
+            }
+
+            return Nearest(count, start, along, filter, out hit);
         }
 
-        public int Overlap(System.Numerics.Vector3 center, float radius, BodyHandle[] results)
+        public bool ShapeCast(in BodyShape shape, System.Numerics.Vector3 position, System.Numerics.Quaternion rotation, System.Numerics.Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit)
         {
+            CheckQueryShape(shape);
+            Vector3 start = position.ToUnity();
+            Quaternion turn = rotation.ToUnity();
+            Vector3 along = direction.ToUnity().normalized;
+            if (along == Vector3.zero)
+            {
+                hit = default;
+                return false;
+            }
+
+            int inside = OverlapColliders(shape, start, turn, filter);
+            if (StartsInside(inside, start, along, filter, out hit))
+            {
+                return true;
+            }
+
+            int count;
+            while ((count = CastOnce(shape, start, turn, along, maxDistance, filter)) == castBuffer.Length)
+            {
+                castBuffer = new RaycastHit[castBuffer.Length * 2];
+            }
+
+            return Nearest(count, start, along, filter, out hit);
+        }
+
+        public int Overlap(in BodyShape shape, System.Numerics.Vector3 position, System.Numerics.Quaternion rotation, in QueryFilter filter, BodyHandle[] results)
+        {
+            CheckQueryShape(shape);
             if (results == null)
             {
                 throw new ArgumentNullException(nameof(results));
             }
 
-            int count;
-            while ((count = physicsScene.OverlapSphere(center.ToUnity(), radius, overlapBuffer, Physics.AllLayers, QueryTriggerInteraction.Ignore)) == overlapBuffer.Length)
-            {
-                overlapBuffer = new Collider[overlapBuffer.Length * 2];
-            }
-
+            int count = OverlapColliders(shape, position.ToUnity(), rotation.ToUnity(), filter);
             overlapped.Clear();
             int written = 0;
             for (int index = 0; index < count && written < results.Length; index++)
             {
                 BodyHandle handle = HandleOf(overlapBuffer[index].attachedRigidbody);
-                if (handle.IsValid && overlapped.Add(handle.Value))
+                if (handle.IsValid && !Excluded(handle, filter) && overlapped.Add(handle.Value))
                 {
                     results[written++] = handle;
                 }
@@ -408,6 +445,103 @@ namespace Fomoxa.Unity
 
             owned.Add(mesh);
             return mesh;
+        }
+
+        private int OverlapColliders(in BodyShape shape, Vector3 position, Quaternion rotation, in QueryFilter filter)
+        {
+            int count;
+            while ((count = OverlapOnce(shape, position, rotation, filter)) == overlapBuffer.Length)
+            {
+                overlapBuffer = new Collider[overlapBuffer.Length * 2];
+            }
+
+            return count;
+        }
+
+        private int OverlapOnce(in BodyShape shape, Vector3 position, Quaternion rotation, in QueryFilter filter)
+        {
+            switch (shape.Kind)
+            {
+                case ShapeKind.Box:
+                    return physicsScene.OverlapBox(position, shape.HalfExtents.ToUnity(), overlapBuffer, rotation, filter.LayerMask, TriggersOf(filter));
+                case ShapeKind.Sphere:
+                    return physicsScene.OverlapSphere(position, shape.Radius, overlapBuffer, filter.LayerMask, TriggersOf(filter));
+                default:
+                    Vector3 axis = rotation * new Vector3(0f, shape.HalfHeight, 0f);
+                    return physicsScene.OverlapCapsule(position - axis, position + axis, shape.Radius, overlapBuffer, filter.LayerMask, TriggersOf(filter));
+            }
+        }
+
+        private int CastOnce(in BodyShape shape, Vector3 position, Quaternion rotation, Vector3 along, float maxDistance, in QueryFilter filter)
+        {
+            switch (shape.Kind)
+            {
+                case ShapeKind.Box:
+                    return physicsScene.BoxCast(position, shape.HalfExtents.ToUnity(), along, castBuffer, rotation, maxDistance, filter.LayerMask, TriggersOf(filter));
+                case ShapeKind.Sphere:
+                    return physicsScene.SphereCast(position, shape.Radius, along, castBuffer, maxDistance, filter.LayerMask, TriggersOf(filter));
+                default:
+                    Vector3 axis = rotation * new Vector3(0f, shape.HalfHeight, 0f);
+                    return physicsScene.CapsuleCast(position - axis, position + axis, shape.Radius, along, castBuffer, maxDistance, filter.LayerMask, TriggersOf(filter));
+            }
+        }
+
+        private bool StartsInside(int count, Vector3 start, Vector3 along, in QueryFilter filter, out RayHit hit)
+        {
+            hit = default;
+            bool found = false;
+            for (int index = 0; index < count && !found; index++)
+            {
+                BodyHandle body = HandleOf(overlapBuffer[index].attachedRigidbody);
+                if (!Excluded(body, filter))
+                {
+                    hit = new RayHit(body, start.ToNumerics(), (-along).ToNumerics(), 0f);
+                    found = true;
+                }
+            }
+
+            Array.Clear(overlapBuffer, 0, count);
+            return found;
+        }
+
+        private bool Nearest(int count, Vector3 start, Vector3 along, in QueryFilter filter, out RayHit hit)
+        {
+            int best = -1;
+            for (int index = 0; index < count; index++)
+            {
+                if (!Excluded(HandleOf(castBuffer[index].rigidbody), filter) && (best < 0 || castBuffer[index].distance < castBuffer[best].distance))
+                {
+                    best = index;
+                }
+            }
+
+            if (best < 0)
+            {
+                hit = default;
+            }
+            else
+            {
+                RaycastHit found = castBuffer[best];
+                hit = found.distance > 0f
+                    ? new RayHit(HandleOf(found.rigidbody), found.point.ToNumerics(), found.normal.ToNumerics(), found.distance)
+                    : new RayHit(HandleOf(found.rigidbody), start.ToNumerics(), (-along).ToNumerics(), 0f);
+            }
+
+            Array.Clear(castBuffer, 0, count);
+            return best >= 0;
+        }
+
+        private static bool Excluded(BodyHandle body, in QueryFilter filter) => filter.ExcludeBody.IsValid && body.Equals(filter.ExcludeBody);
+
+        private static QueryTriggerInteraction TriggersOf(in QueryFilter filter) =>
+            filter.IncludeTriggers ? QueryTriggerInteraction.Collide : QueryTriggerInteraction.Ignore;
+
+        private static void CheckQueryShape(in BodyShape shape)
+        {
+            if (shape.Kind != ShapeKind.Box && shape.Kind != ShapeKind.Sphere && shape.Kind != ShapeKind.Capsule)
+            {
+                throw new ArgumentException($"a {shape.Kind} cannot be a query shape; use a box, a sphere or a capsule", nameof(shape));
+            }
         }
 
         private static RigidbodySnapshot Expect(PhysicsSnapshot snapshot) =>

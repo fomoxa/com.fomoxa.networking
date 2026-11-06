@@ -41,8 +41,10 @@ namespace Fomoxa.Networking.Simulation
 
         void AddImpulse(BodyHandle body, Vector3 impulse);
 
-        bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, out RayHit hit);
+        bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit);
 
-        int Overlap(Vector3 center, float radius, BodyHandle[] results);
+        bool ShapeCast(in BodyShape shape, Vector3 position, Quaternion rotation, Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit);
+
+        int Overlap(in BodyShape shape, Vector3 position, Quaternion rotation, in QueryFilter filter, BodyHandle[] results);
     }
 }

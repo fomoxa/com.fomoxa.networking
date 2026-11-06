@@ -182,6 +182,91 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void FiltersChooseLayersAndTriggersAndSkipABody()
+        {
+            BodyHandle trigger = Cube(new Vector3(0f, 0f, 2f), 0, true);
+            BodyHandle near = Cube(new Vector3(0f, 0f, 5f), 0, false);
+            BodyHandle far = Cube(new Vector3(0f, 0f, 8f), 3, false);
+            world.Step(0f);
+            var solid = new QueryFilter(-1, default, false);
+            var results = new BodyHandle[4];
+
+            AssertRay(QueryFilter.All, trigger, 1.5f);
+            AssertRay(solid, near, 4.5f);
+            AssertRay(new QueryFilter(-1, near, false), far, 7.5f);
+            AssertRay(new QueryFilter(1 << 3, default, true), far, 7.5f);
+            Assert.IsFalse(world.Raycast(System.Numerics.Vector3.Zero, System.Numerics.Vector3.UnitZ, 100f, new QueryFilter(1 << 4, default, true), out _));
+            BodyShape column = BodyShape.Box(new System.Numerics.Vector3(1f, 1f, 5f));
+            var middle = new System.Numerics.Vector3(0f, 0f, 5f);
+            Assert.AreEqual(3, world.Overlap(column, middle, System.Numerics.Quaternion.Identity, QueryFilter.All, results));
+            Assert.AreEqual(2, world.Overlap(column, middle, System.Numerics.Quaternion.Identity, solid, results));
+            Assert.AreEqual(1, world.Overlap(column, middle, System.Numerics.Quaternion.Identity, new QueryFilter(1, near, true), results));
+            Assert.AreEqual(trigger, results[0]);
+            Assert.AreEqual(3, world.Overlap(System.Numerics.Vector3.Zero, 10f, results));
+        }
+
+        [Test]
+        public void ShapeCastsAndOverlapsTakeABoxASphereAndACapsule()
+        {
+            BodyHandle target = Cube(new Vector3(0f, 0f, 5f), 0, false);
+            world.Step(0f);
+            System.Numerics.Quaternion lying = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitX, MathF.PI / 2f);
+            var shapes = new[]
+            {
+                (BodyShape.Box(new System.Numerics.Vector3(0.5f, 0.5f, 0.5f)), System.Numerics.Quaternion.Identity, 4f),
+                (BodyShape.Sphere(0.5f), System.Numerics.Quaternion.Identity, 4f),
+                (BodyShape.Capsule(0.5f, 0.5f), lying, 3.5f),
+            };
+            var results = new BodyHandle[4];
+
+            foreach ((BodyShape shape, System.Numerics.Quaternion rotation, float distance) in shapes)
+            {
+                Assert.IsTrue(world.ShapeCast(shape, System.Numerics.Vector3.Zero, rotation, System.Numerics.Vector3.UnitZ, 100f, QueryFilter.All, out RayHit hit), shape.Kind.ToString());
+                Assert.AreEqual(target, hit.Body);
+                Assert.AreEqual(distance, hit.Distance, 1e-2f, shape.Kind.ToString());
+                Assert.AreEqual(-1f, hit.Normal.Z, 1e-3f);
+                Assert.AreEqual(1, world.Overlap(shape, new System.Numerics.Vector3(0f, 0f, 4.2f), rotation, QueryFilter.All, results), shape.Kind.ToString());
+                Assert.AreEqual(0, world.Overlap(shape, new System.Numerics.Vector3(0f, 2f, 4.2f), rotation, QueryFilter.All, results), shape.Kind.ToString());
+            }
+
+            BodyShape hull = BodyShape.ConvexHull(new[] { System.Numerics.Vector3.Zero, System.Numerics.Vector3.UnitX, System.Numerics.Vector3.UnitY, System.Numerics.Vector3.UnitZ });
+            Assert.Throws<ArgumentException>(() => world.Overlap(hull, System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity, QueryFilter.All, results));
+            Assert.Throws<ArgumentException>(() => world.ShapeCast(hull, System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity, System.Numerics.Vector3.UnitZ, 1f, QueryFilter.All, out _));
+        }
+
+        [Test]
+        public void AQueryStartingInsideAColliderHitsItAtDistanceZero()
+        {
+            BodyHandle inside = Cube(new Vector3(0f, 0f, 0f), 0, false);
+            BodyHandle beyond = Cube(new Vector3(0f, 0f, 5f), 0, false);
+            world.Step(0f);
+            var origin = new System.Numerics.Vector3(0f, 0f, 0.1f);
+
+            Assert.IsTrue(world.Raycast(origin, System.Numerics.Vector3.UnitZ, 100f, QueryFilter.All, out RayHit ray));
+            Assert.IsTrue(world.ShapeCast(BodyShape.Sphere(0.2f), origin, System.Numerics.Quaternion.Identity, System.Numerics.Vector3.UnitZ, 100f, QueryFilter.All, out RayHit cast));
+            Assert.IsTrue(world.Raycast(origin, System.Numerics.Vector3.UnitZ, 100f, new QueryFilter(-1, inside, true), out RayHit skipped));
+
+            Assert.AreEqual((inside, 0f), (ray.Body, ray.Distance));
+            Assert.AreEqual((inside, 0f), (cast.Body, cast.Distance));
+            Assert.AreEqual(beyond, skipped.Body);
+            Assert.AreEqual(4.4f, skipped.Distance, 1e-3f);
+        }
+
+        [Test]
+        public void QueriesSeeABodySetThisTickAndAfterLoad()
+        {
+            BodyHandle body = world.CreateBody(new BodyDesc(BodyKind.Dynamic, new[] { CubeCollider(0, false) }, new System.Numerics.Vector3(0f, 0f, 5f), System.Numerics.Quaternion.Identity, 1f, new Fomoxa.Networking.Simulation.BodyMotion(BodyLocks.None, false, 0f, 0f)));
+            world.Step(0f);
+            PhysicsSnapshot snapshot = world.CreateSnapshot();
+            world.Save(snapshot);
+
+            world.SetBody(body, new BodyState { Position = new System.Numerics.Vector3(0f, 0f, 10f), Rotation = System.Numerics.Quaternion.Identity });
+            AssertRay(QueryFilter.All, body, 9.5f);
+            world.Load(snapshot);
+            AssertRay(QueryFilter.All, body, 4.5f);
+        }
+
+        [Test]
         public void CreatedBodiesAreRemovedAndUnknownHandlesThrow()
         {
             BodyHandle handle = world.CreateBody(new BodyDesc(BodyKind.Kinematic, BodyShape.Box(System.Numerics.Vector3.One), new System.Numerics.Vector3(1f, 2f, 3f), System.Numerics.Quaternion.Identity, 3f));
@@ -345,6 +430,19 @@ namespace Fomoxa.Unity.Tests
         {
             Rigidbody rigidbody = Rigid(position, mass);
             return new PhysicsBody(world, world.Register(rigidbody));
+        }
+
+        private BodyHandle Cube(Vector3 position, int layer, bool trigger) =>
+            world.CreateBody(new BodyDesc(BodyKind.Kinematic, new[] { CubeCollider(layer, trigger) }, position.ToNumerics(), System.Numerics.Quaternion.Identity, 1f));
+
+        private static ColliderDesc CubeCollider(int layer, bool trigger) =>
+            new ColliderDesc(BodyShape.Box(new System.Numerics.Vector3(0.5f, 0.5f, 0.5f)), System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity, ColliderMaterial.Default, layer, trigger);
+
+        private void AssertRay(in QueryFilter filter, BodyHandle body, float distance)
+        {
+            Assert.IsTrue(world.Raycast(System.Numerics.Vector3.Zero, System.Numerics.Vector3.UnitZ, 100f, filter, out RayHit hit));
+            Assert.AreEqual(body, hit.Body);
+            Assert.AreEqual(distance, hit.Distance, 1e-2f);
         }
 
         private Rigidbody Rigid(Vector3 position, float mass) => RigidIn(scene, position, mass);

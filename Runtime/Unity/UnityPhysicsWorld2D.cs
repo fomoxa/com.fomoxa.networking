@@ -18,6 +18,7 @@ namespace Fomoxa.Unity
         private readonly List<Rigidbody2D> found = new List<Rigidbody2D>();
         private readonly HashSet<int> overlapped = new HashSet<int>();
         private Collider2D[] overlapBuffer = new Collider2D[64];
+        private RaycastHit2D[] castBuffer = new RaycastHit2D[64];
         private int nextHandle = 1;
 
         public UnityPhysicsWorld2D(Scene scene)
@@ -245,39 +246,80 @@ namespace Fomoxa.Unity
             }
         }
 
-        public bool Raycast(System.Numerics.Vector2 origin, System.Numerics.Vector2 direction, float maxDistance, out RayHit2D hit)
+        public bool Raycast(System.Numerics.Vector2 origin, System.Numerics.Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit)
         {
-            RaycastHit2D unityHit = physicsScene.Raycast(origin.ToUnity(), direction.ToUnity().normalized, maxDistance);
-            if (unityHit.collider == null)
+            Vector2 start = origin.ToUnity();
+            Vector2 along = direction.ToUnity().normalized;
+            if (along == Vector2.zero)
             {
                 hit = default;
                 return false;
             }
 
-            hit = new RayHit2D(HandleOf(unityHit.rigidbody), unityHit.point.ToNumerics(), unityHit.normal.ToNumerics(), unityHit.distance);
-            return true;
+            ContactFilter2D contacts = ContactsOf(filter);
+            int inside;
+            while ((inside = physicsScene.OverlapPoint(start, contacts, overlapBuffer)) == overlapBuffer.Length)
+            {
+                overlapBuffer = new Collider2D[overlapBuffer.Length * 2];
+            }
+
+            if (StartsInside(inside, start, along, filter, out hit))
+            {
+                return true;
+            }
+
+            int count;
+            while ((count = physicsScene.Raycast(start, along, maxDistance, contacts, castBuffer)) == castBuffer.Length)
+            {
+                castBuffer = new RaycastHit2D[castBuffer.Length * 2];
+            }
+
+            return Nearest(count, start, along, filter, out hit);
         }
 
-        public int Overlap(System.Numerics.Vector2 center, float radius, BodyHandle[] results)
+        public bool ShapeCast(in BodyShape2D shape, System.Numerics.Vector2 position, float rotation, System.Numerics.Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit)
         {
+            CheckQueryShape(shape);
+            Vector2 start = position.ToUnity();
+            float angle = ToDegrees(rotation);
+            Vector2 along = direction.ToUnity().normalized;
+            if (along == Vector2.zero)
+            {
+                hit = default;
+                return false;
+            }
+
+            ContactFilter2D contacts = ContactsOf(filter);
+            int inside = OverlapColliders(shape, start, angle, contacts);
+            if (StartsInside(inside, start, along, filter, out hit))
+            {
+                return true;
+            }
+
+            int count;
+            while ((count = CastOnce(shape, start, angle, along, maxDistance, contacts)) == castBuffer.Length)
+            {
+                castBuffer = new RaycastHit2D[castBuffer.Length * 2];
+            }
+
+            return Nearest(count, start, along, filter, out hit);
+        }
+
+        public int Overlap(in BodyShape2D shape, System.Numerics.Vector2 position, float rotation, in QueryFilter filter, BodyHandle[] results)
+        {
+            CheckQueryShape(shape);
             if (results == null)
             {
                 throw new ArgumentNullException(nameof(results));
             }
 
-            var solidOnly = new ContactFilter2D { useTriggers = false };
-            int count;
-            while ((count = physicsScene.OverlapCircle(center.ToUnity(), radius, solidOnly, overlapBuffer)) == overlapBuffer.Length)
-            {
-                overlapBuffer = new Collider2D[overlapBuffer.Length * 2];
-            }
-
+            int count = OverlapColliders(shape, position.ToUnity(), ToDegrees(rotation), ContactsOf(filter));
             overlapped.Clear();
             int written = 0;
             for (int index = 0; index < count && written < results.Length; index++)
             {
                 BodyHandle handle = HandleOf(overlapBuffer[index].attachedRigidbody);
-                if (handle.IsValid && overlapped.Add(handle.Value))
+                if (handle.IsValid && !Excluded(handle, filter) && overlapped.Add(handle.Value))
                 {
                     results[written++] = handle;
                 }
@@ -352,7 +394,7 @@ namespace Fomoxa.Unity
                 case ShapeKind2D.Capsule:
                     var capsule = part.AddComponent<CapsuleCollider2D>();
                     capsule.direction = CapsuleDirection2D.Vertical;
-                    capsule.size = new Vector2(shape.Radius * 2f, (shape.HalfHeight + shape.Radius) * 2f);
+                    capsule.size = CapsuleSize(shape);
                     return capsule;
                 case ShapeKind2D.ConvexPolygon:
                     var polygon = part.AddComponent<PolygonCollider2D>();
@@ -384,6 +426,107 @@ namespace Fomoxa.Unity
             }
 
             return converted;
+        }
+
+        private int OverlapColliders(in BodyShape2D shape, Vector2 position, float angle, ContactFilter2D contacts)
+        {
+            int count;
+            while ((count = OverlapOnce(shape, position, angle, contacts)) == overlapBuffer.Length)
+            {
+                overlapBuffer = new Collider2D[overlapBuffer.Length * 2];
+            }
+
+            return count;
+        }
+
+        private int OverlapOnce(in BodyShape2D shape, Vector2 position, float angle, ContactFilter2D contacts)
+        {
+            switch (shape.Kind)
+            {
+                case ShapeKind2D.Box:
+                    return physicsScene.OverlapBox(position, shape.HalfExtents.ToUnity() * 2f, angle, contacts, overlapBuffer);
+                case ShapeKind2D.Circle:
+                    return physicsScene.OverlapCircle(position, shape.Radius, contacts, overlapBuffer);
+                default:
+                    return physicsScene.OverlapCapsule(position, CapsuleSize(shape), CapsuleDirection2D.Vertical, angle, contacts, overlapBuffer);
+            }
+        }
+
+        private int CastOnce(in BodyShape2D shape, Vector2 position, float angle, Vector2 along, float maxDistance, ContactFilter2D contacts)
+        {
+            switch (shape.Kind)
+            {
+                case ShapeKind2D.Box:
+                    return physicsScene.BoxCast(position, shape.HalfExtents.ToUnity() * 2f, angle, along, maxDistance, contacts, castBuffer);
+                case ShapeKind2D.Circle:
+                    return physicsScene.CircleCast(position, shape.Radius, along, maxDistance, contacts, castBuffer);
+                default:
+                    return physicsScene.CapsuleCast(position, CapsuleSize(shape), CapsuleDirection2D.Vertical, angle, along, maxDistance, contacts, castBuffer);
+            }
+        }
+
+        private bool StartsInside(int count, Vector2 start, Vector2 along, in QueryFilter filter, out RayHit2D hit)
+        {
+            hit = default;
+            bool found = false;
+            for (int index = 0; index < count && !found; index++)
+            {
+                BodyHandle body = HandleOf(overlapBuffer[index].attachedRigidbody);
+                if (!Excluded(body, filter))
+                {
+                    hit = new RayHit2D(body, start.ToNumerics(), (-along).ToNumerics(), 0f);
+                    found = true;
+                }
+            }
+
+            Array.Clear(overlapBuffer, 0, count);
+            return found;
+        }
+
+        private bool Nearest(int count, Vector2 start, Vector2 along, in QueryFilter filter, out RayHit2D hit)
+        {
+            int best = -1;
+            for (int index = 0; index < count; index++)
+            {
+                if (!Excluded(HandleOf(castBuffer[index].rigidbody), filter) && (best < 0 || castBuffer[index].distance < castBuffer[best].distance))
+                {
+                    best = index;
+                }
+            }
+
+            if (best < 0)
+            {
+                hit = default;
+            }
+            else
+            {
+                RaycastHit2D found = castBuffer[best];
+                hit = found.distance > 0f
+                    ? new RayHit2D(HandleOf(found.rigidbody), found.point.ToNumerics(), found.normal.ToNumerics(), found.distance)
+                    : new RayHit2D(HandleOf(found.rigidbody), start.ToNumerics(), (-along).ToNumerics(), 0f);
+            }
+
+            Array.Clear(castBuffer, 0, count);
+            return best >= 0;
+        }
+
+        private static bool Excluded(BodyHandle body, in QueryFilter filter) => filter.ExcludeBody.IsValid && body.Equals(filter.ExcludeBody);
+
+        private static ContactFilter2D ContactsOf(in QueryFilter filter)
+        {
+            var contacts = new ContactFilter2D { useTriggers = filter.IncludeTriggers };
+            contacts.SetLayerMask(filter.LayerMask);
+            return contacts;
+        }
+
+        private static Vector2 CapsuleSize(in BodyShape2D shape) => new Vector2(shape.Radius * 2f, (shape.HalfHeight + shape.Radius) * 2f);
+
+        private static void CheckQueryShape(in BodyShape2D shape)
+        {
+            if (shape.Kind != ShapeKind2D.Box && shape.Kind != ShapeKind2D.Circle && shape.Kind != ShapeKind2D.Capsule)
+            {
+                throw new ArgumentException($"a {shape.Kind} cannot be a query shape; use a box, a circle or a capsule", nameof(shape));
+            }
         }
 
         private static float ToDegrees(float radians) => radians * Mathf.Rad2Deg;
