@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace Fomoxa.Networking.Simulation
@@ -37,5 +38,7 @@ namespace Fomoxa.Networking.Simulation
         bool ShapeCast(in BodyShape2D shape, Vector2 position, float rotation, Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit);
 
         int Overlap(in BodyShape2D shape, Vector2 position, float rotation, in QueryFilter filter, BodyHandle[] results);
+
+        int GetContactPoints(BodyHandle body, BodyHandle other, in QueryFilter filter, List<ContactPointInfo2D> into);
     }
 }

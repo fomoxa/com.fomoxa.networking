@@ -346,4 +346,20 @@ namespace Fomoxa.Networking.Simulation
 
         public float Distance { get; }
     }
+
+    public readonly struct ContactPointInfo
+    {
+        public ContactPointInfo(Vector3 point, Vector3 normal, float depth)
+        {
+            Point = point;
+            Normal = normal;
+            Depth = depth;
+        }
+
+        public Vector3 Point { get; }
+
+        public Vector3 Normal { get; }
+
+        public float Depth { get; }
+    }
 }

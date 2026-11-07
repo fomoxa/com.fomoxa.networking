@@ -689,6 +689,12 @@ namespace Fomoxa.Networking.Standalone.Tests
 
             public int Overlap(in BodyShape shape, Vector3 position, Quaternion rotation, in QueryFilter filter, BodyHandle[] results) => 0;
 
+            public int GetContactPoints(BodyHandle body, BodyHandle other, in QueryFilter filter, List<ContactPointInfo> into)
+            {
+                into.Clear();
+                return 0;
+            }
+
             private sealed class Snapshot : PhysicsSnapshot
             {
                 public Dictionary<int, BodyState> States = new Dictionary<int, BodyState>();
@@ -800,6 +806,12 @@ namespace Fomoxa.Networking.Standalone.Tests
             }
 
             public int Overlap(in BodyShape2D shape, Vector2 position, float rotation, in QueryFilter filter, BodyHandle[] results) => 0;
+
+            public int GetContactPoints(BodyHandle body, BodyHandle other, in QueryFilter filter, List<ContactPointInfo2D> into)
+            {
+                into.Clear();
+                return 0;
+            }
 
             private sealed class Snapshot : PhysicsSnapshot
             {

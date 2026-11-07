@@ -306,6 +306,17 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ContactPointsAreNotGivenByThisBackendAndTheListIsCleared()
+        {
+            BodyHandle body = Ball(BodyKind.Dynamic, false, 0f);
+            var points = new List<ContactPointInfo> { default };
+
+            Assert.AreEqual(0, world.GetContactPoints(body, default, QueryFilter.All, points));
+            Assert.AreEqual(0, points.Count);
+            Assert.Throws<ArgumentNullException>(() => world.GetContactPoints(body, default, QueryFilter.All, null));
+        }
+
+        [Test]
         public void CreatedBodiesAreRemovedAndUnknownHandlesThrow()
         {
             BodyHandle handle = world.CreateBody(new BodyDesc(BodyKind.Kinematic, BodyShape.Box(System.Numerics.Vector3.One), new System.Numerics.Vector3(1f, 2f, 3f), System.Numerics.Quaternion.Identity, 3f));

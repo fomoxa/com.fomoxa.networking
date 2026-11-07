@@ -58,6 +58,39 @@ namespace Fomoxa.Unity
             }
         }
 
+        public int GetContactPoints(Collider2D other, List<NetworkContactPoint2D> into)
+        {
+            if (into == null)
+            {
+                throw new ArgumentNullException(nameof(into));
+            }
+
+            into.Clear();
+            if (other == null)
+            {
+                return 0;
+            }
+
+            foreach (Collider2D own in colliders)
+            {
+                if (own == null || !own.enabled || own.isTrigger)
+                {
+                    continue;
+                }
+
+                if (attachedQuery != null)
+                {
+                    attachedQuery.CollectContactPoints(own, other, into);
+                }
+                else
+                {
+                    ContactQueries.CollectContactPoints(own, other, into);
+                }
+            }
+
+            return into.Count;
+        }
+
         ContactSet<Collider2D> IContactSource<Collider2D>.Contacts => contacts;
 
         bool IContactSource<Collider2D>.MovedWorld => attachedQuery == null && gameObject.scene.GetPhysicsScene2D() != joined;

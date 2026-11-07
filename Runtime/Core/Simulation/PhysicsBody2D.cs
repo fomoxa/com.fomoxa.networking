@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace Fomoxa.Networking.Simulation
@@ -82,5 +83,9 @@ namespace Fomoxa.Networking.Simulation
         public void AddForceAtPoint(Vector2 force, Vector2 point) => world.AddForceAtPoint(handle, force, point);
 
         public void AddImpulseAtPoint(Vector2 impulse, Vector2 point) => world.AddImpulseAtPoint(handle, impulse, point);
+
+        public int GetContactPoints(BodyHandle other, List<ContactPointInfo2D> into) => world.GetContactPoints(handle, other, QueryFilter.All, into);
+
+        public int GetContactPoints(BodyHandle other, in QueryFilter filter, List<ContactPointInfo2D> into) => world.GetContactPoints(handle, other, filter, into);
     }
 }

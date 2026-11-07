@@ -330,6 +330,71 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ACollisionAsksItsOwnerForTheContactPointsOfEachSolidCollider()
+        {
+            GameObject wall = Created("Wall");
+            var box = wall.AddComponent<BoxCollider>();
+            wall.AddComponent<SphereCollider>().isTrigger = true;
+            NetworkCollision collision = Enable(wall.AddComponent<NetworkCollision>());
+            Collider ball = Ball(new Vector3(10f, 0f, 0f), Vector3.zero).GetComponent<Collider>();
+            var points = new List<NetworkContactPoint> { default };
+            var query = new FixedQuery();
+
+            Assert.AreEqual(0, collision.GetContactPoints(ball, points));
+            Assert.AreEqual(0, points.Count);
+
+            Assert.IsTrue(collision.Attach(new ContactTracker<Collider>(), query));
+            query.Asked.Clear();
+
+            Assert.AreEqual(1, collision.GetContactPoints(ball, points));
+            CollectionAssert.AreEqual(new[] { box }, query.Asked);
+            Assert.AreEqual(Vector3.up, points[0].Normal);
+            Assert.AreEqual(0.5f, points[0].Depth);
+            Assert.AreEqual(0, collision.GetContactPoints(null, points));
+            Assert.AreEqual(0, points.Count);
+            Assert.Throws<System.ArgumentNullException>(() => collision.GetContactPoints(ball, null));
+            collision.Detach(query);
+        }
+
+        [Test]
+        public void ACollision2DGivesTheContactPointsOfABodyRestingOnIt()
+        {
+            GameObject floor = Created("Floor2D");
+            floor.AddComponent<BoxCollider2D>().size = new Vector2(10f, 1f);
+            NetworkCollision2D collision = Enable(floor.AddComponent<NetworkCollision2D>());
+            Rigidbody2D ball = Ball2D(new Vector2(0f, 0.76f), Vector2.zero);
+            ball.gravityScale = 1f;
+            Rigidbody2D ghost = Ball2D(new Vector2(2f, 0.6f), Vector2.zero);
+            ghost.GetComponent<Collider2D>().isTrigger = true;
+            for (int step = 0; step < 40; step++)
+            {
+                Tick();
+            }
+
+            var points = new List<NetworkContactPoint2D> { default, default };
+
+            Assert.Greater(collision.GetContactPoints(ball.GetComponent<Collider2D>(), points), 0);
+            foreach (NetworkContactPoint2D point in points)
+            {
+                Assert.AreEqual(0f, point.Normal.x, 1e-3f);
+                Assert.AreEqual(-1f, point.Normal.y, 1e-3f);
+                Assert.AreEqual(0.5f, point.Point.y, 0.02f);
+                Assert.AreEqual(0f, point.Depth, 0.02f);
+            }
+
+            Assert.AreEqual(0, collision.GetContactPoints(ghost.GetComponent<Collider2D>(), points));
+            Assert.AreEqual(0, collision.GetContactPoints(null, points));
+            Assert.AreEqual(0, points.Count);
+
+            var query = new FixedQuery();
+            Assert.IsTrue(collision.Attach(new ContactTracker<Collider2D>(), query));
+
+            Assert.AreEqual(1, collision.GetContactPoints(ball.GetComponent<Collider2D>(), points));
+            Assert.AreEqual(Vector2.up, points[0].Normal);
+            collision.Detach(query);
+        }
+
+        [Test]
         public void AComponentAttachedWhileDisabledJoinsItsOwnerWhenEnabled()
         {
             GameObject wall = Created("Wall");
@@ -465,6 +530,18 @@ namespace Fomoxa.Unity.Tests
             {
                 Asked.Add(own);
                 into.UnionWith(Touching2D);
+            }
+
+            public void CollectContactPoints(Collider own, Collider other, List<NetworkContactPoint> into)
+            {
+                Asked.Add(own);
+                into.Add(new NetworkContactPoint(own.transform.position, Vector3.up, 0.5f));
+            }
+
+            public void CollectContactPoints(Collider2D own, Collider2D other, List<NetworkContactPoint2D> into)
+            {
+                Asked.Add(own);
+                into.Add(new NetworkContactPoint2D(own.transform.position, Vector2.up, 0.5f));
             }
         }
     }

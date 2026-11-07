@@ -49,6 +49,27 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void ContactPointsGoThroughTheWorldWithTheDefaultFilterOrTheOneGiven()
+        {
+            var world = new PointWorld();
+            var world2D = new PointWorld2D();
+            var points = new List<ContactPointInfo> { default, default };
+            var points2D = new List<ContactPointInfo2D>();
+            var layer = new QueryFilter(1 << 4, default, false);
+
+            int count = world.GetContactPoints(new BodyHandle(3), default, points);
+            QueryFilter all = world.LastFilter;
+            new PhysicsBody(world, new BodyHandle(3)).GetContactPoints(new BodyHandle(5), layer, points);
+            int count2D = new PhysicsBody2D(world2D, new BodyHandle(4)).GetContactPoints(default, points2D);
+
+            Assert.AreEqual((1, -1, 0, true), (count, all.LayerMask, all.ExcludeBody.Value, all.IncludeTriggers));
+            Assert.AreEqual((1 << 4, false), (world.LastFilter.LayerMask, world.LastFilter.IncludeTriggers));
+            CollectionAssert.AreEqual(new[] { new ContactPointInfo(new Vector3(3f, 5f, 0f), Vector3.UnitY, 0.25f) }, points);
+            Assert.AreEqual((1, -1), (count2D, world2D.LastFilter.LayerMask));
+            CollectionAssert.AreEqual(new[] { new ContactPointInfo2D(new Vector2(4f, 0f), Vector2.UnitY, 0.25f) }, points2D);
+        }
+
+        [Test]
         public void TheHistorySavesTheWorldAfterEachTickAndLoadsItBack()
         {
             var world = new PointWorld();
@@ -482,6 +503,14 @@ namespace Fomoxa.Networking.Tests
                 return 0;
             }
 
+            public int GetContactPoints(BodyHandle body, BodyHandle other, in QueryFilter filter, List<ContactPointInfo> into)
+            {
+                LastFilter = filter;
+                into.Clear();
+                into.Add(new ContactPointInfo(new Vector3(body.Value, other.Value, 0f), Vector3.UnitY, 0.25f));
+                return 1;
+            }
+
             private sealed class PointSnapshot : PhysicsSnapshot
             {
                 public readonly Dictionary<int, BodyState> Bodies = new Dictionary<int, BodyState>();
@@ -608,6 +637,14 @@ namespace Fomoxa.Networking.Tests
                 LastRotation = rotation;
                 LastFilter = filter;
                 return 0;
+            }
+
+            public int GetContactPoints(BodyHandle body, BodyHandle other, in QueryFilter filter, List<ContactPointInfo2D> into)
+            {
+                LastFilter = filter;
+                into.Clear();
+                into.Add(new ContactPointInfo2D(new Vector2(body.Value, other.Value), Vector2.UnitY, 0.25f));
+                return 1;
             }
 
             private sealed class PointSnapshot2D : PhysicsSnapshot

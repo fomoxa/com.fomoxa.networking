@@ -19,6 +19,9 @@ namespace Fomoxa.Unity
         private readonly HashSet<int> overlapped = new HashSet<int>();
         private Collider2D[] overlapBuffer = new Collider2D[64];
         private RaycastHit2D[] castBuffer = new RaycastHit2D[64];
+        private ContactPoint2D[] contactBuffer = new ContactPoint2D[64];
+        private readonly List<Contact2DEntry> loadedContacts = new List<Contact2DEntry>();
+        private bool contactsLoaded;
         private int nextHandle = 1;
 
         public UnityPhysicsWorld2D(Scene scene)
@@ -230,7 +233,12 @@ namespace Fomoxa.Unity
             rigidbody.WakeUp();
         }
 
-        public void Step(float seconds) => physicsScene.Simulate(seconds);
+        public void Step(float seconds)
+        {
+            physicsScene.Simulate(seconds);
+            contactsLoaded = false;
+            loadedContacts.Clear();
+        }
 
         public PhysicsSnapshot CreateSnapshot() => new Rigidbody2DSnapshot();
 
@@ -263,11 +271,16 @@ namespace Fomoxa.Unity
 
             roots.Clear();
             found.Clear();
+            SaveContacts(snapshot.Contacts);
         }
 
         public void Load(PhysicsSnapshot from)
         {
-            foreach (Rigidbody2DEntry entry in Expect(from).Entries)
+            var snapshot = Expect(from);
+            loadedContacts.Clear();
+            loadedContacts.AddRange(snapshot.Contacts);
+            contactsLoaded = true;
+            foreach (Rigidbody2DEntry entry in snapshot.Entries)
             {
                 Rigidbody2D rigidbody = entry.Rigidbody;
                 if (rigidbody == null || rigidbody.gameObject.scene.GetPhysicsScene2D() != physicsScene || !IsRewound(rigidbody))
@@ -346,6 +359,46 @@ namespace Fomoxa.Unity
             }
 
             return Nearest(count, start, along, filter, out hit);
+        }
+
+        public int GetContactPoints(BodyHandle body, BodyHandle other, in QueryFilter filter, List<ContactPointInfo2D> into)
+        {
+            if (into == null)
+            {
+                throw new ArgumentNullException(nameof(into));
+            }
+
+            into.Clear();
+            if (!bodies.TryGetValue(body.Value, out Rigidbody2D rigidbody) || rigidbody == null)
+            {
+                return 0;
+            }
+
+            if (contactsLoaded)
+            {
+                foreach (Contact2DEntry entry in loadedContacts)
+                {
+                    if (entry.Body == body.Value && Accepts(entry.Far, other, filter))
+                    {
+                        into.Add(new ContactPointInfo2D(entry.Point.ToNumerics(), entry.Normal.ToNumerics(), entry.Depth));
+                    }
+                }
+
+                return into.Count;
+            }
+
+            int count = ReadContacts(rigidbody);
+            for (int index = 0; index < count; index++)
+            {
+                ContactPoint2D contact = contactBuffer[index];
+                if (Accepts(contact.collider, other, filter))
+                {
+                    into.Add(new ContactPointInfo2D(contact.point.ToNumerics(), contact.normal.ToNumerics(), -contact.separation));
+                }
+            }
+
+            Array.Clear(contactBuffer, 0, count);
+            return into.Count;
         }
 
         public int Overlap(in BodyShape2D shape, System.Numerics.Vector2 position, float rotation, in QueryFilter filter, BodyHandle[] results)
@@ -553,6 +606,49 @@ namespace Fomoxa.Unity
             return best >= 0;
         }
 
+        private void SaveContacts(List<Contact2DEntry> into)
+        {
+            into.Clear();
+            foreach (KeyValuePair<int, Rigidbody2D> pair in bodies)
+            {
+                if (pair.Value == null)
+                {
+                    continue;
+                }
+
+                int count = ReadContacts(pair.Value);
+                for (int index = 0; index < count; index++)
+                {
+                    ContactPoint2D contact = contactBuffer[index];
+                    into.Add(new Contact2DEntry(pair.Key, contact.collider, contact.point, contact.normal, -contact.separation));
+                }
+
+                Array.Clear(contactBuffer, 0, count);
+            }
+        }
+
+        private int ReadContacts(Rigidbody2D rigidbody)
+        {
+            int count;
+            while ((count = rigidbody.GetContacts(contactBuffer)) == contactBuffer.Length)
+            {
+                contactBuffer = new ContactPoint2D[contactBuffer.Length * 2];
+            }
+
+            return count;
+        }
+
+        private bool Accepts(Collider2D far, BodyHandle other, in QueryFilter filter)
+        {
+            if (far == null || far.isTrigger || (filter.LayerMask & (1 << far.gameObject.layer)) == 0)
+            {
+                return false;
+            }
+
+            BodyHandle farBody = HandleOf(far.attachedRigidbody);
+            return farBody.Equals(other) && !Excluded(farBody, filter);
+        }
+
         private static bool Excluded(BodyHandle body, in QueryFilter filter) => filter.ExcludeBody.IsValid && body.Equals(filter.ExcludeBody);
 
         private static ContactFilter2D ContactsOf(in QueryFilter filter)
@@ -595,6 +691,30 @@ namespace Fomoxa.Unity
         private sealed class Rigidbody2DSnapshot : PhysicsSnapshot
         {
             public readonly List<Rigidbody2DEntry> Entries = new List<Rigidbody2DEntry>();
+
+            public readonly List<Contact2DEntry> Contacts = new List<Contact2DEntry>();
+        }
+
+        private readonly struct Contact2DEntry
+        {
+            public Contact2DEntry(int body, Collider2D far, Vector2 point, Vector2 normal, float depth)
+            {
+                Body = body;
+                Far = far;
+                Point = point;
+                Normal = normal;
+                Depth = depth;
+            }
+
+            public int Body { get; }
+
+            public Collider2D Far { get; }
+
+            public Vector2 Point { get; }
+
+            public Vector2 Normal { get; }
+
+            public float Depth { get; }
         }
 
         private readonly struct Rigidbody2DEntry

@@ -10,6 +10,7 @@ namespace Fomoxa.Unity
         private static readonly HashSet<Collider> queried = new HashSet<Collider>();
         private static readonly HashSet<Collider2D> queried2D = new HashSet<Collider2D>();
         private static Collider[] overlapBuffer = new Collider[32];
+        private static ContactPoint2D[] points2D = new ContactPoint2D[16];
 
         public static void Collect(List<Collider> own, bool triggers, float additionalSize, HashSet<Collider> into)
         {
@@ -64,6 +65,26 @@ namespace Fomoxa.Unity
             }
 
             contacts2D.Clear();
+        }
+
+        public static void CollectContactPoints(Collider2D own, Collider2D other, List<NetworkContactPoint2D> into)
+        {
+            int count;
+            while ((count = own.GetContacts(points2D)) == points2D.Length)
+            {
+                points2D = new ContactPoint2D[points2D.Length * 2];
+            }
+
+            for (int index = 0; index < count; index++)
+            {
+                ContactPoint2D contact = points2D[index];
+                if (contact.collider == other && !other.isTrigger)
+                {
+                    into.Add(new NetworkContactPoint2D(contact.point, contact.normal, -contact.separation));
+                }
+            }
+
+            Array.Clear(points2D, 0, count);
         }
 
         public static void Collect(List<Collider> own, bool triggers, IContactQuery query, HashSet<Collider> into)

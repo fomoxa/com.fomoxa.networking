@@ -353,6 +353,17 @@ namespace Fomoxa.Unity
             return Nearest(count, start, along, filter, out hit);
         }
 
+        public int GetContactPoints(BodyHandle body, BodyHandle other, in QueryFilter filter, List<ContactPointInfo> into)
+        {
+            if (into == null)
+            {
+                throw new ArgumentNullException(nameof(into));
+            }
+
+            into.Clear();
+            return 0;
+        }
+
         public int Overlap(in BodyShape shape, System.Numerics.Vector3 position, System.Numerics.Quaternion rotation, in QueryFilter filter, BodyHandle[] results)
         {
             CheckQueryShape(shape);

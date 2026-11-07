@@ -329,6 +329,91 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ContactPointsPointFromTheOtherSideAndCarryTheOverlap()
+        {
+            var ground = new GameObject("Ground");
+            created.Add(ground);
+            SceneManager.MoveGameObjectToScene(ground, scene);
+            ground.layer = 1;
+            ground.transform.position = new Vector3(0f, -0.5f, 0f);
+            ground.AddComponent<BoxCollider2D>().size = new Vector2(10f, 1f);
+            Rigidbody2D lowerBody = Rigid(new Vector2(0f, 0.5f), 1f);
+            Rigidbody2D upperBody = Rigid(new Vector2(0f, 1.5f), 1f);
+            lowerBody.gravityScale = 1f;
+            upperBody.gravityScale = 1f;
+            BodyHandle lower = world.Register(lowerBody);
+            BodyHandle upper = world.Register(upperBody);
+            BodyHandle away = world.Register(Rigid(new Vector2(5f, 3f), 1f));
+            for (int step = 0; step < 60; step++)
+            {
+                world.Step(1f / 30f);
+            }
+
+            var points = new List<ContactPointInfo2D> { default, default };
+
+            Assert.Greater(world.GetContactPoints(lower, default, QueryFilter.All, points), 0);
+            AssertPoints(points, System.Numerics.Vector2.UnitY, 0f);
+            Assert.Greater(world.GetContactPoints(upper, lower, points), 0);
+            AssertPoints(points, System.Numerics.Vector2.UnitY, 1f);
+            Assert.Greater(new PhysicsBody2D(world, lower).GetContactPoints(upper, points), 0);
+            AssertPoints(points, -System.Numerics.Vector2.UnitY, 1f);
+            Assert.Greater(world.GetContactPoints(lower, default, new QueryFilter(1 << 1, default, false), points), 0);
+            Assert.AreEqual(0, world.GetContactPoints(lower, default, new QueryFilter(1 << 0, default, true), points));
+            Assert.AreEqual(0, world.GetContactPoints(lower, upper, new QueryFilter(-1, upper, true), points));
+            Assert.AreEqual(0, world.GetContactPoints(upper, default, QueryFilter.All, points));
+            Assert.AreEqual(0, world.GetContactPoints(away, default, QueryFilter.All, points));
+            Assert.AreEqual(0, world.GetContactPoints(default, default, QueryFilter.All, points));
+            Assert.AreEqual(0, points.Count);
+        }
+
+        [Test]
+        public void BetweenLoadAndTheNextStepContactPointsAreThoseOfTheLoadedTick()
+        {
+            var ground = new GameObject("Ground");
+            created.Add(ground);
+            SceneManager.MoveGameObjectToScene(ground, scene);
+            ground.transform.position = new Vector3(0f, -0.5f, 0f);
+            ground.AddComponent<BoxCollider2D>().size = new Vector2(10f, 1f);
+            Rigidbody2D ballBody = Rigid(new Vector2(0f, 0.5f), 1f);
+            ballBody.gravityScale = 1f;
+            ballBody.sleepMode = RigidbodySleepMode2D.NeverSleep;
+            BodyHandle ball = world.Register(ballBody);
+            for (int step = 0; step < 60; step++)
+            {
+                world.Step(1f / 30f);
+            }
+
+            PhysicsSnapshot resting = world.CreateSnapshot();
+            world.Save(resting);
+            world.SetBody(ball, new BodyState2D { Position = new System.Numerics.Vector2(0f, 5f) });
+            world.Step(1f / 30f);
+            PhysicsSnapshot falling = world.CreateSnapshot();
+            world.Save(falling);
+            var points = new List<ContactPointInfo2D>();
+
+            Assert.AreEqual(0, world.GetContactPoints(ball, default, points));
+
+            world.Load(resting);
+
+            Assert.Greater(world.GetContactPoints(ball, default, points), 0);
+            AssertPoints(points, System.Numerics.Vector2.UnitY, 0f);
+            Assert.AreEqual(0, world.GetContactPoints(ball, default, new QueryFilter(1 << 3, default, true), points));
+
+            world.Step(1f / 30f);
+
+            Assert.Greater(world.GetContactPoints(ball, default, points), 0);
+            AssertPoints(points, System.Numerics.Vector2.UnitY, 0f);
+
+            world.Load(falling);
+
+            Assert.AreEqual(0, world.GetContactPoints(ball, default, points));
+
+            world.Step(1f / 30f);
+
+            Assert.AreEqual(0, world.GetContactPoints(ball, default, points));
+        }
+
+        [Test]
         public void CreatedBodiesAreRemovedAndUnknownHandlesThrow()
         {
             BodyHandle handle = world.CreateBody(new BodyDesc2D(BodyKind.Kinematic, BodyShape2D.Capsule(0.5f, 1f), new System.Numerics.Vector2(1f, 2f), 0f, 3f));
@@ -514,6 +599,17 @@ namespace Fomoxa.Unity.Tests
             Assert.IsTrue(world.Raycast(System.Numerics.Vector2.Zero, System.Numerics.Vector2.UnitX, 100f, filter, out RayHit2D hit));
             Assert.AreEqual(body, hit.Body);
             Assert.AreEqual(distance, hit.Distance, 1e-2f);
+        }
+
+        private static void AssertPoints(List<ContactPointInfo2D> points, System.Numerics.Vector2 normal, float height)
+        {
+            foreach (ContactPointInfo2D point in points)
+            {
+                Assert.AreEqual(normal.X, point.Normal.X, 1e-3f);
+                Assert.AreEqual(normal.Y, point.Normal.Y, 1e-3f);
+                Assert.AreEqual(height, point.Point.Y, 0.02f);
+                Assert.AreEqual(0f, point.Depth, 0.02f);
+            }
         }
 
         private Rigidbody2D Rigid(Vector2 position, float mass)
