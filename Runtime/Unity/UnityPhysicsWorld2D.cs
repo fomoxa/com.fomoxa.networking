@@ -74,6 +74,7 @@ namespace Fomoxa.Unity
             rigidbody.gravityScale = desc.Kind == BodyKind.Dynamic ? motion.GravityScale : 0f;
             rigidbody.linearDamping = motion.LinearDamping;
             rigidbody.angularDamping = motion.AngularDamping;
+            rigidbody.collisionDetectionMode = motion.ContinuousCollision ? CollisionDetectionMode2D.Continuous : CollisionDetectionMode2D.Discrete;
             BodyHandle handle = Register(rigidbody);
             created.Add(handle.Value);
             return handle;
@@ -182,6 +183,48 @@ namespace Fomoxa.Unity
             if (rigidbody.bodyType == RigidbodyType2D.Dynamic)
             {
                 rigidbody.linearVelocity += impulse.ToUnity() / rigidbody.mass;
+            }
+
+            rigidbody.WakeUp();
+        }
+
+        public void AddTorque(BodyHandle body, float torque)
+        {
+            Rigidbody2D rigidbody = Require(body);
+            rigidbody.AddTorque(torque, ForceMode2D.Force);
+            rigidbody.WakeUp();
+        }
+
+        public void AddTorqueImpulse(BodyHandle body, float torqueImpulse)
+        {
+            Rigidbody2D rigidbody = Require(body);
+            if (rigidbody.bodyType == RigidbodyType2D.Dynamic && rigidbody.inertia > 0f)
+            {
+                rigidbody.angularVelocity += ToDegrees(torqueImpulse / rigidbody.inertia);
+            }
+
+            rigidbody.WakeUp();
+        }
+
+        public void AddForceAtPoint(BodyHandle body, System.Numerics.Vector2 force, System.Numerics.Vector2 point)
+        {
+            Rigidbody2D rigidbody = Require(body);
+            rigidbody.AddForceAtPosition(force.ToUnity(), point.ToUnity(), ForceMode2D.Force);
+            rigidbody.WakeUp();
+        }
+
+        public void AddImpulseAtPoint(BodyHandle body, System.Numerics.Vector2 impulse, System.Numerics.Vector2 point)
+        {
+            Rigidbody2D rigidbody = Require(body);
+            if (rigidbody.bodyType == RigidbodyType2D.Dynamic)
+            {
+                Vector2 push = impulse.ToUnity();
+                rigidbody.linearVelocity += push / rigidbody.mass;
+                if (rigidbody.inertia > 0f)
+                {
+                    Vector2 arm = point.ToUnity() - rigidbody.worldCenterOfMass;
+                    rigidbody.angularVelocity += ToDegrees((arm.x * push.y - arm.y * push.x) / rigidbody.inertia);
+                }
             }
 
             rigidbody.WakeUp();

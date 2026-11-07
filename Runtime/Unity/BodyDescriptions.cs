@@ -421,7 +421,7 @@ namespace Fomoxa.Unity
             locks |= (constraints & RigidbodyConstraints.FreezeRotationX) != 0 ? BodyLocks.RotationX : BodyLocks.None;
             locks |= (constraints & RigidbodyConstraints.FreezeRotationY) != 0 ? BodyLocks.RotationY : BodyLocks.None;
             locks |= (constraints & RigidbodyConstraints.FreezeRotationZ) != 0 ? BodyLocks.RotationZ : BodyLocks.None;
-            return new BodyMotion(locks, rigidbody.useGravity, rigidbody.linearDamping, rigidbody.angularDamping);
+            return new BodyMotion(locks, rigidbody.useGravity, rigidbody.linearDamping, rigidbody.angularDamping, rigidbody.collisionDetectionMode != CollisionDetectionMode.Discrete);
         }
 
         private static BodyMotion2D MotionOf(Rigidbody2D rigidbody)
@@ -436,7 +436,7 @@ namespace Fomoxa.Unity
             locks |= (constraints & RigidbodyConstraints2D.FreezePositionX) != 0 ? BodyLocks2D.PositionX : BodyLocks2D.None;
             locks |= (constraints & RigidbodyConstraints2D.FreezePositionY) != 0 ? BodyLocks2D.PositionY : BodyLocks2D.None;
             locks |= (constraints & RigidbodyConstraints2D.FreezeRotation) != 0 ? BodyLocks2D.Rotation : BodyLocks2D.None;
-            return new BodyMotion2D(locks, rigidbody.gravityScale, rigidbody.linearDamping, rigidbody.angularDamping);
+            return new BodyMotion2D(locks, rigidbody.gravityScale, rigidbody.linearDamping, rigidbody.angularDamping, rigidbody.collisionDetectionMode == CollisionDetectionMode2D.Continuous);
         }
 
         private static ColliderDesc Describe(BodyShape shape, Vector3 position, Quaternion rotation, ColliderMaterial material, int layer, bool isTrigger) =>

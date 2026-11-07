@@ -267,6 +267,45 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ImpulsesChangeTheVelocityAtOnceAndForcesAndTorquesActAtTheNextStep()
+        {
+            BodyHandle spun = Ball(BodyKind.Dynamic, false, 0f);
+            BodyHandle struck = Ball(BodyKind.Dynamic, false, 10f);
+            BodyHandle twisted = Ball(BodyKind.Dynamic, false, 20f);
+            BodyHandle pushed = Ball(BodyKind.Dynamic, false, 30f);
+            BodyHandle carried = Ball(BodyKind.Kinematic, false, 40f);
+            world.Step(0f);
+            float inertia = world.ObjectOf(spun).GetComponent<Rigidbody>().inertiaTensor.z;
+
+            world.AddTorqueImpulse(spun, new System.Numerics.Vector3(0f, 0f, 0.5f));
+            world.AddImpulseAtPoint(struck, new System.Numerics.Vector3(0f, 0f, 1f), world.GetBody(struck).Position + System.Numerics.Vector3.UnitX);
+            world.AddTorque(twisted, new System.Numerics.Vector3(0f, 0f, 1f));
+            world.AddForceAtPoint(pushed, new System.Numerics.Vector3(0f, 0f, 1f), world.GetBody(pushed).Position + System.Numerics.Vector3.UnitX);
+            world.AddTorqueImpulse(carried, new System.Numerics.Vector3(0f, 0f, 0.5f));
+
+            Assert.AreEqual(0.5f / inertia, world.GetBody(spun).AngularVelocity.Z, 1e-4f);
+            Assert.AreEqual(0.5f, world.GetBody(struck).Velocity.Z, 1e-5f);
+            Assert.AreEqual(-1f / inertia, world.GetBody(struck).AngularVelocity.Y, 1e-4f);
+            Assert.AreEqual(System.Numerics.Vector3.Zero, world.GetBody(twisted).AngularVelocity);
+            Assert.AreEqual(System.Numerics.Vector3.Zero, world.GetBody(pushed).Velocity);
+            Assert.AreEqual(System.Numerics.Vector3.Zero, world.GetBody(carried).AngularVelocity);
+
+            world.Step(0.5f);
+
+            Assert.AreEqual(0.5f / inertia, world.GetBody(twisted).AngularVelocity.Z, 1e-3f);
+            Assert.AreEqual(0.25f, world.GetBody(pushed).Velocity.Z, 1e-4f);
+            Assert.AreEqual(-0.5f / inertia, world.GetBody(pushed).AngularVelocity.Y, 1e-3f);
+        }
+
+        [Test]
+        public void ContinuousCollisionChoosesTheDetectionModeOfACreatedBody()
+        {
+            Assert.AreEqual(CollisionDetectionMode.ContinuousDynamic, world.ObjectOf(Ball(BodyKind.Dynamic, true, 0f)).GetComponent<Rigidbody>().collisionDetectionMode);
+            Assert.AreEqual(CollisionDetectionMode.ContinuousSpeculative, world.ObjectOf(Ball(BodyKind.Kinematic, true, 10f)).GetComponent<Rigidbody>().collisionDetectionMode);
+            Assert.AreEqual(CollisionDetectionMode.Discrete, world.ObjectOf(Ball(BodyKind.Dynamic, false, 20f)).GetComponent<Rigidbody>().collisionDetectionMode);
+        }
+
+        [Test]
         public void CreatedBodiesAreRemovedAndUnknownHandlesThrow()
         {
             BodyHandle handle = world.CreateBody(new BodyDesc(BodyKind.Kinematic, BodyShape.Box(System.Numerics.Vector3.One), new System.Numerics.Vector3(1f, 2f, 3f), System.Numerics.Quaternion.Identity, 3f));
@@ -430,6 +469,13 @@ namespace Fomoxa.Unity.Tests
         {
             Rigidbody rigidbody = Rigid(position, mass);
             return new PhysicsBody(world, world.Register(rigidbody));
+        }
+
+        private BodyHandle Ball(BodyKind kind, bool continuous, float x)
+        {
+            var collider = new ColliderDesc(BodyShape.Sphere(0.5f), System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity, ColliderMaterial.Default, 0, false);
+            var motion = new Fomoxa.Networking.Simulation.BodyMotion(BodyLocks.None, false, 0f, 0f, continuous);
+            return world.CreateBody(new BodyDesc(kind, new[] { collider }, new System.Numerics.Vector3(x, 50f, 0f), System.Numerics.Quaternion.Identity, 2f, motion));
         }
 
         private BodyHandle Cube(Vector3 position, int layer, bool trigger) =>

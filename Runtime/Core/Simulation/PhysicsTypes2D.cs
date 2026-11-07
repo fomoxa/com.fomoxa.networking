@@ -106,6 +106,11 @@ namespace Fomoxa.Networking.Simulation
     public readonly struct BodyMotion2D
     {
         public BodyMotion2D(BodyLocks2D locks, float gravityScale, float linearDamping, float angularDamping)
+            : this(locks, gravityScale, linearDamping, angularDamping, false)
+        {
+        }
+
+        public BodyMotion2D(BodyLocks2D locks, float gravityScale, float linearDamping, float angularDamping, bool continuousCollision)
         {
             BodyMotionChecks.CheckGravityScale(gravityScale, nameof(gravityScale));
             BodyMotionChecks.CheckDamping(linearDamping, nameof(linearDamping));
@@ -114,6 +119,7 @@ namespace Fomoxa.Networking.Simulation
             GravityScale = gravityScale;
             LinearDamping = linearDamping;
             AngularDamping = angularDamping;
+            ContinuousCollision = continuousCollision;
         }
 
         public static BodyMotion2D Default => new BodyMotion2D(BodyLocks2D.None, 1f, 0f, 0f);
@@ -125,6 +131,8 @@ namespace Fomoxa.Networking.Simulation
         public float LinearDamping { get; }
 
         public float AngularDamping { get; }
+
+        public bool ContinuousCollision { get; }
     }
 
     public readonly struct BodyDesc2D

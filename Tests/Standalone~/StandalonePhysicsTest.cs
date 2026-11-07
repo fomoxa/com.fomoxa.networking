@@ -659,6 +659,22 @@ namespace Fomoxa.Networking.Standalone.Tests
                 states[body.Value] = state;
             }
 
+            public void AddTorque(BodyHandle body, Vector3 torque)
+            {
+            }
+
+            public void AddTorqueImpulse(BodyHandle body, Vector3 torqueImpulse)
+            {
+            }
+
+            public void AddForceAtPoint(BodyHandle body, Vector3 force, Vector3 point)
+            {
+            }
+
+            public void AddImpulseAtPoint(BodyHandle body, Vector3 impulse, Vector3 point)
+            {
+            }
+
             public bool Raycast(Vector3 origin, Vector3 direction, float maxDistance, in QueryFilter filter, out RayHit hit)
             {
                 hit = default;
@@ -753,6 +769,22 @@ namespace Fomoxa.Networking.Standalone.Tests
                 BodyState2D state = states[body.Value];
                 state.Velocity += impulse / descs[body.Value].Mass;
                 states[body.Value] = state;
+            }
+
+            public void AddTorque(BodyHandle body, float torque)
+            {
+            }
+
+            public void AddTorqueImpulse(BodyHandle body, float torqueImpulse)
+            {
+            }
+
+            public void AddForceAtPoint(BodyHandle body, Vector2 force, Vector2 point)
+            {
+            }
+
+            public void AddImpulseAtPoint(BodyHandle body, Vector2 impulse, Vector2 point)
+            {
             }
 
             public bool Raycast(Vector2 origin, Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit)

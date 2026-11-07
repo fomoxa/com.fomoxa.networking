@@ -81,6 +81,9 @@ namespace Fomoxa.Unity
             rigidbody.constraints = ConstraintsOf(motion.Locks);
             rigidbody.linearDamping = motion.LinearDamping;
             rigidbody.angularDamping = motion.AngularDamping;
+            rigidbody.collisionDetectionMode = !motion.ContinuousCollision
+                ? CollisionDetectionMode.Discrete
+                : rigidbody.isKinematic ? CollisionDetectionMode.ContinuousSpeculative : CollisionDetectionMode.ContinuousDynamic;
             BodyHandle handle = Register(rigidbody);
             created.Add(handle.Value);
             if (owned.Count > 0)
@@ -196,6 +199,44 @@ namespace Fomoxa.Unity
             if (!rigidbody.isKinematic)
             {
                 rigidbody.linearVelocity += impulse.ToUnity() / rigidbody.mass;
+            }
+
+            rigidbody.WakeUp();
+        }
+
+        public void AddTorque(BodyHandle body, System.Numerics.Vector3 torque)
+        {
+            Rigidbody rigidbody = Require(body);
+            rigidbody.AddTorque(torque.ToUnity(), ForceMode.Force);
+            rigidbody.WakeUp();
+        }
+
+        public void AddTorqueImpulse(BodyHandle body, System.Numerics.Vector3 torqueImpulse)
+        {
+            Rigidbody rigidbody = Require(body);
+            if (!rigidbody.isKinematic)
+            {
+                rigidbody.angularVelocity += AngularVelocityChange(rigidbody, torqueImpulse.ToUnity());
+            }
+
+            rigidbody.WakeUp();
+        }
+
+        public void AddForceAtPoint(BodyHandle body, System.Numerics.Vector3 force, System.Numerics.Vector3 point)
+        {
+            Rigidbody rigidbody = Require(body);
+            rigidbody.AddForceAtPosition(force.ToUnity(), point.ToUnity(), ForceMode.Force);
+            rigidbody.WakeUp();
+        }
+
+        public void AddImpulseAtPoint(BodyHandle body, System.Numerics.Vector3 impulse, System.Numerics.Vector3 point)
+        {
+            Rigidbody rigidbody = Require(body);
+            if (!rigidbody.isKinematic)
+            {
+                Vector3 push = impulse.ToUnity();
+                rigidbody.linearVelocity += push / rigidbody.mass;
+                rigidbody.angularVelocity += AngularVelocityChange(rigidbody, Vector3.Cross(point.ToUnity() - rigidbody.worldCenterOfMass, push));
             }
 
             rigidbody.WakeUp();
@@ -410,6 +451,16 @@ namespace Fomoxa.Unity
                     return mesh;
             }
         }
+
+        private static Vector3 AngularVelocityChange(Rigidbody rigidbody, Vector3 angularImpulse)
+        {
+            Quaternion frame = rigidbody.rotation * rigidbody.inertiaTensorRotation;
+            Vector3 local = Quaternion.Inverse(frame) * angularImpulse;
+            Vector3 inertia = rigidbody.inertiaTensor;
+            return frame * new Vector3(Divide(local.x, inertia.x), Divide(local.y, inertia.y), Divide(local.z, inertia.z));
+        }
+
+        private static float Divide(float value, float by) => by > 0f ? value / by : 0f;
 
         private static RigidbodyConstraints ConstraintsOf(BodyLocks locks)
         {

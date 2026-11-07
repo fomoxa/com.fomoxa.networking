@@ -137,6 +137,10 @@ namespace Fomoxa.Networking.Messaging
         [Network("f32")]
         [Codec("net")]
         public float AngularDamping { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool ContinuousCollision { get; set; }
     }
 
     [Network]
@@ -174,6 +178,10 @@ namespace Fomoxa.Networking.Messaging
         [Network("f32")]
         [Codec("net")]
         public float AngularDamping { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool ContinuousCollision { get; set; }
     }
 
     [Network]

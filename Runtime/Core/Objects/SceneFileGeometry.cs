@@ -83,6 +83,7 @@ namespace Fomoxa.Networking.Objects
                 UseGravity = motion.UseGravity,
                 LinearDamping = motion.LinearDamping,
                 AngularDamping = motion.AngularDamping,
+                ContinuousCollision = motion.ContinuousCollision,
             };
             foreach (ColliderDesc collider in body.Colliders)
             {
@@ -104,6 +105,7 @@ namespace Fomoxa.Networking.Objects
                 GravityScale = motion.GravityScale,
                 LinearDamping = motion.LinearDamping,
                 AngularDamping = motion.AngularDamping,
+                ContinuousCollision = motion.ContinuousCollision,
             };
             foreach (ColliderDesc2D collider in body.Colliders)
             {
@@ -188,7 +190,7 @@ namespace Fomoxa.Networking.Objects
                     new Vector3(pose.PositionX, pose.PositionY, pose.PositionZ),
                     new Quaternion(pose.RotationX, pose.RotationY, pose.RotationZ, pose.RotationW),
                     file.Mass,
-                    new BodyMotion((BodyLocks)file.Locks, file.UseGravity, file.LinearDamping, file.AngularDamping));
+                    new BodyMotion((BodyLocks)file.Locks, file.UseGravity, file.LinearDamping, file.AngularDamping, file.ContinuousCollision));
             }
             catch (ArgumentException exception)
             {
@@ -227,7 +229,7 @@ namespace Fomoxa.Networking.Objects
                     new Vector2(pose.PositionX, pose.PositionY),
                     file.Rotation,
                     file.Mass,
-                    new BodyMotion2D((BodyLocks2D)file.Locks, file.GravityScale, file.LinearDamping, file.AngularDamping));
+                    new BodyMotion2D((BodyLocks2D)file.Locks, file.GravityScale, file.LinearDamping, file.AngularDamping, file.ContinuousCollision));
             }
             catch (ArgumentException exception)
             {

@@ -406,6 +406,32 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ContinuousCollisionIsReadFromTheDetectionModeOfARigidbody()
+        {
+            var modes = new[] { CollisionDetectionMode.Discrete, CollisionDetectionMode.Continuous, CollisionDetectionMode.ContinuousDynamic, CollisionDetectionMode.ContinuousSpeculative };
+            var read = new List<bool>();
+            foreach (CollisionDetectionMode mode in modes)
+            {
+                GameObject root = Create(mode.ToString());
+                root.AddComponent<SphereCollider>();
+                root.AddComponent<Rigidbody>().collisionDetectionMode = mode;
+                Assert.IsTrue(BodyDescriptions.TryDescribe(root, out BodyDesc body));
+                read.Add(body.Motion.ContinuousCollision);
+            }
+
+            foreach (CollisionDetectionMode2D mode in new[] { CollisionDetectionMode2D.Discrete, CollisionDetectionMode2D.Continuous })
+            {
+                GameObject flat = Create(mode + "2D");
+                flat.AddComponent<CircleCollider2D>();
+                flat.AddComponent<Rigidbody2D>().collisionDetectionMode = mode;
+                Assert.IsTrue(BodyDescriptions.TryDescribe2D(flat, out BodyDesc2D body2D));
+                read.Add(body2D.Motion.ContinuousCollision);
+            }
+
+            CollectionAssert.AreEqual(new[] { false, true, true, true, false, true }, read);
+        }
+
+        [Test]
         public void AnAutoTiledBoxBecomesThePolygonsUnityBuiltForIt()
         {
             Sprite sprite = BorderedSprite();

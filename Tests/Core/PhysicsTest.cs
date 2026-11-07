@@ -110,6 +110,15 @@ namespace Fomoxa.Networking.Tests
             Assert.IsFalse(body.IsKinematic);
             Assert.AreEqual(1f, body.Mass);
 
+            body.AddTorque(new Vector3(1f, 0f, 0f));
+            body.AddTorqueImpulse(new Vector3(0f, 2f, 0f));
+            body.AddForceAtPoint(new Vector3(3f, 0f, 0f), new Vector3(0f, 1f, 0f));
+            body.AddImpulseAtPoint(new Vector3(0f, 0f, 4f), new Vector3(1f, 0f, 0f));
+
+            Assert.AreEqual(new Vector3(1f, 2f, 0f), world.Turned);
+            Assert.AreEqual(new Vector3(3f, 0f, 4f), world.PushedAtPoint);
+            Assert.AreEqual(new Vector3(1f, 1f, 0f), world.Points);
+
             world.RemoveBody(handle);
 
             Assert.IsFalse(body.IsValid);
@@ -167,8 +176,14 @@ namespace Fomoxa.Networking.Tests
 
             body.AddForce(new Vector2(4f, 0f));
             body.AddImpulse(new Vector2(0f, 5f));
+            body.AddForceAtPoint(new Vector2(1f, 0f), new Vector2(0f, 2f));
+            body.AddImpulseAtPoint(new Vector2(0f, 1f), new Vector2(3f, 0f));
+            body.AddTorque(1.5f);
+            body.AddTorqueImpulse(0.5f);
 
-            Assert.AreEqual(new Vector2(4f, 5f), world.Pushed);
+            Assert.AreEqual(new Vector2(5f, 6f), world.Pushed);
+            Assert.AreEqual(new Vector2(3f, 2f), world.Points);
+            Assert.AreEqual(2f, world.Turned);
 
             world.RemoveBody(handle);
 
@@ -378,6 +393,28 @@ namespace Fomoxa.Networking.Tests
             {
             }
 
+            public Vector3 Turned { get; private set; }
+
+            public Vector3 PushedAtPoint { get; private set; }
+
+            public Vector3 Points { get; private set; }
+
+            public void AddTorque(BodyHandle body, Vector3 torque) => Turned += torque;
+
+            public void AddTorqueImpulse(BodyHandle body, Vector3 torqueImpulse) => Turned += torqueImpulse;
+
+            public void AddForceAtPoint(BodyHandle body, Vector3 force, Vector3 point)
+            {
+                PushedAtPoint += force;
+                Points += point;
+            }
+
+            public void AddImpulseAtPoint(BodyHandle body, Vector3 impulse, Vector3 point)
+            {
+                PushedAtPoint += impulse;
+                Points += point;
+            }
+
             public void Step(float seconds)
             {
                 foreach (int key in new List<int>(bodies.Keys))
@@ -488,6 +525,26 @@ namespace Fomoxa.Networking.Tests
             public void AddForce(BodyHandle body, Vector2 force) => Pushed += force;
 
             public void AddImpulse(BodyHandle body, Vector2 impulse) => Pushed += impulse;
+
+            public float Turned { get; private set; }
+
+            public Vector2 Points { get; private set; }
+
+            public void AddTorque(BodyHandle body, float torque) => Turned += torque;
+
+            public void AddTorqueImpulse(BodyHandle body, float torqueImpulse) => Turned += torqueImpulse;
+
+            public void AddForceAtPoint(BodyHandle body, Vector2 force, Vector2 point)
+            {
+                Pushed += force;
+                Points += point;
+            }
+
+            public void AddImpulseAtPoint(BodyHandle body, Vector2 impulse, Vector2 point)
+            {
+                Pushed += impulse;
+                Points += point;
+            }
 
             public void Step(float seconds)
             {

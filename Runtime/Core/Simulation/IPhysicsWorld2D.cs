@@ -24,6 +24,14 @@ namespace Fomoxa.Networking.Simulation
 
         void AddImpulse(BodyHandle body, Vector2 impulse);
 
+        void AddTorque(BodyHandle body, float torque);
+
+        void AddTorqueImpulse(BodyHandle body, float torqueImpulse);
+
+        void AddForceAtPoint(BodyHandle body, Vector2 force, Vector2 point);
+
+        void AddImpulseAtPoint(BodyHandle body, Vector2 impulse, Vector2 point);
+
         bool Raycast(Vector2 origin, Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit);
 
         bool ShapeCast(in BodyShape2D shape, Vector2 position, float rotation, Vector2 direction, float maxDistance, in QueryFilter filter, out RayHit2D hit);

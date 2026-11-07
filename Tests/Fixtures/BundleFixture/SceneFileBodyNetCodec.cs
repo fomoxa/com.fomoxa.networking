@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/SceneFile.cs
 // model: SceneFileBody
 // codec: net
-// fingerprint: sha256:eb56fb3e68044912e842d329753062fa8cda610dcdb5f02f16ef8dbfdab81023
+// fingerprint: sha256:0cbd5189c9f84622e8d64e780c82067754d97599d2427d6cf8c51eb95360dda1
 // fomoxac-version: 0.2.2
-// generated-at: 2026-10-08T01:51:12Z
+// generated-at: 2026-11-07T03:23:51Z
 
 namespace BundleFixture
 {
@@ -21,6 +21,7 @@ namespace BundleFixture
 /// <item><description><c>UseGravity</c>: <c>bool</c></description></item>
 /// <item><description><c>LinearDamping</c>: <c>f32</c></description></item>
 /// <item><description><c>AngularDamping</c>: <c>f32</c></description></item>
+/// <item><description><c>ContinuousCollision</c>: <c>bool</c></description></item>
 /// </list>
 /// </remarks>
 public static class SceneFileBodyNetCodec
@@ -33,7 +34,7 @@ public static class SceneFileBodyNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0xEB56FB3E68044912;
+    public const ulong Fingerprint = 0x0CBD5189C9F84622;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.SceneFileBody value)
@@ -49,6 +50,7 @@ public static class SceneFileBodyNetCodec
         writer.WriteBool(value.UseGravity);
         writer.WriteF32(value.LinearDamping);
         writer.WriteF32(value.AngularDamping);
+        writer.WriteBool(value.ContinuousCollision);
     }
 
     /// <summary>Reads the <c>net</c> fields into <paramref name="value"/>, in declaration order.</summary>
@@ -85,6 +87,7 @@ public static class SceneFileBodyNetCodec
         value.UseGravity = reader.FieldAbsent() ? false : reader.ReadBool();
         value.LinearDamping = reader.FieldAbsent() ? 0f : reader.ReadF32();
         value.AngularDamping = reader.FieldAbsent() ? 0f : reader.ReadF32();
+        value.ContinuousCollision = reader.FieldAbsent() ? false : reader.ReadBool();
     }
 }
 

@@ -291,6 +291,44 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ImpulsesChangeTheVelocityAtOnceAndForcesAndTorquesActAtTheNextStep()
+        {
+            BodyHandle spun = Disc(BodyKind.Dynamic, false, 0f);
+            BodyHandle struck = Disc(BodyKind.Dynamic, false, 10f);
+            BodyHandle twisted = Disc(BodyKind.Dynamic, false, 20f);
+            BodyHandle pushed = Disc(BodyKind.Dynamic, false, 30f);
+            BodyHandle carried = Disc(BodyKind.Kinematic, false, 40f);
+            world.Step(0f);
+            float inertia = world.ObjectOf(spun).GetComponent<Rigidbody2D>().inertia;
+
+            world.AddTorqueImpulse(spun, 0.25f);
+            world.AddImpulseAtPoint(struck, new System.Numerics.Vector2(0f, 1f), world.GetBody(struck).Position + new System.Numerics.Vector2(0.5f, 0f));
+            world.AddTorque(twisted, 0.5f);
+            world.AddForceAtPoint(pushed, new System.Numerics.Vector2(0f, 1f), world.GetBody(pushed).Position + new System.Numerics.Vector2(0.5f, 0f));
+            world.AddTorqueImpulse(carried, 0.25f);
+
+            Assert.AreEqual(0.25f / inertia, world.GetBody(spun).AngularVelocity, 1e-4f);
+            Assert.AreEqual(0.5f, world.GetBody(struck).Velocity.Y, 1e-5f);
+            Assert.AreEqual(0.5f / inertia, world.GetBody(struck).AngularVelocity, 1e-4f);
+            Assert.AreEqual(0f, world.GetBody(twisted).AngularVelocity);
+            Assert.AreEqual(System.Numerics.Vector2.Zero, world.GetBody(pushed).Velocity);
+            Assert.AreEqual(0f, world.GetBody(carried).AngularVelocity);
+
+            world.Step(0.5f);
+
+            Assert.AreEqual(0.25f / inertia, world.GetBody(twisted).AngularVelocity, 1e-3f);
+            Assert.AreEqual(0.25f, world.GetBody(pushed).Velocity.Y, 1e-4f);
+            Assert.AreEqual(0.25f / inertia, world.GetBody(pushed).AngularVelocity, 1e-3f);
+        }
+
+        [Test]
+        public void ContinuousCollisionChoosesTheDetectionModeOfACreatedBody()
+        {
+            Assert.AreEqual(CollisionDetectionMode2D.Continuous, world.ObjectOf(Disc(BodyKind.Dynamic, true, 0f)).GetComponent<Rigidbody2D>().collisionDetectionMode);
+            Assert.AreEqual(CollisionDetectionMode2D.Discrete, world.ObjectOf(Disc(BodyKind.Dynamic, false, 20f)).GetComponent<Rigidbody2D>().collisionDetectionMode);
+        }
+
+        [Test]
         public void CreatedBodiesAreRemovedAndUnknownHandlesThrow()
         {
             BodyHandle handle = world.CreateBody(new BodyDesc2D(BodyKind.Kinematic, BodyShape2D.Capsule(0.5f, 1f), new System.Numerics.Vector2(1f, 2f), 0f, 3f));
@@ -456,6 +494,13 @@ namespace Fomoxa.Unity.Tests
         {
             Rigidbody2D rigidbody = Rigid(position, mass);
             return new PhysicsBody2D(world, world.Register(rigidbody));
+        }
+
+        private BodyHandle Disc(BodyKind kind, bool continuous, float x)
+        {
+            var collider = new ColliderDesc2D(BodyShape2D.Circle(0.5f), System.Numerics.Vector2.Zero, 0f, ColliderMaterial.Default, 0, false);
+            var motion = new BodyMotion2D(BodyLocks2D.None, 0f, 0f, 0f, continuous);
+            return world.CreateBody(new BodyDesc2D(kind, new[] { collider }, new System.Numerics.Vector2(x, 50f), 0f, 2f, motion));
         }
 
         private BodyHandle Square(Vector2 position, int layer, bool trigger) =>

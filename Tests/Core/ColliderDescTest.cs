@@ -128,26 +128,26 @@ namespace Fomoxa.Networking.Tests
 
             foreach (BodyMotion motion in new[] { body.Motion, default(BodyDesc).Motion })
             {
-                Assert.AreEqual((BodyLocks.None, true, 0f, 0f), (motion.Locks, motion.UseGravity, motion.LinearDamping, motion.AngularDamping));
+                Assert.AreEqual((BodyLocks.None, true, 0f, 0f, false), (motion.Locks, motion.UseGravity, motion.LinearDamping, motion.AngularDamping, motion.ContinuousCollision));
             }
 
             foreach (BodyMotion2D motion in new[] { body2D.Motion, default(BodyDesc2D).Motion })
             {
-                Assert.AreEqual((BodyLocks2D.None, 1f, 0f, 0f), (motion.Locks, motion.GravityScale, motion.LinearDamping, motion.AngularDamping));
+                Assert.AreEqual((BodyLocks2D.None, 1f, 0f, 0f, false), (motion.Locks, motion.GravityScale, motion.LinearDamping, motion.AngularDamping, motion.ContinuousCollision));
             }
         }
 
         [Test]
         public void ABodyKeepsTheMotionItIsGiven()
         {
-            var motion = new BodyMotion(BodyLocks.RotationX | BodyLocks.RotationZ, false, 0.5f, 1f);
-            var motion2D = new BodyMotion2D(BodyLocks2D.Rotation, 1.5f, 0f, 0.05f);
+            var motion = new BodyMotion(BodyLocks.RotationX | BodyLocks.RotationZ, false, 0.5f, 1f, true);
+            var motion2D = new BodyMotion2D(BodyLocks2D.Rotation, 1.5f, 0f, 0.05f, true);
 
             var body = new BodyDesc(BodyKind.Dynamic, new[] { new ColliderDesc(BodyShape.Sphere(0.5f), Vector3.Zero, Quaternion.Identity, ColliderMaterial.Default, 0, false) }, Vector3.Zero, Quaternion.Identity, 1f, motion);
             var body2D = new BodyDesc2D(BodyKind.Dynamic, new[] { new ColliderDesc2D(BodyShape2D.Circle(0.5f), Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) }, Vector2.Zero, 0f, 1f, motion2D);
 
-            Assert.AreEqual((BodyLocks.RotationX | BodyLocks.RotationZ, false, 0.5f, 1f), (body.Motion.Locks, body.Motion.UseGravity, body.Motion.LinearDamping, body.Motion.AngularDamping));
-            Assert.AreEqual((BodyLocks2D.Rotation, 1.5f, 0f, 0.05f), (body2D.Motion.Locks, body2D.Motion.GravityScale, body2D.Motion.LinearDamping, body2D.Motion.AngularDamping));
+            Assert.AreEqual((BodyLocks.RotationX | BodyLocks.RotationZ, false, 0.5f, 1f, true), (body.Motion.Locks, body.Motion.UseGravity, body.Motion.LinearDamping, body.Motion.AngularDamping, body.Motion.ContinuousCollision));
+            Assert.AreEqual((BodyLocks2D.Rotation, 1.5f, 0f, 0.05f, true), (body2D.Motion.Locks, body2D.Motion.GravityScale, body2D.Motion.LinearDamping, body2D.Motion.AngularDamping, body2D.Motion.ContinuousCollision));
         }
 
         [Test]

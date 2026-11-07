@@ -94,6 +94,11 @@ namespace Fomoxa.Networking.Simulation
     public readonly struct BodyMotion
     {
         public BodyMotion(BodyLocks locks, bool useGravity, float linearDamping, float angularDamping)
+            : this(locks, useGravity, linearDamping, angularDamping, false)
+        {
+        }
+
+        public BodyMotion(BodyLocks locks, bool useGravity, float linearDamping, float angularDamping, bool continuousCollision)
         {
             BodyMotionChecks.CheckDamping(linearDamping, nameof(linearDamping));
             BodyMotionChecks.CheckDamping(angularDamping, nameof(angularDamping));
@@ -101,6 +106,7 @@ namespace Fomoxa.Networking.Simulation
             UseGravity = useGravity;
             LinearDamping = linearDamping;
             AngularDamping = angularDamping;
+            ContinuousCollision = continuousCollision;
         }
 
         public static BodyMotion Default => new BodyMotion(BodyLocks.None, true, 0f, 0f);
@@ -112,6 +118,8 @@ namespace Fomoxa.Networking.Simulation
         public float LinearDamping { get; }
 
         public float AngularDamping { get; }
+
+        public bool ContinuousCollision { get; }
     }
 
     public readonly struct BodyShape
