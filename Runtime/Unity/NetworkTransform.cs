@@ -71,7 +71,7 @@ namespace Fomoxa.Unity
             }
 
             sync = new TransformSync(CurrentSettings());
-            TransformTarget target = NetworkObject != null && NetworkObject.gameObject == gameObject ? TransformTarget.BodyRoot : TransformTarget.Source;
+            TransformTarget target = NetworkObject != null && (NetworkObject.gameObject == gameObject || TryGetComponent(out Rigidbody _) || TryGetComponent(out Rigidbody2D _)) ? TransformTarget.BodyRoot : TransformTarget.Source;
             Core.SetTransform(sync, this, this, target);
         }
 

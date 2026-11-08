@@ -52,6 +52,10 @@ namespace Fomoxa.Unity
 
         public override PhysicsBody2D Body2DOf(NetworkObject networkObject) => worlds.Body2DOf(networkObject);
 
+        public override IReadOnlyList<PhysicsBody> BodiesOf(NetworkObject networkObject) => worlds.BodiesOf(networkObject);
+
+        public override IReadOnlyList<PhysicsBody2D> Bodies2DOf(NetworkObject networkObject) => worlds.Bodies2DOf(networkObject);
+
         public override PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) => worlds.HistoryOf(world, capacity);
 
         public override void PlaceProxy(NetworkObject networkObject) => worlds.PlaceProxy(networkObject);

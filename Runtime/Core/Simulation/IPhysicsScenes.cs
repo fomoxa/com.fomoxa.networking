@@ -33,7 +33,9 @@ namespace Fomoxa.Networking.Simulation
 
         PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity);
 
-        void PlaceProxy(INetworkEntity entity);
+        void PlaceProxy(INetworkEntity entity, PhysicsBody body);
+
+        void PlaceProxy(INetworkEntity entity, PhysicsBody2D body);
 
         void EndProxy(INetworkEntity entity);
     }

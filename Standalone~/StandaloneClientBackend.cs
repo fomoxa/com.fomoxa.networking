@@ -202,7 +202,13 @@ namespace Fomoxa.Networking.Standalone
         public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) =>
             physics != null ? physics.HistoryOf(world, capacity) : throw new NotSupportedException("the standalone backend has no physics worlds");
 
-        public void PlaceProxy(INetworkEntity entity) => physics?.PlaceProxy(entity);
+        public void PlaceProxy(INetworkEntity entity)
+        {
+            if (physics != null)
+            {
+                ((StandaloneEntity)entity).PlaceProxies(physics);
+            }
+        }
 
         public void EndProxy(INetworkEntity entity) => physics?.EndProxy(entity);
 

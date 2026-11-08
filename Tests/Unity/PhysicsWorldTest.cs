@@ -463,6 +463,104 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void EveryActiveRigidbodyOfTheTreeIsABodyInTreeOrderFixedWhileTheObjectIsBound()
+        {
+            NetworkObject networkObject = TestPrefabs.Create("Ragdoll", PrefabId);
+            created.Add(networkObject.gameObject);
+            SceneManager.MoveGameObjectToScene(networkObject.gameObject, scene);
+            networkObject.gameObject.AddComponent<SphereCollider>().radius = 0.5f;
+            networkObject.gameObject.AddComponent<Rigidbody>();
+            Rigidbody arm = Limb(networkObject.transform, "Arm");
+            Rigidbody hand = Limb(arm.transform, "Hand");
+            Rigidbody hidden = Limb(networkObject.transform, "Hidden");
+            hidden.gameObject.SetActive(false);
+            var tail = new GameObject("Tail");
+            tail.transform.SetParent(networkObject.transform, false);
+            tail.AddComponent<CircleCollider2D>().radius = 0.25f;
+            tail.AddComponent<Rigidbody2D>();
+            networkObject.gameObject.SetActive(false);
+            var worlds = new PhysicsWorlds();
+
+            IReadOnlyList<PhysicsBody> bodies = worlds.BodiesOf(networkObject);
+            networkObject.gameObject.SetActive(true);
+            hidden.gameObject.SetActive(true);
+            Limb(networkObject.transform, "Late");
+
+            Assert.AreEqual(3, bodies.Count);
+            Assert.AreEqual(worlds.BodyOf(networkObject).Handle, bodies[0].Handle);
+            Assert.AreEqual(worlds.Of(scene).Register(arm), bodies[1].Handle);
+            Assert.AreEqual(worlds.Of(scene).Register(hand), bodies[2].Handle);
+            Assert.AreSame(bodies, worlds.BodiesOf(networkObject));
+            Assert.AreEqual(1, worlds.Bodies2DOf(networkObject).Count);
+            Assert.AreEqual(0, worlds.BodiesOf(null).Count);
+
+            var stepping = new List<IPhysicsSimulation>();
+            worlds.WorldsToStep(stepping);
+            worlds.ReleaseStepping();
+
+            Assert.AreEqual(5, worlds.BodiesOf(networkObject).Count);
+        }
+
+        [Test]
+        public void AProxyMakesTheRootAndTheChildBodiesWithANetworkTransformKinematic()
+        {
+            NetworkObject networkObject = TestPrefabs.Create("ProxyRagdoll", PrefabId);
+            created.Add(networkObject.gameObject);
+            SceneManager.MoveGameObjectToScene(networkObject.gameObject, scene);
+            networkObject.gameObject.AddComponent<SphereCollider>().radius = 0.5f;
+            var root = networkObject.gameObject.AddComponent<Rigidbody>();
+            Rigidbody synced = Limb(networkObject.transform, "Synced");
+            synced.gameObject.AddComponent<NetworkTransform>();
+            synced.transform.localPosition = new Vector3(0f, 2f, 0f);
+            Rigidbody free = Limb(networkObject.transform, "Free");
+            free.transform.localPosition = new Vector3(0f, -2f, 0f);
+            networkObject.transform.position = new Vector3(3f, 0f, 0f);
+            var worlds = new PhysicsWorlds();
+
+            worlds.PlaceProxy(networkObject);
+
+            Assert.IsTrue(root.isKinematic);
+            Assert.IsTrue(synced.isKinematic);
+            Assert.IsFalse(free.isKinematic);
+            Assert.AreEqual(3f, synced.position.x, 1e-5f);
+            Assert.AreEqual(2f, synced.position.y, 1e-5f);
+            PhysicsSnapshot snapshot = worlds.Of(scene).CreateSnapshot();
+            worlds.Of(scene).Save(snapshot);
+            Assert.AreEqual(1, UnityPhysicsWorld.EntryCount(snapshot));
+
+            worlds.EndProxy(networkObject);
+
+            Assert.IsFalse(root.isKinematic);
+            Assert.IsFalse(synced.isKinematic);
+            worlds.Of(scene).Save(snapshot);
+            Assert.AreEqual(3, UnityPhysicsWorld.EntryCount(snapshot));
+        }
+
+        [Test]
+        public void ANetworkTransformOnAChildBodyIsFollowedLikeTheRootOne()
+        {
+            NetworkObject networkObject = TestPrefabs.Create("Followed", PrefabId);
+            created.Add(networkObject.gameObject);
+            var rootTransform = networkObject.gameObject.AddComponent<NetworkTransform>();
+            Rigidbody limb = Limb(networkObject.transform, "Limb");
+            var limbTransform = limb.gameObject.AddComponent<NetworkTransform>();
+            var tail = new GameObject("Tail");
+            tail.transform.SetParent(networkObject.transform, false);
+            tail.AddComponent<Rigidbody2D>();
+            var tailTransform = tail.AddComponent<NetworkTransform>();
+            var plain = new GameObject("Plain");
+            plain.transform.SetParent(networkObject.transform, false);
+            var plainTransform = plain.AddComponent<NetworkTransform>();
+
+            networkObject.CollectBehaviours();
+
+            Assert.AreEqual(Fomoxa.Networking.TransformTarget.BodyRoot, rootTransform.Core.TransformSlot.Target);
+            Assert.AreEqual(Fomoxa.Networking.TransformTarget.BodyRoot, limbTransform.Core.TransformSlot.Target);
+            Assert.AreEqual(Fomoxa.Networking.TransformTarget.BodyRoot, tailTransform.Core.TransformSlot.Target);
+            Assert.AreEqual(Fomoxa.Networking.TransformTarget.Source, plainTransform.Core.TransformSlot.Target);
+        }
+
+        [Test]
         public void AnObjectWithoutARigidbodyHasNoBody()
         {
             NetworkObject prefab = TestPrefabs.Create("Plain", PrefabId);
@@ -503,6 +601,14 @@ namespace Fomoxa.Unity.Tests
         }
 
         private Rigidbody Rigid(Vector3 position, float mass) => RigidIn(scene, position, mass);
+
+        private static Rigidbody Limb(Transform parent, string name)
+        {
+            var limb = new GameObject(name);
+            limb.transform.SetParent(parent, false);
+            limb.AddComponent<SphereCollider>().radius = 0.25f;
+            return limb.AddComponent<Rigidbody>();
+        }
 
         private Rigidbody RigidIn(Scene target, Vector3 position, float mass = 1f)
         {

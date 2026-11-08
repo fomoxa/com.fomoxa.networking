@@ -26,6 +26,10 @@ namespace Fomoxa.Unity.Tests.Support
 
         public override PhysicsBody2D Body2DOf(NetworkObject networkObject) => default;
 
+        public override IReadOnlyList<PhysicsBody> BodiesOf(NetworkObject networkObject) => System.Array.Empty<PhysicsBody>();
+
+        public override IReadOnlyList<PhysicsBody2D> Bodies2DOf(NetworkObject networkObject) => System.Array.Empty<PhysicsBody2D>();
+
         public override PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) => new PhysicsHistory(world, capacity);
 
         public override void PlaceProxy(NetworkObject networkObject)

@@ -128,6 +128,10 @@ namespace Fomoxa.Unity
         private readonly Dictionary<int, StaticObject> statics = new Dictionary<int, StaticObject>();
         private readonly List<UnownedBody> unowned = new List<UnownedBody>();
         private readonly List<UnownedBody2D> unowned2D = new List<UnownedBody2D>();
+        private readonly Dictionary<NetworkObject, BodySet> sets = new Dictionary<NetworkObject, BodySet>();
+        private readonly List<NetworkObject> unbound = new List<NetworkObject>();
+        private readonly List<Rigidbody> treeBodies = new List<Rigidbody>();
+        private readonly List<Rigidbody2D> treeBodies2D = new List<Rigidbody2D>();
         private int nextStatic = 1;
 
         public PhysicsBackend Backend => PhysicsBackend.Rigidbody;
@@ -270,10 +274,15 @@ namespace Fomoxa.Unity
             return new PhysicsBody2D(world, world.Register(rigidbody));
         }
 
+        public IReadOnlyList<PhysicsBody> BodiesOf(NetworkObject networkObject) => SetOf(networkObject)?.Bodies ?? (IReadOnlyList<PhysicsBody>)Array.Empty<PhysicsBody>();
+
+        public IReadOnlyList<PhysicsBody2D> Bodies2DOf(NetworkObject networkObject) => SetOf(networkObject)?.Bodies2D ?? (IReadOnlyList<PhysicsBody2D>)Array.Empty<PhysicsBody2D>();
+
         public PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity) => histories.Of(world, capacity);
 
         public void WorldsToStep(List<IPhysicsSimulation> into)
         {
+            ForgetUnboundSets();
             for (int index = 0; index < SceneManager.sceneCount; index++)
             {
                 Scene scene = SceneManager.GetSceneAt(index);
@@ -305,42 +314,55 @@ namespace Fomoxa.Unity
 
         public void PlaceProxy(NetworkObject networkObject)
         {
-            if (!TryGetRigidbody(networkObject, out Rigidbody rigidbody))
+            BodySet set = SetOf(networkObject);
+            if (set == null)
             {
-                PlaceProxy2D(networkObject);
                 return;
             }
 
-            if (!proxies.ContainsKey(rigidbody))
+            foreach (Rigidbody rigidbody in set.Rigidbodies)
             {
-                proxies.Add(rigidbody, rigidbody.isKinematic);
-                rigidbody.isKinematic = true;
+                if (IsProxied(networkObject, rigidbody))
+                {
+                    PlaceProxy(networkObject, rigidbody);
+                }
             }
 
-            UnityPhysicsWorld world = Of(networkObject.gameObject.scene);
-            BodyHandle handle = world.Register(rigidbody);
-            world.SetRewindable(handle, false);
-            Transform placed = rigidbody.transform;
-            world.SetBody(handle, new BodyState
+            foreach (Rigidbody2D rigidbody in set.Rigidbodies2D)
             {
-                Position = placed.position.ToNumerics(),
-                Rotation = placed.rotation.ToNumerics(),
-            });
+                if (IsProxied(networkObject, rigidbody))
+                {
+                    PlaceProxy2D(networkObject, rigidbody);
+                }
+            }
         }
 
         public void EndProxy(NetworkObject networkObject)
         {
-            if (TryGetRigidbody(networkObject, out Rigidbody rigidbody) && proxies.Remove(rigidbody, out bool wasKinematic))
+            BodySet set = SetOf(networkObject);
+            if (set == null)
             {
-                rigidbody.isKinematic = wasKinematic;
-                UnityPhysicsWorld world = Of(networkObject.gameObject.scene);
-                world.SetRewindable(world.Register(rigidbody), true);
+                return;
             }
-            else if (TryGetRigidbody2D(networkObject, out Rigidbody2D rigidbody2D) && proxies2D.Remove(rigidbody2D, out RigidbodyType2D bodyType))
+
+            foreach (Rigidbody rigidbody in set.Rigidbodies)
             {
-                rigidbody2D.bodyType = bodyType;
-                UnityPhysicsWorld2D world = Of2D(networkObject.gameObject.scene);
-                world.SetRewindable(world.Register(rigidbody2D), true);
+                if (rigidbody != null && proxies.Remove(rigidbody, out bool wasKinematic))
+                {
+                    rigidbody.isKinematic = wasKinematic;
+                    UnityPhysicsWorld world = Of(networkObject.gameObject.scene);
+                    world.SetRewindable(world.Register(rigidbody), true);
+                }
+            }
+
+            foreach (Rigidbody2D rigidbody in set.Rigidbodies2D)
+            {
+                if (rigidbody != null && proxies2D.Remove(rigidbody, out RigidbodyType2D bodyType))
+                {
+                    rigidbody.bodyType = bodyType;
+                    UnityPhysicsWorld2D world = Of2D(networkObject.gameObject.scene);
+                    world.SetRewindable(world.Register(rigidbody), true);
+                }
             }
         }
 
@@ -376,15 +398,108 @@ namespace Fomoxa.Unity
             }
 
             leaving2D.Clear();
+            ForgetUnboundSets();
         }
 
-        private void PlaceProxy2D(NetworkObject networkObject)
+        private BodySet SetOf(NetworkObject networkObject)
         {
-            if (!TryGetRigidbody2D(networkObject, out Rigidbody2D rigidbody))
+            if (networkObject == null)
             {
-                return;
+                return null;
             }
 
+            if (sets.TryGetValue(networkObject, out BodySet set))
+            {
+                return set;
+            }
+
+            set = new BodySet();
+            Transform root = networkObject.transform;
+            Scene scene = networkObject.gameObject.scene;
+            networkObject.GetComponentsInChildren(true, treeBodies);
+            foreach (Rigidbody rigidbody in treeBodies)
+            {
+                if (ActiveInTree(rigidbody.transform, root))
+                {
+                    UnityPhysicsWorld world = Of(scene);
+                    set.Rigidbodies.Add(rigidbody);
+                    set.Bodies.Add(new PhysicsBody(world, world.Register(rigidbody)));
+                }
+            }
+
+            networkObject.GetComponentsInChildren(true, treeBodies2D);
+            foreach (Rigidbody2D rigidbody in treeBodies2D)
+            {
+                if (ActiveInTree(rigidbody.transform, root))
+                {
+                    UnityPhysicsWorld2D world = Of2D(scene);
+                    set.Rigidbodies2D.Add(rigidbody);
+                    set.Bodies2D.Add(new PhysicsBody2D(world, world.Register(rigidbody)));
+                }
+            }
+
+            treeBodies.Clear();
+            treeBodies2D.Clear();
+            sets.Add(networkObject, set);
+            return set;
+        }
+
+        private void ForgetUnboundSets()
+        {
+            unbound.Clear();
+            foreach (NetworkObject networkObject in sets.Keys)
+            {
+                if (networkObject == null || !networkObject.IsSpawned)
+                {
+                    unbound.Add(networkObject);
+                }
+            }
+
+            foreach (NetworkObject networkObject in unbound)
+            {
+                sets.Remove(networkObject);
+            }
+
+            unbound.Clear();
+        }
+
+        private static bool ActiveInTree(Transform node, Transform root)
+        {
+            for (Transform current = node; current != root; current = current.parent)
+            {
+                if (!current.gameObject.activeSelf)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsProxied(NetworkObject networkObject, Component body) =>
+            body != null && (body.gameObject == networkObject.gameObject || body.TryGetComponent(out NetworkTransform _));
+
+        private void PlaceProxy(NetworkObject networkObject, Rigidbody rigidbody)
+        {
+            if (!proxies.ContainsKey(rigidbody))
+            {
+                proxies.Add(rigidbody, rigidbody.isKinematic);
+                rigidbody.isKinematic = true;
+            }
+
+            UnityPhysicsWorld world = Of(networkObject.gameObject.scene);
+            BodyHandle handle = world.Register(rigidbody);
+            world.SetRewindable(handle, false);
+            Transform placed = rigidbody.transform;
+            world.SetBody(handle, new BodyState
+            {
+                Position = placed.position.ToNumerics(),
+                Rotation = placed.rotation.ToNumerics(),
+            });
+        }
+
+        private void PlaceProxy2D(NetworkObject networkObject, Rigidbody2D rigidbody)
+        {
             if (!proxies2D.ContainsKey(rigidbody))
             {
                 proxies2D.Add(rigidbody, rigidbody.bodyType);
@@ -479,6 +594,14 @@ namespace Fomoxa.Unity
             int id = nextStatic++;
             statics.Add(id, new StaticObject(root, meshes));
             return new StaticGroup(0, id, 0, count);
+        }
+
+        private sealed class BodySet
+        {
+            public readonly List<Rigidbody> Rigidbodies = new List<Rigidbody>();
+            public readonly List<Rigidbody2D> Rigidbodies2D = new List<Rigidbody2D>();
+            public readonly List<PhysicsBody> Bodies = new List<PhysicsBody>();
+            public readonly List<PhysicsBody2D> Bodies2D = new List<PhysicsBody2D>();
         }
 
         private readonly struct StaticObject

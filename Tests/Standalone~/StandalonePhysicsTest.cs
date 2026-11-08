@@ -19,6 +19,8 @@ namespace Fomoxa.Networking.Standalone.Tests
         private const uint BallFingerprint = 0x0000_0BA1;
         private const uint TrackedBallPrefabId = 0x0000_0B02;
         private const uint TrackedBallFingerprint = 0x0000_0BA2;
+        private const uint RagdollPrefabId = 0x0000_0B03;
+        private const uint RagdollFingerprint = 0x0000_0BA3;
         private const uint ArenaSceneId = 0x00A1_E7A0;
         private const double FrameSeconds = 1.0 / 30;
         private static readonly BodyMotion2D CrateMotion = new BodyMotion2D(BodyLocks2D.Rotation, 1.5f, 0.25f, 0.5f);
@@ -166,7 +168,7 @@ namespace Fomoxa.Networking.Standalone.Tests
 
             CollectionAssert.AreEqual(new IPhysicsSimulation[] { physics.World }, worlds);
             Assert.AreSame(prediction.HistoryOf(physics.World, 4), physics.HistoryOf(physics.World, 4));
-            CollectionAssert.IsSubsetOf(new[] { "proxy", "end proxy" }, physics.Calls);
+            CollectionAssert.IsSubsetOf(new[] { $"proxy {ball.Body.Handle.Value}", "end proxy" }, physics.Calls);
             Assert.Throws<NotSupportedException>(() => new StandalonePredictionBackend(null).HistoryOf(physics.World, 4));
         }
 
@@ -316,6 +318,130 @@ namespace Fomoxa.Networking.Standalone.Tests
             Assert.Greater(onClient[0].Count, 1);
         }
 
+        [Test]
+        public void ChildBodiesFollowTheRootBodyAtTheirPoseInTheEntityAndAreListedInOrder()
+        {
+            var physics = new FakePhysicsScenes();
+            var ragdoll = new Ragdoll();
+            ragdoll.Position = new Vector3(1f, 2f, 0f);
+            ragdoll.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f);
+
+            ragdoll.AttachBodies(physics);
+
+            Assert.AreEqual(3, ragdoll.Bodies.Count);
+            Assert.AreEqual(ragdoll.Body, ragdoll.Bodies[0]);
+            AssertNear(new Vector3(1f, 3f, 0f), ragdoll.Bodies[1].Position);
+            AssertNear(new Vector3(2f, 2f, 0f), ragdoll.Bodies[2].Position);
+            Assert.AreEqual(1f, MathF.Abs(Quaternion.Dot(Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f) * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.5f), ragdoll.Bodies[2].Rotation)), 1e-5f);
+            Assert.AreEqual(1, ragdoll.Bodies2D.Count);
+            Assert.AreEqual(1f, ragdoll.Bodies2D[0].Position.X, 1e-5f);
+            Assert.AreEqual(2.5f, ragdoll.Bodies2D[0].Position.Y, 1e-5f);
+            Assert.AreEqual((MathF.PI / 2f) + 0.25f, ragdoll.Bodies2D[0].Rotation, 1e-5f);
+
+            ragdoll.DetachBodies(physics);
+
+            Assert.AreEqual(0, ragdoll.Bodies.Count);
+            Assert.AreEqual(0, ragdoll.Bodies2D.Count);
+            Assert.IsFalse(ragdoll.Body.IsValid);
+        }
+
+        [Test]
+        public void AChildPoseComesFromItsBodyOrFromItsDeclarationAndAnUnknownIndexThrows()
+        {
+            var physics = new FakePhysicsScenes();
+            var ragdoll = new Ragdoll();
+            ragdoll.Position = new Vector3(5f, 0f, 0f);
+            var poses = (IChildBodyPoses)ragdoll;
+
+            poses.ReadChildPose(ChildBody.Of(0), out Vector3 declared, out Quaternion declaredRotation);
+            poses.ReadChildPose(ChildBody.Of2D(0), out Vector3 declared2D, out Quaternion declaredRotation2D);
+            ragdoll.AttachBodies(physics);
+            PhysicsBody limb = ragdoll.Bodies[1];
+            limb.Position = new Vector3(5f, 2f, 0f);
+            poses.ReadChildPose(ChildBody.Of(0), out Vector3 moved, out Quaternion movedRotation);
+
+            Assert.AreEqual(new Vector3(1f, 0f, 0f), declared);
+            Assert.AreEqual(Quaternion.Identity, declaredRotation);
+            Assert.AreEqual(new Vector3(0.5f, 0f, 0f), declared2D);
+            Assert.AreEqual(0.25f, 2f * MathF.Atan2(declaredRotation2D.Z, declaredRotation2D.W), 1e-5f);
+            AssertNear(new Vector3(0f, 2f, 0f), moved);
+            Assert.AreEqual(Quaternion.Identity, movedRotation);
+            Assert.Throws<InvalidOperationException>(() => poses.ReadChildPose(ChildBody.Of(2), out _, out _));
+            Assert.Throws<InvalidOperationException>(() => poses.ReadChildPose(ChildBody.Of2D(1), out _, out _));
+        }
+
+        [Test]
+        public void AChildBodyIsNamedByAnIndexThatIsNotNegativeAndCannotSyncScale()
+        {
+            Assert.AreEqual(3, ChildBody.Of(3).Index);
+            Assert.IsTrue(ChildBody.Of2D(3).Is2D);
+            Assert.AreNotEqual(ChildBody.Of(3), ChildBody.Of2D(3));
+            Assert.AreEqual(ChildBody.Of(3), ChildBody.Of(3));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ChildBody.Of(-1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ChildBody.Of2D(-1));
+            Assert.Throws<ArgumentException>(() => new LimbFollower(ChildBody.Of(0), true));
+        }
+
+        [Test]
+        public void AChildBodySlotSendsThePoseOfTheBodyInTheSpaceOfTheEntityWhileThePhysicsReportsMotion()
+        {
+            var physics = new ReportingPhysicsScenes();
+            serverPhysics = physics;
+            var onClient = new List<List<TransformSample>>();
+            prefabs.Register(RagdollPrefabId, RagdollFingerprint, () =>
+            {
+                var follower = new LimbFollower(ChildBody.Of(0), false);
+                onClient.Add(follower.Received);
+                return new Ragdoll(follower);
+            });
+            Connect();
+            var ragdoll = new Ragdoll(new LimbFollower(ChildBody.Of(0), false));
+            ragdoll.Position = new Vector3(5f, 0f, 0f);
+            server.ServerManager.Spawn(ragdoll);
+            Run(5);
+            Assert.IsNull(ragdoll.Record.TransformOrderNode);
+            Assert.AreEqual(1, onClient[0].Count);
+            AssertNear(new Vector3(1f, 0f, 0f), onClient[0][0].LocalPosition);
+
+            PhysicsBody limb = ragdoll.Bodies[1];
+            limb.Position = new Vector3(5f, 2f, 0f);
+            Run(5);
+            Assert.AreEqual(1, onClient[0].Count);
+
+            physics.Awake.Add(ragdoll);
+            Run(5);
+            physics.Awake.Remove(ragdoll);
+            Run(5);
+
+            TransformSample last = onClient[0][onClient[0].Count - 1];
+            Assert.IsTrue(last.Settle);
+            AssertNear(new Vector3(0f, 2f, 0f), last.LocalPosition);
+            Assert.AreEqual(Vector3.One, last.LocalScale);
+        }
+
+        [Test]
+        public void TheConsoleClientProxiesTheRootAndTheSynchronizedChildBodiesOnly()
+        {
+            var physics = new FakePhysicsScenes();
+            var prediction = new StandalonePredictionBackend(physics);
+            var ragdoll = new Ragdoll(new LimbFollower(ChildBody.Of(1), false));
+            ragdoll.AttachBodies(physics);
+
+            prediction.PlaceProxy(ragdoll);
+
+            CollectionAssert.Contains(physics.Calls, $"proxy {ragdoll.Bodies[0].Handle.Value}");
+            CollectionAssert.DoesNotContain(physics.Calls, $"proxy {ragdoll.Bodies[1].Handle.Value}");
+            CollectionAssert.Contains(physics.Calls, $"proxy {ragdoll.Bodies[2].Handle.Value}");
+            CollectionAssert.DoesNotContain(physics.Calls, $"proxy2D {ragdoll.Bodies2D[0].Handle.Value}");
+        }
+
+        private static void AssertNear(Vector3 expected, Vector3 actual)
+        {
+            Assert.AreEqual(expected.X, actual.X, 1e-5f);
+            Assert.AreEqual(expected.Y, actual.Y, 1e-5f);
+            Assert.AreEqual(expected.Z, actual.Z, 1e-5f);
+        }
+
         private List<List<TransformSample>> RegisterTrackedBalls(Func<IPoseReceiver> create)
         {
             var onClient = new List<List<TransformSample>>();
@@ -379,6 +505,45 @@ namespace Fomoxa.Networking.Standalone.Tests
                 body = new BodyDesc(BodyKind.Dynamic, BodyShape.Sphere(0.5f), Vector3.Zero, Quaternion.Identity, 1f);
                 return true;
             }
+        }
+
+        private sealed class Ragdoll : StandaloneEntity
+        {
+            public Ragdoll(params EntityBehaviour[] behaviours)
+                : base(RagdollPrefabId, behaviours)
+            {
+            }
+
+            public override bool TryGetBody(out BodyDesc body)
+            {
+                body = new BodyDesc(BodyKind.Dynamic, BodyShape.Sphere(0.5f), Vector3.Zero, Quaternion.Identity, 1f);
+                return true;
+            }
+
+            public override void GetChildBodies(List<ChildBodyDesc> into)
+            {
+                into.Add(new ChildBodyDesc(new BodyDesc(BodyKind.Dynamic, BodyShape.Sphere(0.25f), Vector3.Zero, Quaternion.Identity, 1f), new Vector3(1f, 0f, 0f), Quaternion.Identity));
+                into.Add(new ChildBodyDesc(new BodyDesc(BodyKind.Dynamic, BodyShape.Sphere(0.25f), Vector3.Zero, Quaternion.Identity, 1f), new Vector3(0f, -1f, 0f), Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.5f)));
+            }
+
+            public override void GetChildBodies2D(List<ChildBodyDesc2D> into) =>
+                into.Add(new ChildBodyDesc2D(new BodyDesc2D(BodyKind.Dynamic, BodyShape2D.Circle(0.25f), Vector2.Zero, 0f, 1f), new Vector2(0.5f, 0f), 0.25f));
+        }
+
+        private sealed class LimbFollower : EntityBehaviour, ITransformReceiver, IPoseReceiver
+        {
+            public LimbFollower(ChildBody body, bool syncScale)
+            {
+                SyncTransform(new TransformSync(new TransformSyncSettings(true, true, syncScale, 0.01f, 0.1f, 0.01f)), body, this);
+            }
+
+            public List<TransformSample> Received { get; } = new List<TransformSample>();
+
+            public void ResetReceive()
+            {
+            }
+
+            public void Receive(in TransformSample sample) => Received.Add(sample);
         }
 
         private interface IPoseReceiver
@@ -557,7 +722,9 @@ namespace Fomoxa.Networking.Standalone.Tests
                 return history;
             }
 
-            public void PlaceProxy(INetworkEntity entity) => Calls.Add("proxy");
+            public void PlaceProxy(INetworkEntity entity, PhysicsBody body) => Calls.Add($"proxy {body.Handle.Value}");
+
+            public void PlaceProxy(INetworkEntity entity, PhysicsBody2D body) => Calls.Add($"proxy2D {body.Handle.Value}");
 
             public void EndProxy(INetworkEntity entity) => Calls.Add("end proxy");
 

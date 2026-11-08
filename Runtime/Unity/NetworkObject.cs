@@ -72,6 +72,10 @@ namespace Fomoxa.Unity
 
         public Fomoxa.Networking.Simulation.PhysicsBody2D Body2D => PhysicsWorlds?.Body2DOf(this) ?? default;
 
+        public IReadOnlyList<Fomoxa.Networking.Simulation.PhysicsBody> Bodies => PhysicsWorlds?.BodiesOf(this) ?? Array.Empty<Fomoxa.Networking.Simulation.PhysicsBody>();
+
+        public IReadOnlyList<Fomoxa.Networking.Simulation.PhysicsBody2D> Bodies2D => PhysicsWorlds?.Bodies2DOf(this) ?? Array.Empty<Fomoxa.Networking.Simulation.PhysicsBody2D>();
+
         internal ClientManager Client => record?.Client?.Owner as ClientManager;
 
         private NetworkPhysics PhysicsWorlds => (Server?.EntityBackend as UnityServerEntityBackend)?.Physics ?? (Client?.PredictionBackend as UnityPredictionBackend)?.Physics;

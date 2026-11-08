@@ -21,6 +21,10 @@ namespace Fomoxa.Unity
 
         public abstract PhysicsBody2D Body2DOf(NetworkObject networkObject);
 
+        public abstract IReadOnlyList<PhysicsBody> BodiesOf(NetworkObject networkObject);
+
+        public abstract IReadOnlyList<PhysicsBody2D> Bodies2DOf(NetworkObject networkObject);
+
         public abstract PhysicsHistory HistoryOf(IPhysicsSimulation world, int capacity);
 
         public abstract void PlaceProxy(NetworkObject networkObject);

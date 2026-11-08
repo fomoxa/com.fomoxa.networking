@@ -98,6 +98,16 @@ namespace Fomoxa.Networking
 
         protected void SyncTransform(TransformSync sync, ITransformReceiver receiver) => SetTransform(sync, new EntityPoseSource(this), receiver, TransformTarget.EntityPose);
 
+        protected void SyncTransform(TransformSync sync, ChildBody body, ITransformReceiver receiver)
+        {
+            if (sync != null && sync.Settings.SyncScale)
+            {
+                throw new ArgumentException("a child body has no scale to synchronize; turn SyncScale off", nameof(sync));
+            }
+
+            SetTransform(sync, new ChildBodySource(this, body), receiver, TransformTarget.BodyRoot);
+        }
+
         protected void SetStateDirty() => MarkStateDirty();
 
         internal void MarkStateDirty() => StateSlot?.MarkDirty();

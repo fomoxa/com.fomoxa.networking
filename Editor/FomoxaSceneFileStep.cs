@@ -244,6 +244,10 @@ namespace Fomoxa.Unity.Editor
             }
         }
 
+        private static bool HasChildBodies(GameObject root) =>
+            root.GetComponentsInChildren<Rigidbody>(true).Any(rigidbody => rigidbody.gameObject != root)
+            || root.GetComponentsInChildren<Rigidbody2D>(true).Any(rigidbody => rigidbody.gameObject != root);
+
         private static void DescribeObjects(Scene scene, SceneFile file, List<string> errors)
         {
             var objects = new List<NetworkObject>();
@@ -295,6 +299,11 @@ namespace Fomoxa.Unity.Editor
                 {
                     errors.Add($"{name}: {exception.Message}");
                     continue;
+                }
+
+                if (HasChildBodies(networkObject.gameObject))
+                {
+                    Debug.LogWarning($"[Fomoxa] {name} has a Rigidbody or Rigidbody2D below its root; the scene file does not carry child bodies yet, so a console server simulates only the root body of this scene object");
                 }
 
                 file.Objects.Add(entry);
