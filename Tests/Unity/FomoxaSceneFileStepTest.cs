@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using Fomoxa.Networking;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Objects;
@@ -12,6 +13,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.TestTools;
 
 namespace Fomoxa.Unity.Tests
 {
@@ -94,6 +96,114 @@ namespace Fomoxa.Unity.Tests
                     Assert.AreEqual(!Physics2D.GetIgnoreLayerCollision(layer, other), (file.LayerCollisions2D[layer] & (1u << other)) != 0);
                 }
             }
+        }
+
+        [Test]
+        public void EffectorsAreDescribedOnceInTheFrameOfTheBodyThatOwnsThem()
+        {
+            GameObject wind = Create("Wind");
+            wind.transform.SetPositionAndRotation(new Vector3(2f, 3f, 0f), Quaternion.Euler(0f, 0f, 30f));
+            var gust = wind.AddComponent<BoxCollider2D>();
+            gust.isTrigger = true;
+            gust.usedByEffector = true;
+            var draught = wind.AddComponent<CircleCollider2D>();
+            draught.isTrigger = true;
+            draught.usedByEffector = true;
+            var area = wind.AddComponent<AreaEffector2D>();
+            area.forceMagnitude = 4f;
+            area.forceAngle = 45f;
+            area.forceVariation = 1f;
+            Create("Plain").AddComponent<BoxCollider2D>();
+            Create("Unused").AddComponent<BoxCollider2D>().gameObject.AddComponent<SurfaceEffector2D>();
+            GameObject belt = Create("Belt");
+            belt.transform.SetPositionAndRotation(new Vector3(10f, 0f, 0f), Quaternion.Euler(0f, 0f, 90f));
+            belt.AddComponent<NetworkObject>().SetSceneObjectId(0x0000_0001_0000_0003);
+            belt.AddComponent<Rigidbody2D>().bodyType = RigidbodyType2D.Kinematic;
+            var surface = new GameObject("Surface");
+            created.Add(surface);
+            surface.transform.SetParent(belt.transform, false);
+            surface.transform.localPosition = new Vector3(1f, 0f, 0f);
+            surface.AddComponent<BoxCollider2D>().usedByEffector = true;
+            surface.AddComponent<SurfaceEffector2D>().speed = 2f;
+            var errors = new List<string>();
+            LogAssert.Expect(LogType.Warning, new Regex("AreaEffector2D on .*Wind: Rapier does not simulate forceVariation, so the scene file treats them as 0"));
+
+            SceneFile file = FomoxaSceneFileStep.Describe(scene, 0x99, errors);
+
+            CollectionAssert.IsEmpty(errors);
+            Assert.AreEqual(2, file.Effectors2D.Count);
+            SceneFileEffector2D carried = file.Effectors2D[0];
+            Assert.AreEqual((EffectorDescriptions.Surface, 2f), (carried.Kind, carried.Speed));
+            Assert.AreEqual(1f, carried.OriginX, 1e-5f);
+            Assert.AreEqual(0f, carried.OriginY, 1e-5f);
+            Assert.AreEqual(0f, carried.Rotation, 1e-5f);
+            Assert.AreEqual(1, file.Objects[0].Body2D.Colliders[0].Effector);
+            SceneFileEffector2D blowing = file.Effectors2D[1];
+            Assert.AreEqual((EffectorDescriptions.Area, 4f, 0f), (blowing.Kind, blowing.ForceMagnitude, blowing.ForceScale));
+            Assert.AreEqual((2f, 3f), (blowing.OriginX, blowing.OriginY));
+            Assert.AreEqual(30f * Mathf.Deg2Rad, blowing.Rotation, 1e-5f);
+            Assert.AreEqual(45f * Mathf.Deg2Rad, blowing.ForceAngle, 1e-5f);
+            CollectionAssert.AreEqual(new[] { 2, 2, 0, 0 }, file.Colliders2D.ConvertAll(collider => (int)collider.Effector));
+        }
+
+        [Test]
+        public void ChildBodiesAndTheBodiesOfTheirBehavioursAreDescribedRelativeToTheRoot()
+        {
+            GameObject robot = Create("Robot");
+            robot.transform.SetPositionAndRotation(new Vector3(1f, 0f, 0f), Quaternion.Euler(0f, 90f, 0f));
+            robot.AddComponent<NetworkObject>().SetSceneObjectId(0x0000_0001_0000_0004);
+            robot.AddComponent<RpcBehaviour>();
+            robot.AddComponent<BoxCollider>();
+            robot.AddComponent<Rigidbody>();
+            GameObject arm = Limb(robot.transform, "Arm", new Vector3(0f, 1f, 0f));
+            arm.transform.localRotation = Quaternion.Euler(30f, 0f, 0f);
+            arm.AddComponent<RpcBehaviour>();
+            Limb(robot.transform, "Folded", new Vector3(0f, 2f, 0f)).SetActive(false);
+            GameObject kite = Create("Kite");
+            kite.transform.SetPositionAndRotation(new Vector3(5f, 0f, 0f), Quaternion.Euler(0f, 0f, 90f));
+            kite.AddComponent<NetworkObject>().SetSceneObjectId(0x0000_0001_0000_0005);
+            kite.AddComponent<BoxCollider2D>();
+            kite.AddComponent<Rigidbody2D>();
+            var tail = new GameObject("Tail");
+            created.Add(tail);
+            tail.transform.SetParent(kite.transform, false);
+            tail.transform.localPosition = new Vector3(0f, -1f, 0f);
+            tail.transform.localRotation = Quaternion.Euler(0f, 0f, 30f);
+            var pull = tail.AddComponent<CircleCollider2D>();
+            pull.isTrigger = true;
+            pull.usedByEffector = true;
+            tail.AddComponent<PointEffector2D>().forceMagnitude = -3f;
+            tail.AddComponent<Rigidbody2D>();
+            tail.AddComponent<RpcBehaviour>();
+            var errors = new List<string>();
+
+            SceneFile file = FomoxaSceneFileStep.Describe(scene, 0x99, errors);
+
+            CollectionAssert.IsEmpty(errors);
+            SceneFileObject robotEntry = file.Objects.Find(entry => entry.SceneObjectId == 0x0000_0001_0000_0004);
+            Assert.AreEqual(1, robotEntry.ChildBodies.Count);
+            SceneFileChildBody armBody = robotEntry.ChildBodies[0];
+            Assert.AreEqual(0f, armBody.PositionX, 1e-5f);
+            Assert.AreEqual(1f, armBody.PositionY, 1e-5f);
+            Assert.AreEqual(0f, armBody.PositionZ, 1e-5f);
+            Assert.AreEqual(1f, Mathf.Abs(Quaternion.Dot(Quaternion.Euler(30f, 0f, 0f), new Quaternion(armBody.RotationX, armBody.RotationY, armBody.RotationZ, armBody.RotationW))), 1e-5f);
+            Assert.AreEqual(ShapeKind.Sphere, SceneFileGeometry.ToDesc(armBody.Body, System.Numerics.Vector3.Zero, System.Numerics.Quaternion.Identity).Colliders[0].Shape.Kind);
+            CollectionAssert.AreEqual(new[] { -1, 0 }, robotEntry.BehaviourBodies);
+            CollectionAssert.AreEqual(new[] { -1, -1 }, robotEntry.BehaviourBodies2D);
+            CollectionAssert.IsEmpty(robotEntry.ChildBodies2D);
+            SceneFileObject kiteEntry = file.Objects.Find(entry => entry.SceneObjectId == 0x0000_0001_0000_0005);
+            Assert.AreEqual(1, kiteEntry.ChildBodies2D.Count);
+            SceneFileChildBody2D tailBody = kiteEntry.ChildBodies2D[0];
+            Assert.AreEqual(0f, tailBody.PositionX, 1e-5f);
+            Assert.AreEqual(-1f, tailBody.PositionY, 1e-5f);
+            Assert.AreEqual(30f * Mathf.Deg2Rad, tailBody.Rotation, 1e-5f);
+            CollectionAssert.AreEqual(new[] { 0 }, kiteEntry.BehaviourBodies2D);
+            CollectionAssert.AreEqual(new[] { -1 }, kiteEntry.BehaviourBodies);
+            Assert.AreEqual(1, tailBody.Body.Colliders[0].Effector);
+            Assert.AreEqual(0, kiteEntry.Body2D.Colliders[0].Effector);
+            SceneFileEffector2D point = file.Effectors2D[0];
+            Assert.AreEqual((EffectorDescriptions.Point, -3f), (point.Kind, point.ForceMagnitude));
+            Assert.AreEqual((0f, 0f, 0f), (point.OriginX, point.OriginY, point.Rotation));
         }
 
         [Test]
@@ -221,6 +331,17 @@ namespace Fomoxa.Unity.Tests
             Assert.IsNotNull(registry, error);
             SceneFile read = SceneFileFormat.Read(registry, SceneFileFormat.Write(registry, file));
             Assert.AreEqual((0x42u, 1, 32), (read.SceneId, read.Colliders.Count, read.LayerCollisions.Count));
+        }
+
+        private GameObject Limb(Transform parent, string name, Vector3 localPosition)
+        {
+            var limb = new GameObject(name);
+            created.Add(limb);
+            limb.transform.SetParent(parent, false);
+            limb.transform.localPosition = localPosition;
+            limb.AddComponent<SphereCollider>().radius = 0.25f;
+            limb.AddComponent<Rigidbody>();
+            return limb;
         }
 
         private GameObject Create(string name)

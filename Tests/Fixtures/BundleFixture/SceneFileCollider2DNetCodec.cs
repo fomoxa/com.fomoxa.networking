@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/SceneFile.cs
 // model: SceneFileCollider2D
 // codec: net
-// fingerprint: sha256:95e8d55e703fd8b46363c7719ac85efdfca870ccafe8276ef1072962327d28ec
+// fingerprint: sha256:516e36597924113719c0134fa569c54a07ed5a67a49c79a777ae4af473025648
 // fomoxac-version: 0.2.2
-// generated-at: 2026-10-07T06:13:22Z
+// generated-at: 2026-11-09T07:32:36Z
 
 namespace BundleFixture
 {
@@ -26,6 +26,7 @@ namespace BundleFixture
 /// <item><description><c>Material</c>: <c>SceneFileMaterial</c></description></item>
 /// <item><description><c>Layer</c>: <c>u8</c></description></item>
 /// <item><description><c>IsTrigger</c>: <c>bool</c></description></item>
+/// <item><description><c>Effector</c>: <c>u16</c></description></item>
 /// </list>
 /// </remarks>
 public static class SceneFileCollider2DNetCodec
@@ -38,7 +39,7 @@ public static class SceneFileCollider2DNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0x95E8D55E703FD8B4;
+    public const ulong Fingerprint = 0x516E365979241137;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.SceneFileCollider2D value)
@@ -59,6 +60,7 @@ public static class SceneFileCollider2DNetCodec
         SceneFileMaterialNetCodec.Encode(writer, value.Material);
         writer.WriteU8(value.Layer);
         writer.WriteBool(value.IsTrigger);
+        writer.WriteU16(value.Effector);
     }
 
     /// <summary>Reads the <c>net</c> fields into <paramref name="value"/>, in declaration order.</summary>
@@ -101,6 +103,7 @@ public static class SceneFileCollider2DNetCodec
         value.Material = materialValue;
         value.Layer = reader.FieldAbsent() ? (byte)0 : reader.ReadU8();
         value.IsTrigger = reader.FieldAbsent() ? false : reader.ReadBool();
+        value.Effector = reader.FieldAbsent() ? (ushort)0 : reader.ReadU16();
     }
 }
 

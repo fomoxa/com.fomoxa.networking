@@ -30,6 +30,10 @@ namespace Fomoxa.Networking.Messaging
         [Network("Array<u32>")]
         [Codec("net")]
         public List<uint> LayerCollisions2D { get; set; } = new List<uint>();
+
+        [Network("Array<SceneFileEffector2D>")]
+        [Codec("net")]
+        public List<SceneFileEffector2D> Effectors2D { get; set; } = new List<SceneFileEffector2D>();
     }
 
     [Network]
@@ -59,6 +63,80 @@ namespace Fomoxa.Networking.Messaging
         [Network("SceneFileBody2D")]
         [Codec("net")]
         public SceneFileBody2D Body2D { get; set; } = new SceneFileBody2D();
+
+        [Network("Array<SceneFileChildBody>")]
+        [Codec("net")]
+        public List<SceneFileChildBody> ChildBodies { get; set; } = new List<SceneFileChildBody>();
+
+        [Network("Array<SceneFileChildBody2D>")]
+        [Codec("net")]
+        public List<SceneFileChildBody2D> ChildBodies2D { get; set; } = new List<SceneFileChildBody2D>();
+
+        [Network("Array<i32>")]
+        [Codec("net")]
+        public List<int> BehaviourBodies { get; set; } = new List<int>();
+
+        [Network("Array<i32>")]
+        [Codec("net")]
+        public List<int> BehaviourBodies2D { get; set; } = new List<int>();
+    }
+
+    [Network]
+    [Codec("net")]
+    public class SceneFileChildBody
+    {
+        [Network("f32")]
+        [Codec("net")]
+        public float PositionX { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float PositionY { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float PositionZ { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float RotationX { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float RotationY { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float RotationZ { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float RotationW { get; set; } = 1f;
+
+        [Network("SceneFileBody")]
+        [Codec("net")]
+        public SceneFileBody Body { get; set; } = new SceneFileBody();
+    }
+
+    [Network]
+    [Codec("net")]
+    public class SceneFileChildBody2D
+    {
+        [Network("f32")]
+        [Codec("net")]
+        public float PositionX { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float PositionY { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float Rotation { get; set; }
+
+        [Network("SceneFileBody2D")]
+        [Codec("net")]
+        public SceneFileBody2D Body { get; set; } = new SceneFileBody2D();
     }
 
     [Network]
@@ -312,6 +390,139 @@ namespace Fomoxa.Networking.Messaging
         [Network("bool")]
         [Codec("net")]
         public bool IsTrigger { get; set; }
+
+        [Network("u16")]
+        [Codec("net")]
+        public ushort Effector { get; set; }
+    }
+
+    [Network]
+    [Codec("net")]
+    public class SceneFileEffector2D
+    {
+        [Network("u8")]
+        [Codec("net")]
+        public byte Kind { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool UseColliderMask { get; set; }
+
+        [Network("u32")]
+        [Codec("net")]
+        public uint ColliderMask { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float Rotation { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float OriginX { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float OriginY { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool OneWay { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool OneWayGrouping { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float RotationalOffset { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float SurfaceArc { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool SideFriction { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool SideBounce { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float SideArc { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float Speed { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float ForceScale { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool ContactForce { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool Friction { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool Bounce { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float ForceAngle { get; set; }
+
+        [Network("bool")]
+        [Codec("net")]
+        public bool GlobalAngle { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float ForceMagnitude { get; set; }
+
+        [Network("u8")]
+        [Codec("net")]
+        public byte ForceSource { get; set; }
+
+        [Network("u8")]
+        [Codec("net")]
+        public byte ForceTarget { get; set; }
+
+        [Network("u8")]
+        [Codec("net")]
+        public byte ForceMode { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float DistanceScale { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float LinearDamping { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float AngularDamping { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float Density { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float SurfaceLevel { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float FlowAngle { get; set; }
+
+        [Network("f32")]
+        [Codec("net")]
+        public float FlowMagnitude { get; set; }
     }
 
     [Network]

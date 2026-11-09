@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/SceneFile.cs
 // model: SceneFile
 // codec: net
-// fingerprint: sha256:8428faecf21384df25acce26a7d5f882b4820136c95fe42b83a3773607e72678
+// fingerprint: sha256:8deb75043bc97ec277e3521d073aa5c90be1cfd4754e17b3d78e79e3616fb671
 // fomoxac-version: 0.2.2
-// generated-at: 2026-11-07T03:23:51Z
+// generated-at: 2026-11-09T07:32:36Z
 
 namespace BundleFixture
 {
@@ -20,6 +20,7 @@ namespace BundleFixture
 /// <item><description><c>Colliders2D</c>: <c>Array&lt;SceneFileCollider2D&gt;</c></description></item>
 /// <item><description><c>LayerCollisions</c>: <c>Array&lt;u32&gt;</c></description></item>
 /// <item><description><c>LayerCollisions2D</c>: <c>Array&lt;u32&gt;</c></description></item>
+/// <item><description><c>Effectors2D</c>: <c>Array&lt;SceneFileEffector2D&gt;</c></description></item>
 /// </list>
 /// </remarks>
 public static class SceneFileNetCodec
@@ -32,7 +33,7 @@ public static class SceneFileNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0x8428FAECF21384DF;
+    public const ulong Fingerprint = 0x8DEB75043BC97EC2;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.SceneFile value)
@@ -62,6 +63,11 @@ public static class SceneFileNetCodec
         foreach (var element in value.LayerCollisions2D)
         {
             writer.WriteU32(element);
+        }
+        writer.WriteArrayCount(value.Effectors2D.Count);
+        foreach (var element in value.Effectors2D)
+        {
+            SceneFileEffector2DNetCodec.Encode(writer, element);
         }
     }
 
@@ -160,6 +166,23 @@ public static class SceneFileNetCodec
         }
         ArrayField.Trim(layerCollisions2DValueList, layerCollisions2DValueCount);
         value.LayerCollisions2D = layerCollisions2DValueList;
+        int effectors2DValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var effectors2DValueList = ArrayField.Reuse(value.Effectors2D, effectors2DValueCount);
+        for (int i = 0; i < effectors2DValueCount; i++)
+        {
+            var element = i < effectors2DValueList.Count ? effectors2DValueList[i] : new Fomoxa.Networking.Messaging.SceneFileEffector2D();
+            SceneFileEffector2DNetCodec.Decode(ref reader, ref element);
+            if (i < effectors2DValueList.Count)
+            {
+                effectors2DValueList[i] = element;
+            }
+            else
+            {
+                effectors2DValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(effectors2DValueList, effectors2DValueCount);
+        value.Effectors2D = effectors2DValueList;
     }
 }
 

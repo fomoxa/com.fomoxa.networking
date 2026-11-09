@@ -180,6 +180,43 @@ namespace Fomoxa.Networking.Standalone.Tests
             Assert.Throws<ArgumentException>(() => StandaloneRuntime.Create(registry, new NetworkSettings(), new LoopbackFactory(), prefabs, new StandaloneBehaviours(), files, () => now, log, serverPhysics));
         }
 
+        [Test]
+        public void ASceneObjectGetsTheChildBodiesOfItsFileAtTheirPoseInTheEntity()
+        {
+            var file = new SceneFile { SceneId = ArenaSceneId };
+            SceneFileObject crate = Crate(21, new Vector2(4f, 0f), MathF.PI / 2f);
+            crate.ChildBodies2D.Add(new SceneFileChildBody2D
+            {
+                PositionX = 1f,
+                Rotation = 0.25f,
+                Body = SceneFileGeometry.ToFile(new BodyDesc2D(BodyKind.Dynamic, new[] { new ColliderDesc2D(BodyShape2D.Box(new Vector2(0.5f, 0.25f)), Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) }, Vector2.Zero, 0f, 2f, CrateMotion)),
+            });
+            crate.ChildBodies.Add(new SceneFileChildBody
+            {
+                PositionY = 2f,
+                RotationW = 1f,
+                Body = SceneFileGeometry.ToFile(new BodyDesc(BodyKind.Kinematic, new[] { new ColliderDesc(BodyShape.Sphere(0.5f), Vector3.Zero, Quaternion.Identity, ColliderMaterial.Default, 0, false) }, Vector3.Zero, Quaternion.Identity, 1f, BodyMotion.Default)),
+            });
+            file.Objects.Add(crate);
+            files.Add(file);
+            Connect();
+
+            server.ServerManager.Scenes.LoadGlobal(new[] { ArenaSceneId });
+            Run(10);
+
+            var onServer = (StandaloneEntity)server.ServerManager.Spawned[FindObjectId(server, 21)];
+            Assert.AreEqual(2, onServer.Bodies2D.Count);
+            Assert.AreEqual(onServer.Body2D, onServer.Bodies2D[0]);
+            Assert.AreEqual(4f, onServer.Bodies2D[1].Position.X, 1e-5f);
+            Assert.AreEqual(1f, onServer.Bodies2D[1].Position.Y, 1e-5f);
+            Assert.AreEqual((MathF.PI / 2f) + 0.25f, onServer.Bodies2D[1].Rotation, 1e-5f);
+            Assert.AreEqual(1, onServer.Bodies.Count);
+            AssertNear(new Vector3(2f, 0f, 0f), onServer.Bodies[0].Position);
+            Assert.AreEqual(2f, serverPhysics.Created2D[1].Mass);
+            var onClient = (StandaloneEntity)client.ClientManager.Spawned[FindObjectId(server, 21)];
+            Assert.AreEqual(2, onClient.Bodies2D.Count);
+        }
+
         private static SceneFileObject Crate(ulong sceneObjectId, Vector2 position, float angle)
         {
             Quaternion rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, angle);

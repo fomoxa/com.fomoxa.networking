@@ -3,9 +3,9 @@
 // source: Runtime/Core/SystemModels/SceneFile.cs
 // model: SceneFileObject
 // codec: net
-// fingerprint: sha256:912af5b9e6d20ddf0381fbbc96314cedcf25d0e1e58e78b9876c57c8c381d104
+// fingerprint: sha256:8bd7a5e83890af02b1bf1cc0498b1b5c7a1c37de413a6cbe8f136bfeab8e4457
 // fomoxac-version: 0.2.2
-// generated-at: 2026-11-07T03:23:51Z
+// generated-at: 2026-11-09T07:32:36Z
 
 namespace BundleFixture
 {
@@ -20,6 +20,10 @@ namespace BundleFixture
 /// <item><description><c>Pose</c>: <c>SceneFilePose</c></description></item>
 /// <item><description><c>Body</c>: <c>SceneFileBody</c></description></item>
 /// <item><description><c>Body2D</c>: <c>SceneFileBody2D</c></description></item>
+/// <item><description><c>ChildBodies</c>: <c>Array&lt;SceneFileChildBody&gt;</c></description></item>
+/// <item><description><c>ChildBodies2D</c>: <c>Array&lt;SceneFileChildBody2D&gt;</c></description></item>
+/// <item><description><c>BehaviourBodies</c>: <c>Array&lt;i32&gt;</c></description></item>
+/// <item><description><c>BehaviourBodies2D</c>: <c>Array&lt;i32&gt;</c></description></item>
 /// </list>
 /// </remarks>
 public static class SceneFileObjectNetCodec
@@ -32,7 +36,7 @@ public static class SceneFileObjectNetCodec
 
     /// <summary>This message's wire-contract fingerprint - the same value
     /// <c>Handshake.cs</c> publishes, and the one a peer compares against.</summary>
-    public const ulong Fingerprint = 0x912AF5B9E6D20DDF;
+    public const ulong Fingerprint = 0x8BD7A5E83890AF02;
 
     /// <summary>Writes the <c>net</c> fields of <paramref name="value"/>, in declaration order.</summary>
     public static void Encode(Writer writer, Fomoxa.Networking.Messaging.SceneFileObject value)
@@ -47,6 +51,26 @@ public static class SceneFileObjectNetCodec
         SceneFilePoseNetCodec.Encode(writer, value.Pose);
         SceneFileBodyNetCodec.Encode(writer, value.Body);
         SceneFileBody2DNetCodec.Encode(writer, value.Body2D);
+        writer.WriteArrayCount(value.ChildBodies.Count);
+        foreach (var element in value.ChildBodies)
+        {
+            SceneFileChildBodyNetCodec.Encode(writer, element);
+        }
+        writer.WriteArrayCount(value.ChildBodies2D.Count);
+        foreach (var element in value.ChildBodies2D)
+        {
+            SceneFileChildBody2DNetCodec.Encode(writer, element);
+        }
+        writer.WriteArrayCount(value.BehaviourBodies.Count);
+        foreach (var element in value.BehaviourBodies)
+        {
+            writer.WriteI32(element);
+        }
+        writer.WriteArrayCount(value.BehaviourBodies2D.Count);
+        foreach (var element in value.BehaviourBodies2D)
+        {
+            writer.WriteI32(element);
+        }
     }
 
     /// <summary>Reads the <c>net</c> fields into <paramref name="value"/>, in declaration order.</summary>
@@ -88,6 +112,72 @@ public static class SceneFileObjectNetCodec
         var body2DValue = value.Body2D;
         SceneFileBody2DNetCodec.Decode(ref reader, ref body2DValue);
         value.Body2D = body2DValue;
+        int childBodiesValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var childBodiesValueList = ArrayField.Reuse(value.ChildBodies, childBodiesValueCount);
+        for (int i = 0; i < childBodiesValueCount; i++)
+        {
+            var element = i < childBodiesValueList.Count ? childBodiesValueList[i] : new Fomoxa.Networking.Messaging.SceneFileChildBody();
+            SceneFileChildBodyNetCodec.Decode(ref reader, ref element);
+            if (i < childBodiesValueList.Count)
+            {
+                childBodiesValueList[i] = element;
+            }
+            else
+            {
+                childBodiesValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(childBodiesValueList, childBodiesValueCount);
+        value.ChildBodies = childBodiesValueList;
+        int childBodies2DValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var childBodies2DValueList = ArrayField.Reuse(value.ChildBodies2D, childBodies2DValueCount);
+        for (int i = 0; i < childBodies2DValueCount; i++)
+        {
+            var element = i < childBodies2DValueList.Count ? childBodies2DValueList[i] : new Fomoxa.Networking.Messaging.SceneFileChildBody2D();
+            SceneFileChildBody2DNetCodec.Decode(ref reader, ref element);
+            if (i < childBodies2DValueList.Count)
+            {
+                childBodies2DValueList[i] = element;
+            }
+            else
+            {
+                childBodies2DValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(childBodies2DValueList, childBodies2DValueCount);
+        value.ChildBodies2D = childBodies2DValueList;
+        int behaviourBodiesValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var behaviourBodiesValueList = ArrayField.Reuse(value.BehaviourBodies, behaviourBodiesValueCount);
+        for (int i = 0; i < behaviourBodiesValueCount; i++)
+        {
+            var element = reader.ReadI32();
+            if (i < behaviourBodiesValueList.Count)
+            {
+                behaviourBodiesValueList[i] = element;
+            }
+            else
+            {
+                behaviourBodiesValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(behaviourBodiesValueList, behaviourBodiesValueCount);
+        value.BehaviourBodies = behaviourBodiesValueList;
+        int behaviourBodies2DValueCount = reader.FieldAbsent() ? 0 : reader.ReadArrayCount();
+        var behaviourBodies2DValueList = ArrayField.Reuse(value.BehaviourBodies2D, behaviourBodies2DValueCount);
+        for (int i = 0; i < behaviourBodies2DValueCount; i++)
+        {
+            var element = reader.ReadI32();
+            if (i < behaviourBodies2DValueList.Count)
+            {
+                behaviourBodies2DValueList[i] = element;
+            }
+            else
+            {
+                behaviourBodies2DValueList.Add(element);
+            }
+        }
+        ArrayField.Trim(behaviourBodies2DValueList, behaviourBodies2DValueCount);
+        value.BehaviourBodies2D = behaviourBodies2DValueList;
     }
 }
 

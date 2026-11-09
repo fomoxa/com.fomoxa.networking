@@ -57,8 +57,9 @@ namespace Fomoxa.Unity.Editor
         {
             int before = errors.Count;
             var file = new SceneFile { SceneId = sceneId };
-            DescribeObjects(scene, file, errors);
-            DescribeStaticColliders(scene, file, errors);
+            var effectors = new SceneEffectors(scene, file, errors);
+            DescribeObjects(scene, file, effectors, errors);
+            DescribeStaticColliders(scene, file, effectors, errors);
             for (int layer = 0; layer < 32; layer++)
             {
                 uint mask = 0;
@@ -244,11 +245,70 @@ namespace Fomoxa.Unity.Editor
             }
         }
 
-        private static bool HasChildBodies(GameObject root) =>
-            root.GetComponentsInChildren<Rigidbody>(true).Any(rigidbody => rigidbody.gameObject != root)
-            || root.GetComponentsInChildren<Rigidbody2D>(true).Any(rigidbody => rigidbody.gameObject != root);
+        private static bool ActiveInTree(Transform node, Transform root)
+        {
+            for (Transform current = node; current != root; current = current.parent)
+            {
+                if (!current.gameObject.activeSelf)
+                {
+                    return false;
+                }
+            }
 
-        private static void DescribeObjects(Scene scene, SceneFile file, List<string> errors)
+            return true;
+        }
+
+        private static void DescribeChildBodies(NetworkObject networkObject, SceneFileObject entry, SceneEffectors effectors, List<GameObject> children, List<GameObject> children2D)
+        {
+            GameObject root = networkObject.gameObject;
+            Transform space = root.transform;
+            Quaternion inverse = Quaternion.Inverse(space.rotation);
+            foreach (Rigidbody rigidbody in root.GetComponentsInChildren<Rigidbody>(true))
+            {
+                if (rigidbody.gameObject == root || !ActiveInTree(rigidbody.transform, space) || !BodyDescriptions.TryDescribe(rigidbody.gameObject, out BodyDesc body))
+                {
+                    continue;
+                }
+
+                Vector3 position = inverse * (rigidbody.transform.position - space.position);
+                Quaternion rotation = inverse * rigidbody.transform.rotation;
+                entry.ChildBodies.Add(new SceneFileChildBody
+                {
+                    PositionX = position.x,
+                    PositionY = position.y,
+                    PositionZ = position.z,
+                    RotationX = rotation.x,
+                    RotationY = rotation.y,
+                    RotationZ = rotation.z,
+                    RotationW = rotation.w,
+                    Body = SceneFileGeometry.ToFile(body),
+                });
+                children.Add(rigidbody.gameObject);
+            }
+
+            var sources = new List<Collider2D>();
+            foreach (Rigidbody2D rigidbody in root.GetComponentsInChildren<Rigidbody2D>(true))
+            {
+                if (rigidbody.gameObject == root || !ActiveInTree(rigidbody.transform, space) || !BodyDescriptions.TryDescribe2D(rigidbody.gameObject, out BodyDesc2D body, sources))
+                {
+                    continue;
+                }
+
+                Vector3 position = inverse * (rigidbody.transform.position - space.position);
+                SceneFileBody2D described = SceneFileGeometry.ToFile(body);
+                effectors.Mark(described.Colliders, sources, rigidbody.transform);
+                entry.ChildBodies2D.Add(new SceneFileChildBody2D
+                {
+                    PositionX = position.x,
+                    PositionY = position.y,
+                    Rotation = Mathf.DeltaAngle(space.eulerAngles.z, rigidbody.transform.eulerAngles.z) * Mathf.Deg2Rad,
+                    Body = described,
+                });
+                children2D.Add(rigidbody.gameObject);
+            }
+        }
+
+        private static void DescribeObjects(Scene scene, SceneFile file, SceneEffectors effectors, List<string> errors)
         {
             var objects = new List<NetworkObject>();
             foreach (GameObject root in scene.GetRootGameObjects())
@@ -278,11 +338,8 @@ namespace Fomoxa.Unity.Editor
                     Fingerprint = fingerprint,
                     Pose = PoseOf(transform),
                 };
-                foreach (NetworkBehaviour behaviour in networkObject.GetComponentsInChildren<NetworkBehaviour>(true))
-                {
-                    entry.BehaviourTypes.Add(behaviour.GetType().FullName);
-                }
-
+                var children = new List<GameObject>();
+                var children2D = new List<GameObject>();
                 try
                 {
                     if (BodyDescriptions.TryDescribe(networkObject.gameObject, out BodyDesc body))
@@ -290,10 +347,14 @@ namespace Fomoxa.Unity.Editor
                         entry.Body = SceneFileGeometry.ToFile(body);
                     }
 
-                    if (BodyDescriptions.TryDescribe2D(networkObject.gameObject, out BodyDesc2D body2D))
+                    var sources = new List<Collider2D>();
+                    if (BodyDescriptions.TryDescribe2D(networkObject.gameObject, out BodyDesc2D body2D, sources))
                     {
                         entry.Body2D = SceneFileGeometry.ToFile(body2D);
+                        effectors.Mark(entry.Body2D.Colliders, sources, transform);
                     }
+
+                    DescribeChildBodies(networkObject, entry, effectors, children, children2D);
                 }
                 catch (Exception exception) when (exception is NotSupportedException || exception is ArgumentException)
                 {
@@ -301,16 +362,18 @@ namespace Fomoxa.Unity.Editor
                     continue;
                 }
 
-                if (HasChildBodies(networkObject.gameObject))
+                foreach (NetworkBehaviour behaviour in networkObject.GetComponentsInChildren<NetworkBehaviour>(true))
                 {
-                    Debug.LogWarning($"[Fomoxa] {name} has a Rigidbody or Rigidbody2D below its root; the scene file does not carry child bodies yet, so a console server simulates only the root body of this scene object");
+                    entry.BehaviourTypes.Add(behaviour.GetType().FullName);
+                    entry.BehaviourBodies.Add(children.IndexOf(behaviour.gameObject));
+                    entry.BehaviourBodies2D.Add(children2D.IndexOf(behaviour.gameObject));
                 }
 
                 file.Objects.Add(entry);
             }
         }
 
-        private static void DescribeStaticColliders(Scene scene, SceneFile file, List<string> errors)
+        private static void DescribeStaticColliders(Scene scene, SceneFile file, SceneEffectors effectors, List<string> errors)
         {
             var sources = new List<Collider>();
             var sources2D = new List<Collider2D>();
@@ -370,6 +433,65 @@ namespace Fomoxa.Unity.Editor
             foreach (ColliderDesc2D collider in colliders2D)
             {
                 file.Colliders2D.Add(SceneFileGeometry.ToFile(collider));
+            }
+
+            if (colliders2D.Count == sources2D.Count)
+            {
+                effectors.Mark(file.Colliders2D, sources2D, null);
+            }
+        }
+
+        private sealed class SceneEffectors
+        {
+            private readonly Scene scene;
+            private readonly SceneFile file;
+            private readonly List<string> errors;
+            private readonly Dictionary<Effector2D, ushort> indices = new Dictionary<Effector2D, ushort>();
+            private readonly List<string> ignored = new List<string>();
+
+            public SceneEffectors(Scene scene, SceneFile file, List<string> errors)
+            {
+                this.scene = scene;
+                this.file = file;
+                this.errors = errors;
+            }
+
+            public void Mark(List<SceneFileCollider2D> colliders, List<Collider2D> sources, Transform owner)
+            {
+                for (int index = 0; index < colliders.Count && index < sources.Count; index++)
+                {
+                    colliders[index].Effector = IndexOf(sources[index], owner);
+                }
+            }
+
+            private ushort IndexOf(Collider2D collider, Transform owner)
+            {
+                if (!EffectorDescriptions.TryFind(collider, out Effector2D effector))
+                {
+                    return 0;
+                }
+
+                if (indices.TryGetValue(effector, out ushort found))
+                {
+                    return found;
+                }
+
+                if (file.Effectors2D.Count == ushort.MaxValue)
+                {
+                    errors.Add($"{scene.path}: more than {ushort.MaxValue} 2D effectors");
+                    return 0;
+                }
+
+                ignored.Clear();
+                file.Effectors2D.Add(EffectorDescriptions.Describe(effector, owner, ignored));
+                if (ignored.Count > 0)
+                {
+                    Debug.LogWarning($"[Fomoxa] {effector.GetType().Name} on {scene.path}: {PathOf(effector.transform)}: Rapier does not simulate {string.Join(", ", ignored)}, so the scene file treats them as 0", effector);
+                }
+
+                var index = (ushort)file.Effectors2D.Count;
+                indices.Add(effector, index);
+                return index;
             }
         }
 

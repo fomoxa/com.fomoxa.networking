@@ -5,9 +5,24 @@ namespace Fomoxa.Networking.Standalone
 {
     public sealed class StandaloneBehaviours
     {
-        private readonly Dictionary<string, Func<EntityBehaviour>> factories = new Dictionary<string, Func<EntityBehaviour>>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Delegate> factories = new Dictionary<string, Delegate>(StringComparer.Ordinal);
 
-        public void Register(string typeName, Func<EntityBehaviour> create)
+        public void Register(string typeName, Func<EntityBehaviour> create) => Add(typeName, create);
+
+        public void Register(string typeName, Func<BehaviourSite, EntityBehaviour> create) => Add(typeName, create);
+
+        internal EntityBehaviour Create(string typeName, BehaviourSite site)
+        {
+            if (!factories.TryGetValue(typeName, out Delegate factory))
+            {
+                throw new InvalidOperationException($"behaviour type {typeName} is not registered with StandaloneBehaviours");
+            }
+
+            EntityBehaviour created = factory is Func<BehaviourSite, EntityBehaviour> placed ? placed(site) : ((Func<EntityBehaviour>)factory)();
+            return created ?? throw new InvalidOperationException($"the factory of behaviour type {typeName} returned no behaviour");
+        }
+
+        private void Add(string typeName, Delegate create)
         {
             if (string.IsNullOrEmpty(typeName))
             {
@@ -19,9 +34,9 @@ namespace Fomoxa.Networking.Standalone
                 throw new ArgumentNullException(nameof(create));
             }
 
-            if (factories.TryGetValue(typeName, out Func<EntityBehaviour> existing))
+            if (factories.TryGetValue(typeName, out Delegate existing))
             {
-                if (existing == create)
+                if (existing.Equals(create))
                 {
                     return;
                 }
@@ -30,17 +45,6 @@ namespace Fomoxa.Networking.Standalone
             }
 
             factories.Add(typeName, create);
-        }
-
-        internal EntityBehaviour Create(string typeName)
-        {
-            if (!factories.TryGetValue(typeName, out Func<EntityBehaviour> create))
-            {
-                throw new InvalidOperationException($"behaviour type {typeName} is not registered with StandaloneBehaviours");
-            }
-
-            return create()
-                ?? throw new InvalidOperationException($"the factory of behaviour type {typeName} returned no behaviour");
         }
     }
 }

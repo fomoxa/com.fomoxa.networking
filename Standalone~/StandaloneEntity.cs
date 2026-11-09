@@ -12,6 +12,8 @@ namespace Fomoxa.Networking.Standalone
         private readonly EntityBehaviour[] behaviours;
         private readonly List<ChildBodyDesc> childDescs = new List<ChildBodyDesc>();
         private readonly List<ChildBodyDesc2D> childDescs2D = new List<ChildBodyDesc2D>();
+        private readonly List<ChildBodyDesc> fileChildren = new List<ChildBodyDesc>();
+        private readonly List<ChildBodyDesc2D> fileChildren2D = new List<ChildBodyDesc2D>();
         private readonly List<PhysicsBody> childBodies = new List<PhysicsBody>();
         private readonly List<PhysicsBody2D> childBodies2D = new List<PhysicsBody2D>();
         private readonly List<PhysicsBody> bodies = new List<PhysicsBody>();
@@ -175,17 +177,23 @@ namespace Fomoxa.Networking.Standalone
 
         public virtual void GetChildBodies(List<ChildBodyDesc> into)
         {
+            into.AddRange(fileChildren);
         }
 
         public virtual void GetChildBodies2D(List<ChildBodyDesc2D> into)
         {
+            into.AddRange(fileChildren2D);
         }
 
-        internal void SetFileBodies(BodyDesc? body, BodyDesc2D? body2D)
+        internal void SetFileBodies(BodyDesc? body, BodyDesc2D? body2D, List<ChildBodyDesc> children, List<ChildBodyDesc2D> children2D)
         {
             fileBody = body;
             fileBody2D = body2D;
             fileAngle = body2D?.Rotation;
+            fileChildren.Clear();
+            fileChildren.AddRange(children);
+            fileChildren2D.Clear();
+            fileChildren2D.AddRange(children2D);
         }
 
         internal void AttachBodies(IPhysicsScenes physics)

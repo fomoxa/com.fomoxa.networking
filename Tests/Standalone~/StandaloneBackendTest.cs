@@ -10,6 +10,7 @@ using Fomoxa.Net.Transports;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Objects;
 using Fomoxa.Networking.Sessions;
+using Fomoxa.Networking.Simulation;
 using Fomoxa.Networking.Transports;
 using NUnit.Framework;
 
@@ -277,7 +278,61 @@ namespace Fomoxa.Networking.Standalone.Tests
                 },
             };
             door.BehaviourTypes.Add(CounterType);
+            door.BehaviourBodies.Add(-1);
+            door.BehaviourBodies2D.Add(-1);
             return door;
+        }
+
+        [Test]
+        public void ABehaviourOnAChildBodyLearnsItsBodyFromTheSceneFile()
+        {
+            var sites = new List<BehaviourSite>();
+            behaviours.Register("Game.Limb", site =>
+            {
+                sites.Add(site);
+                return new CounterBehaviour();
+            });
+            SceneFileObject door = Door(11, Vector3.Zero);
+            door.BehaviourTypes.Add("Game.Limb");
+            door.BehaviourBodies.Add(-1);
+            door.BehaviourBodies2D.Add(0);
+            door.ChildBodies2D.Add(new SceneFileChildBody2D { PositionY = 1f, Body = SceneFileGeometry.ToFile(new BodyDesc2D(BodyKind.Dynamic, new[] { new ColliderDesc2D(BodyShape2D.Circle(0.25f), Vector2.Zero, 0f, ColliderMaterial.Default, 0, false) }, Vector2.Zero, 0f, 1f, new BodyMotion2D(BodyLocks2D.None, 1f, 0f, 0f))) });
+            files.Add(ArenaSceneId, door);
+            Connect();
+
+            server.ServerManager.Scenes.LoadGlobal(new[] { ArenaSceneId });
+            Run(5);
+
+            Assert.AreEqual(2, sites.Count);
+            foreach (BehaviourSite site in sites)
+            {
+                Assert.IsTrue(site.TryGetBody(out ChildBody body));
+                Assert.AreEqual(ChildBody.Of2D(0), body);
+            }
+
+            var onServer = (StandaloneEntity)server.ServerManager.Spawned.Values.Single();
+            var declared = new List<ChildBodyDesc2D>();
+            onServer.GetChildBodies2D(declared);
+            Assert.AreEqual(1f, declared.Single().LocalPosition.Y);
+        }
+
+        [Test]
+        public void BehaviourBodiesThatDoNotMatchTheBehavioursFailTheLoad()
+        {
+            SceneFileObject door = Door(11, Vector3.Zero);
+            door.BehaviourBodies2D[0] = 0;
+            files.Add(ArenaSceneId, door);
+            Connect();
+            var failures = new List<Exception>();
+            server.ServerManager.Scenes.OnLoadFailed += (sceneId, exception) => failures.Add(exception);
+
+            server.ServerManager.Scenes.LoadGlobal(new[] { ArenaSceneId });
+            Run(5);
+
+            Assert.IsInstanceOf<InvalidDataException>(failures.Single());
+            StringAssert.Contains("BehaviourBodies2D", failures[0].Message);
+            Assert.AreEqual(0, server.ServerManager.Spawned.Count);
+            AssertLoggedOnBothSides<InvalidDataException>();
         }
 
         [Test]

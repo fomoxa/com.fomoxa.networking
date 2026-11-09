@@ -175,22 +175,10 @@ namespace Fomoxa.Networking.Objects
                 return false;
             }
 
-            var colliders = new List<ColliderDesc>(file.Colliders.Count);
-            foreach (SceneFileCollider collider in file.Colliders)
-            {
-                colliders.Add(ToDesc(collider));
-            }
-
             SceneFilePose pose = entry.Pose ?? new SceneFilePose();
             try
             {
-                body = new BodyDesc(
-                    KindOf(file.Kind),
-                    colliders,
-                    new Vector3(pose.PositionX, pose.PositionY, pose.PositionZ),
-                    new Quaternion(pose.RotationX, pose.RotationY, pose.RotationZ, pose.RotationW),
-                    file.Mass,
-                    new BodyMotion((BodyLocks)file.Locks, file.UseGravity, file.LinearDamping, file.AngularDamping, file.ContinuousCollision));
+                body = ToDesc(file, new Vector3(pose.PositionX, pose.PositionY, pose.PositionZ), new Quaternion(pose.RotationX, pose.RotationY, pose.RotationZ, pose.RotationW));
             }
             catch (ArgumentException exception)
             {
@@ -198,6 +186,28 @@ namespace Fomoxa.Networking.Objects
             }
 
             return true;
+        }
+
+        public static BodyDesc ToDesc(SceneFileBody file, Vector3 position, Quaternion rotation)
+        {
+            if (file == null)
+            {
+                throw new ArgumentNullException(nameof(file));
+            }
+
+            var colliders = new List<ColliderDesc>(file.Colliders.Count);
+            foreach (SceneFileCollider collider in file.Colliders)
+            {
+                colliders.Add(ToDesc(collider));
+            }
+
+            return new BodyDesc(
+                KindOf(file.Kind),
+                colliders,
+                position,
+                rotation,
+                file.Mass,
+                new BodyMotion((BodyLocks)file.Locks, file.UseGravity, file.LinearDamping, file.AngularDamping, file.ContinuousCollision));
         }
 
         public static bool TryGetBody2D(SceneFileObject entry, out BodyDesc2D body)
@@ -214,22 +224,10 @@ namespace Fomoxa.Networking.Objects
                 return false;
             }
 
-            var colliders = new List<ColliderDesc2D>(file.Colliders.Count);
-            foreach (SceneFileCollider2D collider in file.Colliders)
-            {
-                colliders.Add(ToDesc(collider));
-            }
-
             SceneFilePose pose = entry.Pose ?? new SceneFilePose();
             try
             {
-                body = new BodyDesc2D(
-                    KindOf(file.Kind),
-                    colliders,
-                    new Vector2(pose.PositionX, pose.PositionY),
-                    file.Rotation,
-                    file.Mass,
-                    new BodyMotion2D((BodyLocks2D)file.Locks, file.GravityScale, file.LinearDamping, file.AngularDamping, file.ContinuousCollision));
+                body = ToDesc(file, new Vector2(pose.PositionX, pose.PositionY), file.Rotation);
             }
             catch (ArgumentException exception)
             {
@@ -237,6 +235,28 @@ namespace Fomoxa.Networking.Objects
             }
 
             return true;
+        }
+
+        public static BodyDesc2D ToDesc(SceneFileBody2D file, Vector2 position, float rotation)
+        {
+            if (file == null)
+            {
+                throw new ArgumentNullException(nameof(file));
+            }
+
+            var colliders = new List<ColliderDesc2D>(file.Colliders.Count);
+            foreach (SceneFileCollider2D collider in file.Colliders)
+            {
+                colliders.Add(ToDesc(collider));
+            }
+
+            return new BodyDesc2D(
+                KindOf(file.Kind),
+                colliders,
+                position,
+                rotation,
+                file.Mass,
+                new BodyMotion2D((BodyLocks2D)file.Locks, file.GravityScale, file.LinearDamping, file.AngularDamping, file.ContinuousCollision));
         }
 
         private static SceneFileMaterial ToFile(in ColliderMaterial material) =>
