@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.2.0 |
+| Version | 0.3.0 |
 | Unity | 6000.5 or later |
 | Code generation | Windows x64 and Linux x64 Editors |
 | License | Apache-2.0 |
@@ -20,6 +20,7 @@
 - Per-behaviour state with delta encoding, synchronized lists, dictionaries and sets, `NetworkTransform` with interpolation and teleport, `NetworkAnimator`.
 - Network scenes, loaded for every client or for chosen clients.
 - Client-side prediction with reconciliation and replay, including rollback of Unity 3D and 2D physics.
+- Physics with forces and torques, continuous collision, rays, shape casts, overlaps, contact points and several bodies per network object.
 - WebGL clients through the browser's WebSocket.
 
 ## Installation
@@ -103,7 +104,7 @@ The documentation is in [fomoxa/unity-docs](https://github.com/fomoxa/unity-docs
 
 ## Physics and console servers
 
-Prediction uses Unity's PhysX through `RigidbodyPhysics`. Exact rollback, and the same physics on a server that runs without Unity, come from the Rapier backend in the separate package [`com.fomoxa.networking.rapier`](https://github.com/fomoxa/networking-rapier).
+`RigidbodyPhysics` runs prediction on Unity's PhysX and Box2D. Exact rollback, and the same physics on a server that runs without Unity, come from the Rapier backend in the separate package [`com.fomoxa.networking.rapier`](https://github.com/fomoxa/networking-rapier), which also simulates Unity's joint components, a character controller and the 2D effectors.
 
 The console backend for a server without Unity ships as source in `Standalone~`, a folder Unity ignores. A console project compiles it together with the Core.
 
