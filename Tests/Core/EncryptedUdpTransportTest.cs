@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using BundleFixture;
+using Fomoxa.Net;
 using Fomoxa.Net.Transports;
 using Fomoxa.Networking.Messaging;
 using Fomoxa.Networking.Transports;
@@ -449,6 +450,34 @@ namespace Fomoxa.Networking.Tests
         }
 
         [Test]
+        public void AHandshakeLargerThanOneDatagramCompletesInDatagramsOfAtMostTwelveHundredBytes()
+        {
+            Schema schema = SchemaOf(100);
+            using (var relay = new Relay(port))
+            {
+                ITransport transport = Connect(tokens.Issue("pod-a", 77, ReadOnlyMemory<byte>.Empty), relay.Port);
+                var client = new FomoxaConnection(transport, schema, new SessionConfig(), FomoxaRole.Client, TimeSpan.Zero);
+                relay.Pump();
+                ITransport peer = AcceptOne();
+                Assert.IsNotNull(peer, "the listener opened a peer from the first datagram");
+                var server = new FomoxaConnection(peer, schema, new SessionConfig(), FomoxaRole.Server, TimeSpan.Zero);
+
+                for (int round = 0; round < 20 && !client.IsReady; round++)
+                {
+                    listener.Accept();
+                    server.Tick(TimeSpan.Zero);
+                    relay.Pump();
+                    client.Tick(TimeSpan.Zero);
+                }
+
+                Assert.IsTrue(client.IsReady, "the client finished the handshake");
+                Assert.IsTrue(server.IsReady, "the server finished the handshake");
+                Assert.Greater(relay.ClientDatagrams.Count, 1, "the hello took more than one datagram");
+                Assert.That(relay.ClientDatagrams.Max(bytes => bytes.Length), Is.LessThanOrEqualTo(1200));
+            }
+        }
+
+        [Test]
         public void TheFactoryNeedsAConnectionToConnectAndTokensToListen()
         {
             Assert.IsTrue(clientFactory.RequiresConnection);
@@ -588,6 +617,9 @@ namespace Fomoxa.Networking.Tests
             return datagram;
         }
 
+        private static Schema SchemaOf(int messages) =>
+            new Schema(0xB16, Enumerable.Range(1, messages).Select(id => new MessageSchema((uint)id, (ulong)id, new ulong[] { (ulong)id })));
+
         private static string Hex(byte[] bytes) => string.Concat(bytes.Select(value => value.ToString("x2")));
 
         private static ConnectionGrant GrantOf(byte[] issued)
@@ -650,6 +682,8 @@ namespace Fomoxa.Networking.Tests
             public void Replay(int index) => back.Send(fromClient[index], fromClient[index].Length, server);
 
             public byte[] ClientDatagram(int index) => fromClient[index];
+
+            public IReadOnlyList<byte[]> ClientDatagrams => fromClient;
 
             public void ReflectToClient(int index) => front.Send(fromClient[index], fromClient[index].Length, client);
 
