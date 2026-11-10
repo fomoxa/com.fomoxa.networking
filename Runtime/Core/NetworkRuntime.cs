@@ -13,7 +13,7 @@ namespace Fomoxa.Networking
 {
     public sealed class NetworkRuntime
     {
-        public const string Version = "0.3.1";
+        public const string Version = "0.3.2";
 
         private readonly FomoxaRegistry registry;
         private readonly NetworkLog log;

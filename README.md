@@ -4,9 +4,9 @@
 
 | | |
 |---|---|
-| Version | 0.3.1 |
+| Version | 0.3.2 |
 | Unity | 6000.5 or later |
-| Code generation | Windows x64 and Linux x64 Editors |
+| Code generation | Windows x64, Linux x64 and macOS Editors |
 | License | Apache-2.0 |
 
 ## Features
@@ -110,7 +110,7 @@ The console backend for a server without Unity ships as source in `Standalone~`,
 
 ## Not included
 
-The package has no lockstep mode, match recording, matchmaking or relay. Running many servers behind a directory and a gateway takes the separate [`com.fomoxa.rpc`](https://github.com/fomoxa/com.fomoxa.rpc) package and the [Fomoxa gateway](https://github.com/fomoxa/gateway). The bundled `fomoxac` code generator has no macOS build, so code generation does not run in the macOS Editor.
+The package has no lockstep mode, match recording, matchmaking or relay. Running many servers behind a directory and a gateway takes the separate [`com.fomoxa.rpc`](https://github.com/fomoxa/com.fomoxa.rpc) package and the [Fomoxa gateway](https://github.com/fomoxa/gateway).
 
 ## License
 
