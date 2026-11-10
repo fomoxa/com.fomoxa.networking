@@ -561,6 +561,47 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void ARigidbody2DThatIsNotSimulatedWhenTheObjectIsBoundIsNotABody()
+        {
+            NetworkObject runner = TestPrefabs.Create("Runner", PrefabId);
+            created.Add(runner.gameObject);
+            SceneManager.MoveGameObjectToScene(runner.gameObject, scene);
+            runner.gameObject.AddComponent<CircleCollider2D>().radius = 0.5f;
+            runner.gameObject.AddComponent<Rigidbody2D>();
+            Rigidbody2D bone = Bone2D(runner.transform, "Bone", false);
+            Rigidbody2D tail = Bone2D(runner.transform, "Tail", true);
+            NetworkObject ghost = TestPrefabs.Create("Ghost", PrefabId);
+            created.Add(ghost.gameObject);
+            SceneManager.MoveGameObjectToScene(ghost.gameObject, scene);
+            ghost.gameObject.AddComponent<CircleCollider2D>().radius = 0.5f;
+            ghost.gameObject.AddComponent<Rigidbody2D>().simulated = false;
+            var worlds = new PhysicsWorlds();
+
+            IReadOnlyList<PhysicsBody2D> bodies = worlds.Bodies2DOf(runner);
+            bone.simulated = true;
+
+            Assert.AreEqual(2, bodies.Count);
+            Assert.AreEqual(worlds.Body2DOf(runner).Handle, bodies[0].Handle);
+            Assert.AreEqual(worlds.Of2D(scene).Register(tail), bodies[1].Handle);
+            Assert.AreSame(bodies, worlds.Bodies2DOf(runner));
+            Assert.AreEqual(0, worlds.Bodies2DOf(ghost).Count);
+            Assert.IsFalse(worlds.Body2DOf(ghost).IsValid);
+        }
+
+        [Test]
+        public void ANetworkTransformOnARigidbody2DThatIsNotSimulatedFollowsItsSource()
+        {
+            NetworkObject runner = TestPrefabs.Create("Runner", PrefabId);
+            created.Add(runner.gameObject);
+            Rigidbody2D bone = Bone2D(runner.transform, "Bone", false);
+            var boneTransform = bone.gameObject.AddComponent<NetworkTransform>();
+
+            runner.CollectBehaviours();
+
+            Assert.AreEqual(Fomoxa.Networking.TransformTarget.Source, boneTransform.Core.TransformSlot.Target);
+        }
+
+        [Test]
         public void AnObjectWithoutARigidbodyHasNoBody()
         {
             NetworkObject prefab = TestPrefabs.Create("Plain", PrefabId);
@@ -601,6 +642,16 @@ namespace Fomoxa.Unity.Tests
         }
 
         private Rigidbody Rigid(Vector3 position, float mass) => RigidIn(scene, position, mass);
+
+        private static Rigidbody2D Bone2D(Transform parent, string name, bool simulated)
+        {
+            var bone = new GameObject(name);
+            bone.transform.SetParent(parent, false);
+            bone.AddComponent<CircleCollider2D>().radius = 0.25f;
+            var rigidbody = bone.AddComponent<Rigidbody2D>();
+            rigidbody.simulated = simulated;
+            return rigidbody;
+        }
 
         private static Rigidbody Limb(Transform parent, string name)
         {

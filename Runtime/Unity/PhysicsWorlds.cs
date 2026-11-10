@@ -430,7 +430,7 @@ namespace Fomoxa.Unity
             networkObject.GetComponentsInChildren(true, treeBodies2D);
             foreach (Rigidbody2D rigidbody in treeBodies2D)
             {
-                if (ActiveInTree(rigidbody.transform, root))
+                if (rigidbody.simulated && ActiveInTree(rigidbody.transform, root))
                 {
                     UnityPhysicsWorld2D world = Of2D(scene);
                     set.Rigidbodies2D.Add(rigidbody);
@@ -586,7 +586,7 @@ namespace Fomoxa.Unity
         private static bool TryGetRigidbody2D(NetworkObject networkObject, out Rigidbody2D rigidbody)
         {
             rigidbody = null;
-            return networkObject != null && networkObject.TryGetComponent(out rigidbody);
+            return networkObject != null && networkObject.TryGetComponent(out rigidbody) && rigidbody.simulated;
         }
 
         private StaticGroup Remember(GameObject root, List<Mesh> meshes, int count)

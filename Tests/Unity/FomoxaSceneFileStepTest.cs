@@ -333,6 +333,37 @@ namespace Fomoxa.Unity.Tests
             Assert.AreEqual((0x42u, 1, 32), (read.SceneId, read.Colliders.Count, read.LayerCollisions.Count));
         }
 
+        [Test]
+        public void Rigidbody2DsThatAreNotSimulatedAndTheirCollidersAreLeftOut()
+        {
+            GameObject runner = Create("Runner");
+            runner.AddComponent<NetworkObject>().SetSceneObjectId(0x0000_0001_0000_0006);
+            runner.AddComponent<BoxCollider2D>();
+            runner.AddComponent<Rigidbody2D>();
+            var bone = new GameObject("Bone");
+            created.Add(bone);
+            bone.transform.SetParent(runner.transform, false);
+            bone.AddComponent<CircleCollider2D>();
+            bone.AddComponent<Rigidbody2D>().simulated = false;
+            bone.AddComponent<RpcBehaviour>();
+            GameObject ghost = Create("Ghost");
+            ghost.AddComponent<NetworkObject>().SetSceneObjectId(0x0000_0001_0000_0007);
+            ghost.AddComponent<BoxCollider2D>();
+            ghost.AddComponent<Rigidbody2D>().simulated = false;
+            var errors = new List<string>();
+
+            SceneFile file = FomoxaSceneFileStep.Describe(scene, 0x99, errors);
+
+            CollectionAssert.IsEmpty(errors);
+            SceneFileObject runnerEntry = file.Objects.Find(entry => entry.SceneObjectId == 0x0000_0001_0000_0006);
+            Assert.AreEqual(1, runnerEntry.Body2D.Colliders.Count);
+            CollectionAssert.IsEmpty(runnerEntry.ChildBodies2D);
+            CollectionAssert.AreEqual(new[] { -1 }, runnerEntry.BehaviourBodies2D);
+            SceneFileObject ghostEntry = file.Objects.Find(entry => entry.SceneObjectId == 0x0000_0001_0000_0007);
+            CollectionAssert.IsEmpty(ghostEntry.Body2D.Colliders);
+            CollectionAssert.IsEmpty(file.Colliders2D);
+        }
+
         private GameObject Limb(Transform parent, string name, Vector3 localPosition)
         {
             var limb = new GameObject(name);

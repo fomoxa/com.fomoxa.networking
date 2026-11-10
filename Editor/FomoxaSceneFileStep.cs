@@ -258,6 +258,8 @@ namespace Fomoxa.Unity.Editor
             return true;
         }
 
+        private static bool Simulated2D(GameObject gameObject) => !gameObject.TryGetComponent(out Rigidbody2D rigidbody) || rigidbody.simulated;
+
         private static void DescribeChildBodies(NetworkObject networkObject, SceneFileObject entry, SceneEffectors effectors, List<GameObject> children, List<GameObject> children2D)
         {
             GameObject root = networkObject.gameObject;
@@ -289,7 +291,7 @@ namespace Fomoxa.Unity.Editor
             var sources = new List<Collider2D>();
             foreach (Rigidbody2D rigidbody in root.GetComponentsInChildren<Rigidbody2D>(true))
             {
-                if (rigidbody.gameObject == root || !ActiveInTree(rigidbody.transform, space) || !BodyDescriptions.TryDescribe2D(rigidbody.gameObject, out BodyDesc2D body, sources))
+                if (rigidbody.gameObject == root || !rigidbody.simulated || !ActiveInTree(rigidbody.transform, space) || !BodyDescriptions.TryDescribe2D(rigidbody.gameObject, out BodyDesc2D body, sources))
                 {
                     continue;
                 }
@@ -348,7 +350,7 @@ namespace Fomoxa.Unity.Editor
                     }
 
                     var sources = new List<Collider2D>();
-                    if (BodyDescriptions.TryDescribe2D(networkObject.gameObject, out BodyDesc2D body2D, sources))
+                    if (Simulated2D(networkObject.gameObject) && BodyDescriptions.TryDescribe2D(networkObject.gameObject, out BodyDesc2D body2D, sources))
                     {
                         entry.Body2D = SceneFileGeometry.ToFile(body2D);
                         effectors.Mark(entry.Body2D.Colliders, sources, transform);
