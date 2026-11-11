@@ -17,6 +17,6 @@ namespace Fomoxa.Networking.Prediction
 
         void BeginCorrection(INetworkEntity entity);
 
-        void EndCorrection(INetworkEntity entity);
+        void EndCorrection(INetworkEntity entity, uint tick);
     }
 }

@@ -205,6 +205,7 @@ namespace Fomoxa.Networking.Prediction
             IReadOnlyList<EntityBehaviour> behaviours = record.Representation.EntityBehaviours;
             bool correcting = false;
             bool replayedAny = false;
+            uint correctedTick = 0;
             for (int index = 0; index < behaviours.Count; index++)
             {
                 InputSlot slot = behaviours[index].InputSlot;
@@ -231,6 +232,7 @@ namespace Fomoxa.Networking.Prediction
                     slot.Predicting = true;
                     if (replayed)
                     {
+                        correctedTick = replayedAny ? Math.Max(correctedTick, tick) : tick;
                         replayedAny = true;
                         behaviours[index].Reconciled(tick);
                     }
@@ -243,7 +245,7 @@ namespace Fomoxa.Networking.Prediction
 
             if (replayedAny)
             {
-                backend.EndCorrection(record.Representation);
+                backend.EndCorrection(record.Representation, correctedTick);
             }
         }
 
@@ -471,7 +473,7 @@ namespace Fomoxa.Networking.Prediction
 
             foreach (EntityRecord record in records)
             {
-                backend.EndCorrection(record.Representation);
+                backend.EndCorrection(record.Representation, target);
             }
         }
 

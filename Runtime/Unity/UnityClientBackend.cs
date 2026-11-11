@@ -265,11 +265,11 @@ namespace Fomoxa.Unity
             }
         }
 
-        public void EndCorrection(INetworkEntity entity)
+        public void EndCorrection(INetworkEntity entity, uint tick)
         {
             foreach (NetworkBehaviour behaviour in ((NetworkObject)entity).Behaviours)
             {
-                (behaviour as NetworkTransform)?.EndCorrection();
+                (behaviour as NetworkTransform)?.EndCorrection(tick);
             }
         }
     }

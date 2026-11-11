@@ -172,6 +172,40 @@ namespace Fomoxa.Networking.Tests
             Assert.AreEqual(0, rig.Backend.HistoryRequests);
         }
 
+        [Test]
+        public void AWorldReplayEndsTheCorrectionOfEveryEntityInTheGroupWithTheCorrectedTick()
+        {
+            var rig = new Rig();
+            var world = new FakeWorld();
+            Mover first = rig.Spawn(world);
+            Mover second = rig.Spawn(world);
+            rig.StartPredicting(first, second);
+            rig.Tick(3);
+            rig.Tick(4);
+            rig.Backend.Corrections.Clear();
+
+            rig.Mismatch(first, 3);
+            rig.Tick(5);
+
+            CollectionAssert.AreEqual(new[] { "begin", "begin", "end 3", "end 3" }, rig.Backend.Corrections);
+        }
+
+        [Test]
+        public void AnEntityWithoutAWorldEndsItsCorrectionWithTheTickOfTheCorrectedState()
+        {
+            var rig = new Rig();
+            Mover mover = rig.Spawn();
+            rig.StartPredicting(mover);
+            rig.Tick(3);
+            rig.Tick(4);
+            rig.Backend.Corrections.Clear();
+
+            rig.Mismatch(mover, 3);
+            rig.Tick(5);
+
+            CollectionAssert.AreEqual(new[] { "begin", "end 3" }, rig.Backend.Corrections);
+        }
+
         private sealed class Rig
         {
             public readonly ClientEntitiesTest.World World = new ClientEntitiesTest.World();
@@ -316,6 +350,8 @@ namespace Fomoxa.Networking.Tests
 
             public int WorldRequests { get; private set; }
 
+            public List<string> Corrections { get; } = new List<string>();
+
             public void WorldsOf(INetworkEntity entity, List<IPhysicsSimulation> worlds)
             {
                 WorldRequests++;
@@ -343,13 +379,9 @@ namespace Fomoxa.Networking.Tests
             {
             }
 
-            public void BeginCorrection(INetworkEntity entity)
-            {
-            }
+            public void BeginCorrection(INetworkEntity entity) => Corrections.Add("begin");
 
-            public void EndCorrection(INetworkEntity entity)
-            {
-            }
+            public void EndCorrection(INetworkEntity entity, uint tick) => Corrections.Add($"end {tick}");
 
             public void WorldsToStep(List<IPhysicsSimulation> worlds)
             {

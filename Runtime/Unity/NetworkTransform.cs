@@ -17,8 +17,15 @@ namespace Fomoxa.Unity
         [SerializeField] private int interpolationTicks = 2;
         [SerializeField] private Transform visual;
         [SerializeField] private float smoothingTime = 0.1f;
+        [SerializeField] private bool drawCorrections;
+        [SerializeField, Min(MinimumCorrectionSeconds)] private float correctionSeconds = 2f;
+
+        internal const int MaxDrawnCorrections = 64;
+        private const float MinimumCorrectionSeconds = 0.1f;
+        private const float CorrectionDotRadius = 0.05f;
 
         private readonly List<Snapshot> snapshots = new List<Snapshot>();
+        private readonly Queue<DrawnCorrection> drawnCorrections = new Queue<DrawnCorrection>();
         private TransformSync sync;
         private bool received;
         private byte receivedMask;
@@ -32,6 +39,10 @@ namespace Fomoxa.Unity
         private Vector3 smoothingOffset;
         private Quaternion smoothingTurn = Quaternion.identity;
         private float smoothingLeft;
+        private Vector3 positionBeforeCorrection;
+        private Quaternion rotationBeforeCorrection;
+
+        public event Action<TransformCorrection> OnCorrected;
 
         public bool SyncPosition => syncPosition;
 
@@ -52,6 +63,22 @@ namespace Fomoxa.Unity
             get => smoothingTime;
             set => smoothingTime = Mathf.Max(0f, value);
         }
+
+        public TransformCorrection? LastCorrection { get; private set; }
+
+        public bool DrawCorrections
+        {
+            get => drawCorrections;
+            set => drawCorrections = value;
+        }
+
+        public float CorrectionSeconds
+        {
+            get => Mathf.Max(MinimumCorrectionSeconds, correctionSeconds);
+            set => correctionSeconds = Mathf.Max(MinimumCorrectionSeconds, value);
+        }
+
+        internal int DrawnCorrectionCount => drawnCorrections.Count;
 
         internal bool SettlePending => sync != null && sync.SettlePending;
 
@@ -162,6 +189,9 @@ namespace Fomoxa.Unity
 
         internal void BeginCorrection()
         {
+            Transform shown = visual != null ? visual : transform;
+            positionBeforeCorrection = shown.position;
+            rotationBeforeCorrection = shown.rotation;
             if (visual == null)
             {
                 return;
@@ -177,18 +207,20 @@ namespace Fomoxa.Unity
             correctedRotation = visual.rotation;
         }
 
-        internal void EndCorrection()
+        internal void EndCorrection(uint tick)
         {
             if (visual == null)
             {
+                Corrected(tick, transform);
                 return;
             }
 
+            visual.localPosition = visualRestPosition;
+            visual.localRotation = visualRestRotation;
+            Corrected(tick, visual);
             if (smoothingTime <= 0f)
             {
                 smoothingLeft = 0f;
-                visual.localPosition = visualRestPosition;
-                visual.localRotation = visualRestRotation;
                 return;
             }
 
@@ -197,6 +229,63 @@ namespace Fomoxa.Unity
             smoothingOffset = visual.localPosition - visualRestPosition;
             smoothingTurn = Quaternion.Inverse(visualRestRotation) * visual.localRotation;
             smoothingLeft = smoothingTime;
+        }
+
+        private void Corrected(uint tick, Transform shown)
+        {
+            var correction = new TransformCorrection(tick, positionBeforeCorrection, shown.position, rotationBeforeCorrection, shown.rotation);
+            LastCorrection = correction;
+            if (drawCorrections && Application.isEditor)
+            {
+                RecordDrawnCorrection(correction, Time.realtimeSinceStartup);
+            }
+
+            try
+            {
+                OnCorrected?.Invoke(correction);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception, this);
+            }
+        }
+
+        internal void RecordDrawnCorrection(TransformCorrection correction, float now)
+        {
+            if (drawnCorrections.Count >= MaxDrawnCorrections)
+            {
+                drawnCorrections.Dequeue();
+            }
+
+            drawnCorrections.Enqueue(new DrawnCorrection(correction, now));
+        }
+
+        internal void ForgetExpiredCorrections(float now)
+        {
+            while (drawnCorrections.Count > 0 && now - drawnCorrections.Peek().RecordedAt > CorrectionSeconds)
+            {
+                drawnCorrections.Dequeue();
+            }
+        }
+
+        private void OnDrawGizmos()
+        {
+            if (!drawCorrections)
+            {
+                drawnCorrections.Clear();
+                return;
+            }
+
+            ForgetExpiredCorrections(Time.realtimeSinceStartup);
+            foreach (DrawnCorrection drawn in drawnCorrections)
+            {
+                Gizmos.color = Color.red;
+                Gizmos.DrawSphere(drawn.Correction.PositionBefore, CorrectionDotRadius);
+                Gizmos.color = Color.green;
+                Gizmos.DrawSphere(drawn.Correction.PositionAfter, CorrectionDotRadius);
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawLine(drawn.Correction.PositionBefore, drawn.Correction.PositionAfter);
+            }
         }
 
         internal void SmoothVisual(float seconds)
@@ -280,6 +369,19 @@ namespace Fomoxa.Unity
             {
                 target.localScale = snapshot.Scale;
             }
+        }
+
+        private readonly struct DrawnCorrection
+        {
+            public DrawnCorrection(TransformCorrection correction, float recordedAt)
+            {
+                Correction = correction;
+                RecordedAt = recordedAt;
+            }
+
+            public TransformCorrection Correction { get; }
+
+            public float RecordedAt { get; }
         }
 
         private readonly struct Snapshot

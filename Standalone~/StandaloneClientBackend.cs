@@ -220,7 +220,7 @@ namespace Fomoxa.Networking.Standalone
         {
         }
 
-        public void EndCorrection(INetworkEntity entity)
+        public void EndCorrection(INetworkEntity entity, uint tick)
         {
         }
     }

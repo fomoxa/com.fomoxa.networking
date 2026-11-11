@@ -8,6 +8,7 @@ using Fomoxa.Unity.Tests.Support;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Fomoxa.Unity.Tests
 {
@@ -18,6 +19,7 @@ namespace Fomoxa.Unity.Tests
         private const uint MovingPrefabId = 0xBA;
         private const uint EarlyPrefabId = 0xBB;
         private const uint TwicePrefabId = 0xBC;
+        private const uint BarePrefabId = 0xBD;
         private const double FrameSeconds = 1.0 / 60;
 
         private readonly List<GameObject> created = new List<GameObject>();
@@ -27,6 +29,7 @@ namespace Fomoxa.Unity.Tests
         private NetworkObject prefab;
         private NetworkObject lenientPrefab;
         private NetworkObject movingPrefab;
+        private NetworkObject barePrefab;
         private TimeSpan now;
 
         [SetUp]
@@ -46,6 +49,9 @@ namespace Fomoxa.Unity.Tests
             movingPrefab.gameObject.AddComponent<ReconcileBehaviour>().MoveTransform = true;
             Prefab("Early", EarlyPrefabId).gameObject.AddComponent<EarlyReconcileBehaviour>();
             Prefab("Twice", TwicePrefabId).gameObject.AddComponent<TwoReconcileBehaviour>();
+            barePrefab = Prefab("Bare", BarePrefabId);
+            barePrefab.gameObject.AddComponent<NetworkTransform>();
+            barePrefab.gameObject.AddComponent<ReconcileBehaviour>().MoveTransform = true;
         }
 
         [TearDown]
@@ -218,6 +224,151 @@ namespace Fomoxa.Unity.Tests
             Correct(onClient);
 
             Assert.AreEqual(new Vector3(0f, 1f, 0f), clientTransform.Visual.localPosition);
+        }
+
+        [Test]
+        public void ACorrectionReportsTheJumpOfTheVisualWithTheCorrectedTick()
+        {
+            NetworkManager server = StartServer();
+            (NetworkManager client, ulong clientId) = Connect(server);
+            ReconcileBehaviour onServer = Spawn<ReconcileBehaviour>(server, movingPrefab, clientId);
+            ReconcileBehaviour onClient = Remote<ReconcileBehaviour>(client, onServer);
+            NetworkTransform clientTransform = onClient.GetComponent<NetworkTransform>();
+            var reported = new List<TransformCorrection>();
+            clientTransform.OnCorrected += reported.Add;
+            RunFrames(40);
+            reported.Clear();
+
+            Correct(onClient);
+
+            Assert.AreEqual(1, reported.Count);
+            TransformCorrection correction = reported[0];
+            Assert.AreEqual(correction, clientTransform.LastCorrection);
+            Assert.AreEqual(onClient.ReconciledTicks[onClient.ReconciledTicks.Count - 1], correction.Tick);
+            Assert.Less(correction.PositionOffset.x, -0.5f);
+            Assert.AreEqual(correction.PositionAfter - correction.PositionBefore, correction.PositionOffset);
+            Assert.AreEqual(-correction.PositionOffset.x, clientTransform.Visual.localPosition.x, 1e-4f);
+            Assert.AreEqual(0f, correction.PositionOffset.y, 1e-4f);
+            Assert.AreEqual(0f, correction.RotationDegrees, 1e-3f);
+        }
+
+        [Test]
+        public void WithoutAVisualTheCorrectionMeasuresTheTransformItself()
+        {
+            NetworkManager server = StartServer();
+            (NetworkManager client, ulong clientId) = Connect(server);
+            ReconcileBehaviour onServer = Spawn<ReconcileBehaviour>(server, barePrefab, clientId);
+            ReconcileBehaviour onClient = Remote<ReconcileBehaviour>(client, onServer);
+            NetworkTransform clientTransform = onClient.GetComponent<NetworkTransform>();
+            RunFrames(40);
+
+            Correct(onClient);
+
+            TransformCorrection correction = clientTransform.LastCorrection.Value;
+            Assert.AreEqual(onClient.ReconciledTicks[onClient.ReconciledTicks.Count - 1], correction.Tick);
+            Assert.Less(correction.PositionOffset.x, -0.5f);
+        }
+
+        [Test]
+        public void AZeroSmoothingTimeStillReportsTheJump()
+        {
+            NetworkManager server = StartServer();
+            (NetworkManager client, ulong clientId) = Connect(server);
+            ReconcileBehaviour onServer = Spawn<ReconcileBehaviour>(server, movingPrefab, clientId);
+            ReconcileBehaviour onClient = Remote<ReconcileBehaviour>(client, onServer);
+            NetworkTransform clientTransform = onClient.GetComponent<NetworkTransform>();
+            clientTransform.SmoothingTime = 0f;
+            RunFrames(40);
+
+            Correct(onClient);
+
+            Assert.Less(clientTransform.LastCorrection.Value.PositionOffset.x, -0.5f);
+        }
+
+        [Test]
+        public void AThrowingHandlerIsLoggedAndTheCorrectionIsStillKept()
+        {
+            NetworkManager server = StartServer();
+            (NetworkManager client, ulong clientId) = Connect(server);
+            ReconcileBehaviour onServer = Spawn<ReconcileBehaviour>(server, movingPrefab, clientId);
+            ReconcileBehaviour onClient = Remote<ReconcileBehaviour>(client, onServer);
+            NetworkTransform clientTransform = onClient.GetComponent<NetworkTransform>();
+            RunFrames(40);
+            clientTransform.OnCorrected += _ => throw new InvalidOperationException("handler failed");
+            LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("handler failed"));
+
+            Correct(onClient);
+
+            Assert.AreEqual(onClient.ReconciledTicks[onClient.ReconciledTicks.Count - 1], clientTransform.LastCorrection.Value.Tick);
+        }
+
+        [Test]
+        public void CorrectionsAreKeptForDrawingOnlyWhenDrawCorrectionsIsOn()
+        {
+            NetworkManager server = StartServer();
+            (NetworkManager client, ulong clientId) = Connect(server);
+            ReconcileBehaviour onServer = Spawn<ReconcileBehaviour>(server, movingPrefab, clientId);
+            ReconcileBehaviour onClient = Remote<ReconcileBehaviour>(client, onServer);
+            NetworkTransform clientTransform = onClient.GetComponent<NetworkTransform>();
+            RunFrames(40);
+
+            Correct(onClient);
+
+            Assert.AreEqual(0, clientTransform.DrawnCorrectionCount);
+
+            clientTransform.DrawCorrections = true;
+            Correct(onClient);
+
+            Assert.AreEqual(1, clientTransform.DrawnCorrectionCount);
+        }
+
+        [Test]
+        public void DrawnCorrectionsKeepTheNewest64AndExpireAfterTheCorrectionSeconds()
+        {
+            var gameObject = new GameObject("Drawn");
+            created.Add(gameObject);
+            NetworkTransform networkTransform = gameObject.AddComponent<NetworkTransform>();
+            networkTransform.CorrectionSeconds = 1f;
+            for (int index = 0; index < NetworkTransform.MaxDrawnCorrections + 6; index++)
+            {
+                networkTransform.RecordDrawnCorrection(new TransformCorrection((uint)index, Vector3.zero, Vector3.one, Quaternion.identity, Quaternion.identity), index * 0.01f);
+            }
+
+            Assert.AreEqual(NetworkTransform.MaxDrawnCorrections, networkTransform.DrawnCorrectionCount);
+
+            networkTransform.ForgetExpiredCorrections(1.505f);
+
+            Assert.AreEqual(19, networkTransform.DrawnCorrectionCount);
+
+            networkTransform.ForgetExpiredCorrections(10f);
+
+            Assert.AreEqual(0, networkTransform.DrawnCorrectionCount);
+        }
+
+        [Test]
+        public void ANewNetworkTransformHasNoCorrectionAndDrawsNothingByDefault()
+        {
+            var gameObject = new GameObject("Fresh");
+            created.Add(gameObject);
+            NetworkTransform networkTransform = gameObject.AddComponent<NetworkTransform>();
+
+            Assert.IsNull(networkTransform.LastCorrection);
+            Assert.IsFalse(networkTransform.DrawCorrections);
+            Assert.AreEqual(2f, networkTransform.CorrectionSeconds);
+
+            networkTransform.CorrectionSeconds = 0f;
+
+            Assert.AreEqual(0.1f, networkTransform.CorrectionSeconds, 1e-6f);
+        }
+
+        [Test]
+        public void TheCorrectionOffsetIsTheChangeOfPositionAndAngle()
+        {
+            var correction = new TransformCorrection(7, new Vector3(1f, 2f, 3f), new Vector3(4f, 2f, 1f), Quaternion.identity, Quaternion.Euler(0f, 90f, 0f));
+
+            Assert.AreEqual(7u, correction.Tick);
+            Assert.AreEqual(new Vector3(3f, 0f, -2f), correction.PositionOffset);
+            Assert.AreEqual(90f, correction.RotationDegrees, 1e-3f);
         }
 
         [Test]
