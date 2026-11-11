@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.3.2 |
+| Version | 0.3.3 |
 | Unity | 6000.5 or later |
 | Code generation | Windows x64, Linux x64 and macOS Editors |
 | License | Apache-2.0 |
