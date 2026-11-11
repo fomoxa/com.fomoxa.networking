@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.3.3 |
+| Version | 0.3.4 |
 | Unity | 6000.5 or later |
 | Code generation | Windows x64, Linux x64 and macOS Editors |
 | License | Apache-2.0 |
@@ -22,6 +22,7 @@
 - Client-side prediction with reconciliation and replay, including rollback of Unity 3D and 2D physics.
 - Physics with forces and torques, continuous collision, rays, shape casts, overlaps, contact points and several bodies per network object.
 - WebGL clients through the browser's WebSocket.
+- Debug tools: traffic counters by message, an on-screen statistics display, a simulator for latency and packet loss, and reports of how far prediction corrections move objects.
 
 ## Installation
 
