@@ -124,7 +124,7 @@ namespace Fomoxa.Networking.Transports
 
         private void RecordConnectionData(int index, ITransport transport)
         {
-            if (listeners[index] is CompositeListener inner)
+            if (NestedComposite(listeners[index]) is CompositeListener inner)
             {
                 inner.TryTakeAcceptedConnectionData(out _);
                 inner.TryTakeAcceptedArrival(out _);
@@ -136,7 +136,7 @@ namespace Fomoxa.Networking.Transports
 
         private void RecordBudget(int index)
         {
-            if (listeners[index] is CompositeListener inner && inner.TryTakeAcceptedBudget(out int innerBudget))
+            if (NestedComposite(listeners[index]) is CompositeListener inner && inner.TryTakeAcceptedBudget(out int innerBudget))
             {
                 acceptedBudgets.Enqueue(innerBudget);
             }
@@ -144,6 +144,16 @@ namespace Fomoxa.Networking.Transports
             {
                 acceptedBudgets.Enqueue(budgets[index]);
             }
+        }
+
+        private static CompositeListener NestedComposite(IListenerTransport listener)
+        {
+            while (listener is SimulatedListener simulated)
+            {
+                listener = simulated.Inner;
+            }
+
+            return listener as CompositeListener;
         }
     }
 }
