@@ -78,6 +78,7 @@ namespace Fomoxa.Unity.Tests
 
             Assert.IsTrue(client.ClientManager.Clock.HasInputLead);
             Assert.AreEqual(0, server.ServerManager.DroppedInputsOf(clientId));
+            Assert.AreEqual(0, server.ServerManager.DroppedInputs);
             Assert.IsEmpty(onClient.Applied);
         }
 

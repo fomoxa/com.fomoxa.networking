@@ -180,6 +180,30 @@ namespace Fomoxa.Networking.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => rig.Inputs.MaxInputLead = 0);
         }
 
+        [Test]
+        public void TheTotalOfDroppedInputsKeepsCountingAfterThePeerAndTheServerStop()
+        {
+            var rig = new Rig();
+            Peer client = rig.Connect();
+            uint objectId = rig.SpawnOwnedBy(client);
+            rig.Objects.DespawnWithOwner = id => false;
+            rig.Clock.Tick = 100;
+            client.Send(objectId, 99, 1);
+            client.Send(objectId, 98, 1);
+            rig.Run(3);
+            rig.Inputs.CountDropped(client.PeerId);
+
+            Assert.AreEqual(3, rig.Inputs.DroppedOf(client.PeerId));
+            Assert.AreEqual(3, rig.Inputs.TotalDropped);
+
+            client.Session.Stop();
+            rig.Run(5);
+            rig.Server.Stop();
+
+            Assert.AreEqual(0, rig.Inputs.DroppedOf(client.PeerId));
+            Assert.AreEqual(3, rig.Inputs.TotalDropped);
+        }
+
         private static void AssertTake(Rig rig, uint objectId, uint tick, uint value, bool repeated, uint repeatedTicks = 0)
         {
             Assert.IsTrue(rig.Inputs.TakeInput(objectId, 0, tick, out ReadOnlyMemory<byte> input, out bool wasRepeated, out uint ticksRepeated));

@@ -32,6 +32,7 @@ namespace Fomoxa.Networking.Prediction
         private readonly Dictionary<ulong, PeerInputs> peers = new Dictionary<ulong, PeerInputs>();
         private InputFrames frames = new InputFrames();
         private int maxInputLead = 30;
+        private long totalDropped;
 
         public ServerInputs(ServerSession session, ServerObjects objects, InputProtocol protocol, ServerClock clock)
         {
@@ -61,6 +62,8 @@ namespace Fomoxa.Networking.Prediction
 
         public int DroppedOf(ulong peerId) => peers.TryGetValue(peerId, out PeerInputs peer) ? peer.Dropped : 0;
 
+        public long TotalDropped => totalDropped;
+
         public bool TakeInput(uint objectId, byte behaviourIndex, uint tick, out ReadOnlyMemory<byte> input, out bool repeated, out uint repeatedTicks)
         {
             InputBuffer buffer = Find(objectId, behaviourIndex, false);
@@ -79,7 +82,7 @@ namespace Fomoxa.Networking.Prediction
             return buffer.HasLast;
         }
 
-        public void CountDropped(ulong peerId) => Peer(peerId).Dropped++;
+        public void CountDropped(ulong peerId) => CountDropped(Peer(peerId));
 
         private void OnFrames(ulong peerId, uint objectId, byte behaviourIndex, ReadOnlyMemory<byte> body)
         {
@@ -102,7 +105,7 @@ namespace Fomoxa.Networking.Prediction
             peer.HasLead = true;
             if (frames.Tick < now || frames.Tick - now > (uint)maxInputLead)
             {
-                peer.Dropped++;
+                CountDropped(peer);
                 return;
             }
 
@@ -112,6 +115,12 @@ namespace Fomoxa.Networking.Prediction
             {
                 buffer.Store(frames.Tick - (uint)index, frames.Frames[index].Span);
             }
+        }
+
+        private void CountDropped(PeerInputs peer)
+        {
+            peer.Dropped++;
+            totalDropped++;
         }
 
         private short InputLeadOf(ulong peerId)
