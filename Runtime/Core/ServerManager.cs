@@ -102,6 +102,8 @@ namespace Fomoxa.Networking
 
         public int PeerCount => session.PeerCount;
 
+        public ServerTrafficStatistics Statistics => session.Statistics;
+
         public int FrameBudgetOf(ulong peerId) => session.FrameBudgetOf(peerId);
 
         public bool ArrivedOverWebSocket(ulong peerId) => session.ArrivedOverWebSocket(peerId);

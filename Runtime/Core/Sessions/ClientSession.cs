@@ -41,6 +41,8 @@ namespace Fomoxa.Networking.Sessions
             this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             this.protocol = protocol ?? throw new ArgumentNullException(nameof(protocol));
             inbox = new SessionInbox(protocol, dispatcher, (peerId, length) => OnReceiveDropped?.Invoke(new ReceiveDroppedArgs(peerId, length)));
+            Statistics = this.limits.CollectStatistics ? new TrafficStatistics(null) : null;
+            inbox.Traffic = Statistics;
             inbox.AcceptTransfer();
         }
 
@@ -55,6 +57,8 @@ namespace Fomoxa.Networking.Sessions
         public event Action<string> OnTlsRejected;
 
         public ConnectionState State { get; private set; } = ConnectionState.Stopped;
+
+        public TrafficStatistics Statistics { get; }
 
         internal MessageDispatcher Dispatcher => dispatcher;
 
@@ -393,6 +397,7 @@ namespace Fomoxa.Networking.Sessions
                 new OutgoingQueue(limits.MessageCapacity, limits.ByteCapacity),
                 protocol,
                 new ReliableChannel(limits.ReliableWindow));
+            outbox.Traffic = Statistics;
             discarded = 0;
         }
 

@@ -8,6 +8,7 @@ namespace Fomoxa.Networking
     public sealed class FomoxaRegistry
     {
         private readonly Dictionary<Type, object> codecs = new Dictionary<Type, object>();
+        private readonly Dictionary<uint, string> names = new Dictionary<uint, string>();
 
         public static FomoxaRegistry Default { get; } = new FomoxaRegistry();
 
@@ -29,5 +30,12 @@ namespace Fomoxa.Networking
 
         public IMessageCodec<T> Codec<T>() =>
             codecs.TryGetValue(typeof(T), out object codec) ? (IMessageCodec<T>)codec : null;
+
+        public void SetName(uint messageId, string name)
+        {
+            names[messageId] = name ?? throw new ArgumentNullException(nameof(name));
+        }
+
+        public string NameOf(uint messageId) => names.TryGetValue(messageId, out string name) ? name : null;
     }
 }

@@ -46,6 +46,8 @@ namespace Fomoxa.Networking.Sessions
 
         public bool IsGated => gated;
 
+        public TrafficStatistics Traffic { get; internal set; }
+
         public int ActiveCount => Active?.Count ?? 0;
 
         private OutgoingQueue Active => gated ? authentication : queue;
@@ -258,10 +260,12 @@ namespace Fomoxa.Networking.Sessions
             while (start < entries.Count)
             {
                 int count = writer.Fit(entries, start, maxEntries);
-                SendStatus status = sender(writer.MessageId, writer.Write(entries, start, count).Span);
+                ReadOnlyMemory<byte> written = writer.Write(entries, start, count);
+                SendStatus status = sender(writer.MessageId, written.Span);
                 switch (status)
                 {
                     case SendStatus.Sent:
+                        Traffic?.Sent.AddBundle(written.Length);
                         Commit(start, count, now);
                         start += count;
                         maxEntries = int.MaxValue;
@@ -313,6 +317,7 @@ namespace Fomoxa.Networking.Sessions
             for (int index = start; index < start + count; index++)
             {
                 OutgoingEntry entry = entries[index];
+                Traffic?.Sent.Add(TrafficKindOf(entry.Kind), entry.MessageId, entry.Data.Length);
                 switch (entry.Kind)
                 {
                     case OutgoingKind.Ack:
@@ -351,6 +356,22 @@ namespace Fomoxa.Networking.Sessions
             Active.Dequeue(1);
             splitting = null;
             splitOffset = 0;
+            Traffic?.Sent.Add(TrafficKind.Split, head.MessageId, head.Payload.Length - SeqHeader.Length);
+        }
+
+        private static TrafficKind TrafficKindOf(OutgoingKind kind)
+        {
+            switch (kind)
+            {
+                case OutgoingKind.Ack:
+                    return TrafficKind.Ack;
+                case OutgoingKind.Retransmit:
+                    return TrafficKind.Repeated;
+                case OutgoingKind.Fragment:
+                    return TrafficKind.Fragment;
+                default:
+                    return TrafficKind.New;
+            }
         }
 
         private QueuedMessage HeadOfQueue() => HeadOf(Active);

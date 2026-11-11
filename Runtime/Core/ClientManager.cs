@@ -151,6 +151,8 @@ namespace Fomoxa.Networking
 
         public TimeSpan Rtt => connectedLocally ? TimeSpan.Zero : clock.Estimator.Rtt;
 
+        public TrafficStatistics Statistics => session.Statistics;
+
         internal int TickRate => timeManager.TickRate;
 
         public IReadOnlyDictionary<uint, INetworkEntity> Spawned => Entities.Representations;

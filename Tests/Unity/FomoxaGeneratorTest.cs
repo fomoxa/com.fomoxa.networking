@@ -148,6 +148,12 @@ namespace Fomoxa.Unity.Tests
             StringAssert.Contains("public static global::Fomoxa.Net.Schema Build()", Read("Generated", "NetSchema.cs"));
             StringAssert.Contains("namespace Generated", Read("Generated", FomoxaGenerator.AdaptersFileName));
             StringAssert.Contains("registry.SetSchema(NetSchema.Build());", Read("Generated", FomoxaGenerator.AdaptersFileName));
+            StringAssert.Contains(
+                "            foreach (FomoxaMessage message in Handshake.FomoxaMessages)\n"
+                + "            {\n"
+                + "                registry.SetName(message.Id, message.Name);\n"
+                + "            }\n",
+                Read("Generated", FomoxaGenerator.AdaptersFileName));
             StringAssert.StartsWith("#if UNITY_5_3_OR_NEWER", Read("Generated", FomoxaGenerator.RegistrationFileName));
         }
 

@@ -44,6 +44,8 @@ namespace Fomoxa.Networking.Sessions
 
         public bool Gated { get; set; }
 
+        public TrafficStatistics Traffic { get; internal set; }
+
         public void SetAcceptance(uint messageId, Func<bool> onAccepted)
         {
             accepted = onAccepted ?? throw new ArgumentNullException(nameof(onAccepted));
@@ -73,6 +75,7 @@ namespace Fomoxa.Networking.Sessions
                 }
             }
 
+            Traffic?.Received.AddBundle(payload.Length);
             return true;
         }
 
@@ -82,6 +85,7 @@ namespace Fomoxa.Networking.Sessions
             ReadOnlyMemory<byte> data = reader.DataAt(index);
             if (messageId == protocol.AckCodec.MessageId)
             {
+                Traffic?.Received.Add(TrafficKind.Ack, messageId, data.Length);
                 protocol.AckCodec.Decode(data, ref ack);
                 reliable.OnAck(ack.Next, ack.Received, now);
                 return;
@@ -89,6 +93,7 @@ namespace Fomoxa.Networking.Sessions
 
             if (messageId == protocol.LeaveCodec.MessageId)
             {
+                Traffic?.Received.Add(TrafficKind.New, messageId, data.Length);
                 if (Gated)
                 {
                     refused = true;
@@ -101,6 +106,7 @@ namespace Fomoxa.Networking.Sessions
 
             if (!protocol.Channels.IsReliable(messageId))
             {
+                Traffic?.Received.Add(TrafficKind.New, messageId, data.Length);
                 Dispatch(peerId, messageId, data);
                 return;
             }
@@ -111,11 +117,16 @@ namespace Fomoxa.Networking.Sessions
             switch (reliable.Classify(seq))
             {
                 case ReliableVerdict.Deliver:
+                    Traffic?.Received.Add(ArrivalKindOf(messageId), messageId, data.Length);
                     reliable.Advance();
                     DeliverReliable(peerId, messageId, afterSeq, reliable);
                     break;
                 case ReliableVerdict.Buffer:
+                    Traffic?.Received.Add(ArrivalKindOf(messageId), messageId, data.Length);
                     reliable.Store(seq, messageId, afterSeq.Span);
+                    break;
+                case ReliableVerdict.Duplicate:
+                    Traffic?.Received.Add(TrafficKind.Repeated, messageId, data.Length);
                     break;
             }
         }
@@ -221,8 +232,12 @@ namespace Fomoxa.Networking.Sessions
                 return;
             }
 
+            Traffic?.Received.Add(TrafficKind.Split, assembledId, assembled.Length);
             Dispatch(peerId, assembledId, assembled);
         }
+
+        private TrafficKind ArrivalKindOf(uint messageId) =>
+            protocol.IsFragment(messageId) ? TrafficKind.Fragment : TrafficKind.New;
 
         private void ReceiveTransfer(ulong peerId, ReadOnlyMemory<byte> data)
         {

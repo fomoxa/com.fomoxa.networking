@@ -167,5 +167,7 @@ namespace Fomoxa.Networking.Sessions
         public TimeSpan CloseTimeout { get; set; } = TimeSpan.FromSeconds(1);
 
         public TimeSpan AuthenticationTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+        public bool CollectStatistics { get; set; }
     }
 }

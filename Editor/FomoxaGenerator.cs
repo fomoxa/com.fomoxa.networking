@@ -325,7 +325,11 @@ namespace Fomoxa.Unity.Editor
                 .Append("    {\n")
                 .Append("        public static void RegisterAll(global::Fomoxa.Networking.FomoxaRegistry registry)\n")
                 .Append("        {\n")
-                .Append("            registry.SetSchema(NetSchema.Build());\n");
+                .Append("            registry.SetSchema(NetSchema.Build());\n")
+                .Append("            foreach (FomoxaMessage message in Handshake.FomoxaMessages)\n")
+                .Append("            {\n")
+                .Append("                registry.SetName(message.Id, message.Name);\n")
+                .Append("            }\n");
             foreach (string model in SystemAdapterModels)
             {
                 text.Append($"            registry.SetCodec({model}NetAdapter.Instance);\n");

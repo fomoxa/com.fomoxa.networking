@@ -39,6 +39,7 @@ namespace Fomoxa.Networking.Sessions
             this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
             this.protocol = protocol ?? throw new ArgumentNullException(nameof(protocol));
             inbox = new SessionInbox(protocol, dispatcher, (peerId, length) => OnReceiveDropped?.Invoke(new ReceiveDroppedArgs(peerId, length)));
+            Statistics = this.limits.CollectStatistics ? new ServerTrafficStatistics() : null;
         }
 
         public event Action<ServerConnectionStateArgs> OnServerConnectionState;
@@ -56,6 +57,8 @@ namespace Fomoxa.Networking.Sessions
         internal int LocalListenerIndex { get; set; } = -1;
 
         public int PeerCount => peers.Count;
+
+        public ServerTrafficStatistics Statistics { get; }
 
         internal MessageDispatcher Dispatcher => dispatcher;
 
@@ -525,6 +528,7 @@ namespace Fomoxa.Networking.Sessions
         private void Receive(Peer peer, uint messageId, ReadOnlyMemory<byte> payload, TimeSpan now)
         {
             ReliableChannel reliable = peer.Outbox.Reliable;
+            inbox.Traffic = peer.Outbox.Traffic;
             if (!inbox.TryRead(messageId, payload, reliable))
             {
                 OnReceiveDropped?.Invoke(new ReceiveDroppedArgs(peer.Id, FomoxaWire.DataFrameHeaderSize + payload.Length));
@@ -605,6 +609,7 @@ namespace Fomoxa.Networking.Sessions
                 protocol,
                 new ReliableChannel(limits.ReliableWindow),
                 BundleOf(owner.Listener));
+            outbox.Traffic = Statistics?.AddPeer(peerId);
             var peer = new Peer(peerId, outbox, (messageId, payload) => owner.Send(peerId, messageId, payload));
             peer.ListenerIndex = owner.Listener is CompositeListener composite && composite.TryTakeAcceptedListener(out int listenerIndex) ? listenerIndex : -1;
             peer.ConnectionData = owner.Listener is CompositeListener withData && withData.TryTakeAcceptedConnectionData(out ReadOnlyMemory<byte> data) ? data : ReadOnlyMemory<byte>.Empty;
@@ -630,6 +635,7 @@ namespace Fomoxa.Networking.Sessions
         {
             int total = peer.Discarded + peer.Outbox.Clear();
             peers.Remove(peer.Id);
+            Statistics?.RemovePeer(peer.Id);
             RaisePeer(peer.Id, ConnectionState.Stopped, reason, failure, total);
             ReportCancellationFailure(peer);
         }

@@ -29,6 +29,7 @@ namespace Fomoxa.Unity
         [SerializeField] private NetworkAuthenticator authenticator;
         [SerializeField] private bool logSendDropped = true;
         [SerializeField] private bool logReceiveDropped = true;
+        [SerializeField] private bool collectStatistics;
         [SerializeField] private int maxReconnectRetries = -1;
         [SerializeField] private float reconnectIntervalSeconds = 0.5f;
         [SerializeField] private float handshakeTimeoutSeconds = 5f;
@@ -124,6 +125,7 @@ namespace Fomoxa.Unity
                 AuthenticationTimeout = TimeSpan.FromSeconds(authenticationTimeoutSeconds),
                 LogSendDropped = logSendDropped,
                 LogReceiveDropped = logReceiveDropped,
+                CollectStatistics = collectStatistics,
                 MaxReconnectRetries = maxReconnectRetries,
                 ReconnectInterval = TimeSpan.FromSeconds(reconnectIntervalSeconds),
                 HandshakeTimeout = TimeSpan.FromSeconds(handshakeTimeoutSeconds),

@@ -207,6 +207,31 @@ namespace Fomoxa.Unity.Tests
         }
 
         [Test]
+        public void TheManagerCollectsNoStatisticsByDefault()
+        {
+            NetworkManager host = CreateHost();
+
+            Assert.IsNull(host.ServerManager.Statistics);
+            Assert.IsNull(host.ClientManager.Statistics);
+        }
+
+        [Test]
+        public void CollectStatisticsOnTheManagerCountsTheHostClientTraffic()
+        {
+            NetworkManager host = Create(configure: serialized => serialized.FindProperty("collectStatistics").boolValue = true);
+
+            host.ServerManager.StartConnection(0);
+            host.ClientManager.StartConnection("unused.invalid", 1);
+            RunFrames(host, 20);
+
+            Assert.AreEqual(ConnectionState.Started, host.ClientManager.State);
+            Assert.Greater(host.ClientManager.Statistics.Sent.Bundles.Count, 0);
+            Assert.Greater(host.ClientManager.Statistics.Received.Bundles.Count, 0);
+            Assert.Greater(host.ServerManager.Statistics.Received.Bundles.Count, 0);
+            Assert.Greater(host.ServerManager.Statistics.Sent.Bundles.Count, 0);
+        }
+
+        [Test]
         public void TheAuthenticatorOnTheManagerHoldsTheHostClientUntilItAccepts()
         {
             var authenticator = new GameObject("Authenticator").AddComponent<TestAuthenticator>();
